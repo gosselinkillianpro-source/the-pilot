@@ -73,7 +73,7 @@ export default function HomePage() {
           }}
         >
           <Link
-            href="/closing/pipeline"
+            href="/dashboard"
             style={{
               display: 'inline-flex',
               alignItems: 'center',

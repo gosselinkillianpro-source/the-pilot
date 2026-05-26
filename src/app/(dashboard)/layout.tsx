@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import Link from 'next/link';
 import {
   BarChart3,
   Bell,
@@ -10,8 +12,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
-import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { SidebarLink } from '@/components/shared/sidebar-nav';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
@@ -25,7 +26,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }}
     >
       <aside className="view-sidebar">
-        <Link href="/" className="view-sidebar-brand" style={{ textDecoration: 'none' }}>
+        <Link href="/" className="view-sidebar-brand">
           <div className="view-sidebar-brand-mark">P</div>
           <div className="view-sidebar-brand-name" style={{ color: 'var(--text-1)' }}>
             THE PILOT
@@ -40,39 +41,39 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         <div className="view-sidebar-section">
           <div className="view-sidebar-section-title">Workspace</div>
-          <Link href="/" className="view-sidebar-link">
+          <SidebarLink href="/dashboard" exact>
             <LayoutGrid />
             Vue d'ensemble
-          </Link>
-          <Link href="/closing/pipeline" className="view-sidebar-link active">
+          </SidebarLink>
+          <SidebarLink href="/closing/pipeline">
             <Users />
             Closing
             <span className="view-sidebar-link-badge">14</span>
-          </Link>
-          <Link href="/email/flows" className="view-sidebar-link">
+          </SidebarLink>
+          <SidebarLink href="/email/flows">
             <Mail />
             Email
-          </Link>
-          <Link href="/social" className="view-sidebar-link">
+          </SidebarLink>
+          <SidebarLink href="/social">
             <Share2 />
             Social
-          </Link>
-          <Link href="/ads" className="view-sidebar-link">
+          </SidebarLink>
+          <SidebarLink href="/ads">
             <TrendingUp />
             Ads
-          </Link>
-          <Link href="/performance" className="view-sidebar-link">
+          </SidebarLink>
+          <SidebarLink href="/performance">
             <BarChart3 />
             Performance
-          </Link>
+          </SidebarLink>
         </div>
 
         <div className="view-sidebar-section">
           <div className="view-sidebar-section-title">IA</div>
-          <Link href="/brain" className="view-sidebar-link" style={{ color: 'var(--ai)' }}>
+          <SidebarLink href="/brain" style={{ color: 'var(--ai)' }}>
             <Sparkles />
             Pilot Brain
-          </Link>
+          </SidebarLink>
         </div>
 
         <div className="view-sidebar-user">
@@ -90,7 +91,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="view-topbar-breadcrumb">
             <span className="crumb">Workspace</span>
             <ChevronDown size={12} style={{ transform: 'rotate(-90deg)' }} />
-            <span className="crumb active">Closing</span>
+            <span className="crumb active">THE PILOT</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div className="view-topbar-search">
