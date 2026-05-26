@@ -391,7 +391,7 @@ Les données KYC sensibles (numéro de pièce d'identité, RIB, etc.) NE DOIVENT
 ## 8. Stack technique
 
 ### Frontend
-- **Framework** : Next.js 15 (App Router, React Server Components)
+- **Framework** : Next.js 16 (App Router, React Server Components, Turbopack par défaut)
 - **Langage** : TypeScript strict mode
 - **UI** : shadcn/ui + Tailwind CSS 4
 - **State client** : Zustand (simple) ou Jotai (atomic) selon besoin
@@ -457,7 +457,7 @@ Les données KYC sensibles (numéro de pièce d'identité, RIB, etc.) NE DOIVENT
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         CLIENT                              │
-│  Next.js 15 App (React Server Components + Client)          │
+│  Next.js 16 App (React Server Components + Client)          │
 │  - Dashboards par rôle                                       │
 │  - Pipeline closer kanban                                    │
 │  - Email flow builder                                        │
@@ -1285,7 +1285,7 @@ the-pilot/
 │   │   ├── project.ts
 │   │   ├── subscription.ts
 │   │   └── ...
-│   └── middleware.ts           # auth check, rate limit, etc.
+│   └── proxy.ts                # auth check, rate limit, etc. (Next 16 — remplace middleware.ts)
 ├── tests/
 │   ├── unit/
 │   ├── integration/
@@ -1361,7 +1361,7 @@ the-pilot/
 ### V0 — Foundation (M0 à M1)
 **Objectif** : poser les fondations techniques propres pour pouvoir construire vite ensuite.
 
-- Setup repo (Next.js 15 + TypeScript + Tailwind + shadcn)
+- Setup repo (Next.js 16 + TypeScript + Tailwind + shadcn)
 - Setup Supabase (projet, schemas initiaux, RLS sur tables clés)
 - Auth fonctionnelle (login email + Google SSO + 2FA admin)
 - Cloudflare Access en frontal
