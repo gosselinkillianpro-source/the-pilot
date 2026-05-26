@@ -3,18 +3,23 @@ import Link from 'next/link';
 export default function HomePage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-8 relative">
-      <div className="max-w-2xl text-center space-y-8">
+      <div className="flex flex-col items-center text-center" style={{ maxWidth: 640, gap: 28 }}>
         <div
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full liquid border"
+          className="inline-flex items-center liquid"
           style={{
+            gap: 8,
+            padding: '6px 14px',
+            borderRadius: 9999,
             fontFamily: 'var(--font-mono)',
             fontSize: '0.75rem',
             color: 'var(--text-2)',
           }}
         >
           <span
-            className="w-2 h-2 rounded-full"
             style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
               background: 'var(--success)',
               boxShadow: '0 0 12px var(--success-glow)',
             }}
@@ -23,7 +28,6 @@ export default function HomePage() {
         </div>
 
         <h1
-          className="font-display italic"
           style={{
             fontFamily: 'var(--font-display)',
             fontStyle: 'italic',
@@ -36,6 +40,7 @@ export default function HomePage() {
             backgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             filter: 'drop-shadow(0 4px 32px rgba(124, 58, 237, 0.12))',
+            margin: 0,
           }}
         >
           Pilote ton
@@ -49,7 +54,7 @@ export default function HomePage() {
             color: 'var(--text-2)',
             lineHeight: 1.65,
             maxWidth: 560,
-            margin: '0 auto',
+            margin: 0,
           }}
         >
           Quand tu pilotes un avion, tu regardes l'horizon. THE PILOT, c'est pareil. Un horizon
@@ -57,24 +62,52 @@ export default function HomePage() {
           l'app inoubliable.
         </p>
 
-        <div className="flex items-center justify-center gap-3 flex-wrap">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+            marginTop: 4,
+          }}
+        >
           <Link
             href="/closing/pipeline"
-            className="inline-flex items-center gap-2 px-4 h-10 rounded-md text-white text-sm font-medium transition-all"
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 40,
+              padding: '0 18px',
+              borderRadius: 8,
               background: 'var(--brand)',
+              color: '#FFFFFF',
+              fontSize: '0.875rem',
+              fontWeight: 500,
               boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 14px rgba(37, 99, 235, 0.22)',
+              transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
             Ouvrir le dashboard
           </Link>
-          <a
-            href="https://github.com"
-            className="inline-flex items-center gap-2 px-4 h-10 rounded-md text-sm font-medium liquid"
-            style={{ color: 'var(--text-1)' }}
+          <Link
+            href="/"
+            className="liquid"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 40,
+              padding: '0 18px',
+              borderRadius: 8,
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: 'var(--text-1)',
+            }}
           >
             Documentation
-          </a>
+          </Link>
         </div>
       </div>
     </main>

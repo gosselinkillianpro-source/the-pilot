@@ -179,42 +179,42 @@
   --font-display: var(--font-display);
 }
 
-/* Base */
-html {
-  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
-  font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  background: var(--bg);
-  color: var(--text-1);
-}
+/* Base — dans @layer base pour que les utilities Tailwind passent au-dessus */
+@layer base {
+  html {
+    font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    background: var(--bg);
+    color: var(--text-1);
+  }
 
-body {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  min-height: 100vh;
-  overflow-x: hidden;
-  position: relative;
-}
+  body {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
 
-a {
-  color: var(--brand);
-  text-decoration: none;
-}
-a:hover {
-  color: var(--brand-deep);
-}
+  /* a non décoré par défaut, mais sans imposer une couleur — chaque lien gère sa couleur */
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
 
-:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
-  border-radius: 6px;
-}
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: 6px;
+  }
 
-::selection {
-  background: var(--brand);
-  color: white;
+  ::selection {
+    background: var(--brand);
+    color: white;
+  }
 }
 
 ::-webkit-scrollbar {
