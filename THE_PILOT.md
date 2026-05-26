@@ -172,7 +172,8 @@ THE PILOT est multi-utilisateurs avec 4 rôles distincts. Chaque rôle a un dash
 |---|---|---|---|---|
 | Investisseurs (lecture) | tous | leads attribués | leads attribués | tous |
 | Investisseurs (écriture notes) | tous | leads attribués | leads attribués | non |
-| Investisseurs KYC sensibles | oui | masqué partiel | masqué partiel | masqué partiel |
+| Champs personnels investisseur (date naissance, adresse, téléphone) | oui | si lead attribué | si lead attribué | masqué |
+| Statut KYC SAH (registration_complete, onboarding_complete) | oui | oui (lecture) | oui (lecture) | oui (lecture) |
 | Campagnes ads | RW | non | non | lecture |
 | Email flows | RW | non | non | lecture |
 | Posts sociaux | RW | non | non | lecture |
@@ -384,7 +385,7 @@ Chaque appel à un LLM (Anthropic, OpenAI) doit être loggé en base avec : prom
 Limit configurable par utilisateur et par jour sur les tokens IA. Au-delà, alerte admin + soft-block. Évite qu'un bug en boucle ne consomme 500€ d'API en une nuit.
 
 **Garde-fou 7 : Pas de KYC dans les prompts**
-Les données KYC sensibles (numéro de pièce d'identité, RIB, etc.) NE DOIVENT JAMAIS être envoyées dans un prompt LLM. Seulement des métadonnées (statut KYC validé : oui/non, tranche de revenu, etc.).
+THE PILOT ne stocke pas les KYC ultra-sensibles (n° pièce d'identité, RIB) — ils restent côté SAH. Garde-fou préventif : si jamais ces données arrivaient par erreur dans nos tables (import accidentel, debug, etc.), elles NE DOIVENT JAMAIS être envoyées dans un prompt LLM. Pour l'IA, seules les métadonnées et données business sont OK (nom, prénom, date de naissance pour personnalisation, score, segment, comportement, historique).
 
 ---
 
@@ -578,7 +579,7 @@ Représente les utilisateurs internes (Killian, Guillaume, Stéphane, etc.). Aut
 | settings | jsonb | preferences personnelles |
 
 ### Table `investors`
-Les inscrits SAH. **READ-ONLY mirror** depuis l'app SAH principale. Synchronisée via webhooks + polling de sécurité quotidien.
+Les inscrits SAH. **READ-ONLY mirror** depuis l'app SAH principale. Synchronisée via webhooks et/ou pushs CSV depuis SAH. **THE PILOT ne stocke aucune donnée KYC ultra-sensible** (pas de n° pièce d'identité, pas de RIB) — ces données restent côté SAH (responsable du KYC sous cadre ACPR).
 
 | Colonne | Type | Notes |
 |---|---|---|
@@ -589,15 +590,16 @@ Les inscrits SAH. **READ-ONLY mirror** depuis l'app SAH principale. Synchronisé
 | first_name | text | |
 | last_name | text | |
 | phone | text | nullable |
-| date_of_birth | date | nullable, masqué pour closers |
-| address_city | text | |
-| address_postal_code | text | |
-| profile_segment | enum: `junior`, `confirmed`, `csp_plus`, `executive` | calculé depuis KYC |
+| date_of_birth | date | nullable — usage marketing (mailing anniversaire) + segmentation âge |
+| address_city | text | nullable — segmentation géo (matcher projets locaux) |
+| address_postal_code | text | nullable — segmentation géo |
+| profile_segment | enum: `junior`, `confirmed`, `csp_plus`, `executive` | poussé par SAH (calcul fait côté SAH depuis leur KYC) |
 | total_invested | numeric(12,2) | cumul historique |
 | projects_count | integer | nombre de projets souscrits |
 | first_subscription_at | timestamptz | nullable |
 | last_subscription_at | timestamptz | nullable |
-| kyc_status | enum: `pending`, `validated`, `rejected`, `expired` | |
+| registration_complete | boolean | l'investisseur s'est inscrit sur SAH (compte créé, email validé) |
+| onboarding_complete | boolean | l'investisseur a terminé son onboarding SAH (carte d'identité uploadée, KYC validé côté SAH) |
 | acquisition_source | enum: `meta_ads`, `google_ads`, `linkedin_ads`, `seo`, `social_organic`, `referral`, `other` | |
 | acquisition_campaign_id | text | nullable, ID externe |
 | score | integer | 0-100, calculé par l'IA |
@@ -965,13 +967,18 @@ CREATE UNIQUE INDEX ON investor_full_context (id);
 - **Pas de "super admin"** caché. Killian est `admin`, ses actions sont auditées comme celles des autres.
 
 ### Données sensibles
-**Données KYC ultra-sensibles** (date de naissance complète, numéro pièce d'identité, RIB) :
-- **Stockage** : champs chiffrés en colonne via `pgcrypto` (encrypt at column level)
-- **Affichage** : masqué par défaut, déchiffré uniquement sur demande explicite + log
-- **Prompts IA** : INTERDIT d'envoyer ces données à un LLM externe
+**Périmètre THE PILOT** : THE PILOT ne stocke **aucune donnée KYC ultra-sensible** (n° de pièce d'identité, RIB, scan de pièce). Ces données restent dans la plateforme SAH (`app.sevenathome.com`), seule responsable du KYC sous cadre ACPR.
 
-**Données KYC moins sensibles** (tranche d'âge, segment CSP) :
-- Stockage standard, accessible aux closers
+**Données personnelles stockées chez nous** (RGPD standard) :
+- Identité civile : nom, prénom, email, téléphone, date de naissance
+- Localisation : ville, code postal
+- Comportement digital, score IA, historique de souscriptions
+
+**Règles d'usage** :
+- **Stockage** : Supabase chiffre déjà tout au repos (AES-256) — pas de chiffrement column-level supplémentaire nécessaire à ce niveau de sensibilité.
+- **Affichage** : nom + email lisibles par défaut pour les rôles autorisés ; un closer voit uniquement les leads qui lui sont assignés (RLS).
+- **Prompts IA** : la date de naissance peut être envoyée (utile pour personnaliser un brief : âge, anniversaire), mais **jamais** d'identifiants techniques (sah_id), de téléphone, ou de combinaison directement identifiante hors usage métier.
+- **Mailing anniversaire** : usage validé sous base "intérêt légitime" RGPD, opt-out facile via lien de désabonnement.
 
 ### Chiffrement
 - **At rest** : Supabase chiffre par défaut (AES-256)
@@ -1615,7 +1622,7 @@ Tu as accès aux tools suivants (function calling) :
 Règles ABSOLUES :
 1. Tu ne réponds JAMAIS sur des chiffres sans avoir d'abord appelé un tool. Si tu n'as pas le tool, dis "Je n'ai pas l'info via mes outils actuels, va voir dans le dashboard X".
 2. Tu masques les noms complets sauf si l'utilisateur le demande explicitement (autorisations vérifiées en amont par le code).
-3. Tu ne révèles JAMAIS de données KYC sensibles (date de naissance complète, RIB, pièce ID).
+3. Tu ne révèles JAMAIS de RIB ou n° de pièce d'identité (jamais stockés dans THE PILOT, mais garde-fou préventif). Date de naissance / adresse : OK pour usage métier interne (anniversaire, segmentation), mais jamais dans une réponse exportable à l'extérieur.
 4. Ton ton : direct, factuel, concis. Pas de chichi marketing.
 5. Si la question est ambiguë, demande une précision plutôt que d'inventer.
 6. Si une demande contredit la conformité (AMF, RGPD), tu refuses et expliques pourquoi.
@@ -2209,7 +2216,7 @@ export const detectRebound11Months = inngest.createFunction(
 - Auth par code 4 chiffres toutes les 4h
 - Bouton "désactiver Pilot Concierge" depuis l'app
 - Log des accès, alerte sur géoloc inhabituelle
-- Pas de données KYC sensibles exposées même à Stéphane via WhatsApp
+- Pas de PII détaillée (téléphone, adresse complète, date de naissance) ni de chiffres financiers individuels exposés via WhatsApp — seulement des agrégats et noms.
 
 ---
 

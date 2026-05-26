@@ -10,7 +10,9 @@
 
 THE PILOT est une **app interne multi-utilisateurs** (admin, closer, executive) qui pilote toute l'opérationnel marketing + closing + data de SAH (plateforme privée d'investissement immobilier club deal). 5 modules métier : Closing, Email, Social, Ads, Performance. Couche transverse IA (scoring, briefs, AMF compliance, chat with your data).
 
-**Cadre légal critique** : AMF DIS, ACPR KYC, RGPD EU-only. Toute communication externe scannée AMF avant envoi, validation humaine obligatoire.
+**THE PILOT = miroir read-only de SAH**. Aucune donnée n'est créée chez nous : tout vient de SAH via webhooks et/ou imports CSV. Le KYC (n° pièce ID, RIB, scan) reste géré par SAH — nous on récupère juste `registration_complete` et `onboarding_complete` (2 booléens) + données business (nom, email, score, comportement, souscriptions).
+
+**Cadre légal critique** : AMF DIS, ACPR KYC (côté SAH), RGPD EU-only. Toute communication externe scannée AMF avant envoi, validation humaine obligatoire.
 
 ---
 
@@ -30,7 +32,7 @@ THE PILOT est une **app interne multi-utilisateurs** (admin, closer, executive) 
 ### Sécurité & permissions
 1. **RLS Supabase activée sur TOUTES les tables**, sans exception.
 2. **Double-check côté code** dans chaque server action (defense in depth — ne jamais s'appuyer uniquement sur RLS).
-3. **Pas de KYC dans les prompts LLM** (date de naissance complète, RIB, pièce ID). Seulement métadonnées.
+3. **Pas de KYC ultra-sensible dans les prompts LLM** (RIB, n° pièce d'identité — non stockés chez nous, mais garde-fou préventif au cas où). Date de naissance OK dans les prompts pour personnalisation (anniversaire, segmentation âge). Téléphone et adresse complète : éviter dans les prompts sauf besoin métier explicite.
 4. **Aucun secret en dur**. Tout passe par `.env` (gitignored). Voir `.env.example`.
 5. **2FA obligatoire** pour rôles `admin` et `closer`.
 
