@@ -402,3 +402,124 @@ export function getScoreClass(score: number): 'hot' | 'warm' | 'cold' {
 export function getInitials(firstName: string, lastName: string): string {
   return `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase();
 }
+
+/* ============================================================
+   ROI PAR ACTION (attribution)
+   ============================================================ */
+
+export type ActionKind = 'call' | 'sms' | 'whatsapp' | 'email_manual' | 'email_auto';
+
+export type ActionRoi = {
+  kind: ActionKind;
+  label: string;
+  count: number; // nb d'actions réalisées ce mois
+  conversions: number; // nb d'investissements attribués
+  revenueGenerated: number; // € attribués
+  avgDelayDays: number; // délai moyen action -> investissement
+};
+
+export const mockActionRoi: ActionRoi[] = [
+  {
+    kind: 'call',
+    label: 'Appel sortant',
+    count: 142,
+    conversions: 38,
+    revenueGenerated: 312000,
+    avgDelayDays: 6.2,
+  },
+  {
+    kind: 'whatsapp',
+    label: 'WhatsApp',
+    count: 89,
+    conversions: 19,
+    revenueGenerated: 124000,
+    avgDelayDays: 3.8,
+  },
+  {
+    kind: 'sms',
+    label: 'SMS relance',
+    count: 420,
+    conversions: 47,
+    revenueGenerated: 198000,
+    avgDelayDays: 4.1,
+  },
+  {
+    kind: 'email_manual',
+    label: 'Email relance (manuel)',
+    count: 340,
+    conversions: 28,
+    revenueGenerated: 142000,
+    avgDelayDays: 8.5,
+  },
+  {
+    kind: 'email_auto',
+    label: 'Email automatique (flow)',
+    count: 1240,
+    conversions: 52,
+    revenueGenerated: 187000,
+    avgDelayDays: 12.0,
+  },
+];
+
+export function actionConversionRate(a: ActionRoi): string {
+  return `${((a.conversions / a.count) * 100).toFixed(1)}%`;
+}
+
+export function revenuePerAction(a: ActionRoi): number {
+  return Math.round(a.revenueGenerated / a.count);
+}
+
+export const mockAttributionSummary = {
+  totalAttributedRevenue: 963000, // somme des revenus attribués
+  totalActions: 2231,
+  totalConversions: 184,
+  avgDelayDays: 6.9,
+  topAction: 'Appel sortant',
+  attributionModel: 'Multi-touch (linéaire) · fenêtre 30 jours',
+} as const;
+
+export type AttributedJourney = {
+  id: string;
+  investorName: string;
+  amount: number;
+  project: string;
+  steps: { day: string; action: string; kind: ActionKind | 'investment' | 'behavior' }[];
+};
+
+export const mockAttributedJourneys: AttributedJourney[] = [
+  {
+    id: 'j-1',
+    investorName: 'Jean D.',
+    amount: 10000,
+    project: 'Brézins',
+    steps: [
+      { day: '1 mai', action: 'Appel Guillaume (8 min)', kind: 'call' },
+      { day: '3 mai', action: 'SMS relance Brézins', kind: 'sms' },
+      { day: '5 mai', action: 'Clique sur Brézins (email)', kind: 'behavior' },
+      { day: '6 mai', action: 'Simulation à 10 000€', kind: 'behavior' },
+      { day: '8 mai', action: 'Investit 10 000€', kind: 'investment' },
+    ],
+  },
+  {
+    id: 'j-2',
+    investorName: 'Catherine L.',
+    amount: 15000,
+    project: 'Capsule',
+    steps: [
+      { day: '12 avr', action: 'WhatsApp première prise de contact', kind: 'whatsapp' },
+      { day: '18 avr', action: 'Appel Guillaume (12 min)', kind: 'call' },
+      { day: '22 avr', action: 'Investit 15 000€', kind: 'investment' },
+    ],
+  },
+  {
+    id: 'j-3',
+    investorName: 'Thomas G.',
+    amount: 12000,
+    project: 'Moirans',
+    steps: [
+      { day: '2 mai', action: 'Email automatique (rebond 11 mois)', kind: 'email_auto' },
+      { day: '4 mai', action: 'SMS relance', kind: 'sms' },
+      { day: '9 mai', action: 'Investit 12 000€', kind: 'investment' },
+    ],
+  },
+];

@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react';
-import Link from 'next/link';
 import {
   BarChart3,
   Bell,
@@ -12,6 +10,8 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { SidebarLink } from '@/components/shared/sidebar-nav';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {

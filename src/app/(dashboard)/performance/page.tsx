@@ -1,4 +1,5 @@
 import { BarChart3, TrendingUp } from 'lucide-react';
+import { PerformanceTabs } from '@/components/shared/performance-tabs';
 
 const CHANNELS = [
   { name: 'LinkedIn Ads', investors: 412, ltv: '14 200€', cac: '78€', roi: '18.2x' },
@@ -16,6 +17,7 @@ export default function PerformancePage() {
         <div className="page-desc">
           LTV par canal d'acquisition · cohortes · forecasting (V2 complet).
         </div>
+        <PerformanceTabs active="/performance" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>

@@ -1,8 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 
 export function SidebarLink({
   href,
@@ -16,16 +16,10 @@ export function SidebarLink({
   style?: React.CSSProperties;
 }) {
   const pathname = usePathname();
-  const isActive = exact
-    ? pathname === href
-    : pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <Link
-      href={href}
-      className={`view-sidebar-link${isActive ? ' active' : ''}`}
-      style={style}
-    >
+    <Link href={href} className={`view-sidebar-link${isActive ? ' active' : ''}`} style={style}>
       {children}
     </Link>
   );
