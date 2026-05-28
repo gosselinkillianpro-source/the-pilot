@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE PILOT × Seven At Home — Brief d'intégration technique</title>
+<style>
+  :root {
+    --brand: #2563EB;
+    --brand-deep: #1E40AF;
+    --ai: #7C3AED;
+    --ink: #0A0E1A;
+    --ink-2: #3A4256;
+    --ink-3: #6B7280;
+    --line: #E5E8EF;
+    --bg-soft: #F6F8FC;
+    --green: #059669;
+    --green-bg: #ECFDF5;
+    --red: #DC2626;
+    --red-bg: #FEF2F2;
+    --amber: #D97706;
+    --amber-bg: #FFFBEB;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 15px;
+    background: #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 820px; margin: 0 auto; padding: 56px 48px 80px; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 24px; border-bottom: 2px solid var(--ink);
+    margin-bottom: 40px;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-mark {
+    width: 40px; height: 40px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--brand) 0%, var(--ai) 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 20px;
+    box-shadow: 0 4px 14px rgba(124,58,237,0.25);
+  }
+  .logo-text strong { display: block; font-size: 17px; letter-spacing: -0.02em; }
+  .logo-text span { font-size: 12px; color: var(--ink-3); }
+  .header-meta { text-align: right; font-size: 12px; color: var(--ink-3); }
+  .header-meta strong { color: var(--ink); display: block; font-size: 13px; }
+
+  h1 {
+    font-size: 30px; letter-spacing: -0.03em; line-height: 1.15;
+    margin-bottom: 12px; font-weight: 800;
+  }
+  .lead { font-size: 16px; color: var(--ink-2); margin-bottom: 40px; max-width: 640px; }
+
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--brand); font-weight: 700;
+    margin: 40px 0 16px; padding-top: 24px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--brand); color: #fff; font-size: 12px;
+  }
+  h3 { font-size: 15px; font-weight: 700; margin: 22px 0 8px; }
+  p { margin-bottom: 12px; color: var(--ink-2); }
+  strong { color: var(--ink); }
+  ul { margin: 0 0 14px 0; padding-left: 0; list-style: none; }
+  li { padding: 4px 0 4px 22px; position: relative; color: var(--ink-2); }
+  li::before {
+    content: ''; position: absolute; left: 6px; top: 13px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--brand);
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13.5px; }
+  th {
+    text-align: left; padding: 9px 12px; background: var(--bg-soft);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ink-3); border-bottom: 1px solid var(--line);
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+  td strong { color: var(--ink); }
+  .mono { font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace; font-size: 12.5px; color: var(--brand-deep); }
+
+  .callout {
+    border-radius: 10px; padding: 16px 18px; margin: 18px 0;
+    border: 1px solid var(--line); background: var(--bg-soft);
+    display: flex; gap: 12px;
+  }
+  .callout .ic { font-size: 18px; flex-shrink: 0; line-height: 1.3; }
+  .callout-title { font-weight: 700; color: var(--ink); margin-bottom: 2px; font-size: 14px; }
+  .callout-body { font-size: 13.5px; color: var(--ink-2); }
+  .callout.green { background: var(--green-bg); border-color: #A7F3D0; }
+  .callout.green .callout-title { color: var(--green); }
+  .callout.red { background: var(--red-bg); border-color: #FECACA; }
+  .callout.red .callout-title { color: var(--red); }
+  .callout.amber { background: var(--amber-bg); border-color: #FDE68A; }
+  .callout.amber .callout-title { color: var(--amber); }
+
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 99px;
+    font-size: 11px; font-weight: 600; margin-left: 6px;
+  }
+  .pill-must { background: var(--brand); color: #fff; }
+  .pill-nice { background: #EEF2FF; color: var(--brand-deep); }
+
+  .opt-grid { display: grid; gap: 12px; margin: 14px 0 8px; }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px;
+  }
+  .opt.preferred { border-color: var(--brand); border-width: 2px; background: #FAFBFF; }
+  .opt-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .opt-head strong { font-size: 15px; }
+  .opt-tag { font-size: 11px; font-weight: 700; color: var(--brand); background: #EEF2FF; padding: 2px 8px; border-radius: 6px; }
+
+  .footer {
+    margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-3); display: flex; justify-content: space-between;
+  }
+
+  @media print {
+    .page { padding: 24px 0; max-width: 100%; }
+    h2 { break-after: avoid; }
+    table, .callout, .opt { break-inside: avoid; }
+    body { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="logo">
+      <div class="logo-mark">P</div>
+      <div class="logo-text">
+        <strong>THE PILOT</strong>
+        <span>par BREACH · pour Seven At Home</span>
+      </div>
+    </div>
+    <div class="header-meta">
+      <strong>Brief d'intégration technique</strong>
+      v1 · mai 2026<br>
+      Contact : Killian — BREACH
+    </div>
+  </div>
+
+  <h1>Connecter THE PILOT aux données Seven&nbsp;At&nbsp;Home</h1>
+  <p class="lead">
+    Ce document résume notre besoin technique pour brancher THE PILOT (l'outil de pilotage marketing &amp; closing
+    de SAH) sur vos données. Objectif : caler ensemble <strong>comment</strong> récupérer les informations, et valider
+    ce qui est faisable de votre côté.
+  </p>
+
+  <h2><span class="num">1</span> Le concept en 30 secondes</h2>
+  <p>
+    THE PILOT est un outil interne construit pour Seven At Home. Il centralise le suivi des investisseurs,
+    le travail des closers (priorisation des appels, briefs, relances) et le reporting de performance,
+    avec une couche d'intelligence artificielle.
+  </p>
+  <p>
+    <strong>Point clé : THE PILOT ne crée aucune donnée.</strong> C'est un <strong>miroir en lecture seule</strong>
+    de votre plateforme. Toutes les données viennent de chez vous ; nous les affichons, les analysons et les croisons,
+    mais la source de vérité reste Seven At Home.
+  </p>
+
+  <h2><span class="num">2</span> Notre objectif : mesurer la rentabilité de chaque action</h2>
+  <p>
+    Le cœur du projet est de pouvoir relier <strong>nos actions</strong> (appel, SMS, WhatsApp, email, relance)
+    aux <strong>résultats</strong> (un investisseur qui souscrit). Exemple : on appelle un inscrit qui n'a jamais investi,
+    et 7 jours plus tard il investit 10&nbsp;000&nbsp;€ — on veut pouvoir attribuer cet investissement à l'appel.
+  </p>
+  <p>
+    Pour ça, il nous faut une chose essentielle de votre côté : <strong>l'événement « souscription » avec sa date/heure
+    précise et l'identifiant de l'investisseur concerné.</strong> C'est la clé de voûte de tout le système.
+  </p>
+
+  <h2><span class="num">3</span> Les données dont nous avons besoin</h2>
+  <p>Voici ce que nous aimerions pouvoir récupérer. Pour chaque bloc, dites-nous ce qui est possible chez vous.</p>
+
+  <h3>A. Investisseurs</h3>
+  <table>
+    <tr><th>Donnée</th><th>Usage côté THE PILOT</th><th></th></tr>
+    <tr><td><strong>Identifiant unique stable</strong></td><td>Clé pour relier toutes les données d'un investisseur</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td>Email</td><td>Identification, communication, matching</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td>Prénom, nom</td><td>Affichage fiche, briefs d'appel</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td>Téléphone</td><td>Appels / SMS / WhatsApp</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td>Date de naissance</td><td>Personnalisation (anniversaire), segmentation âge</td><td><span class="pill pill-nice">utile</span></td></tr>
+    <tr><td>Ville, code postal</td><td>Segmentation géographique, matching projets locaux</td><td><span class="pill pill-nice">utile</span></td></tr>
+    <tr><td><strong>Inscription complétée</strong> (oui/non + date)</td><td>Suivi du funnel</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td><strong>Onboarding complété</strong> (oui/non + date)</td><td>Savoir si le KYC est validé chez vous (sans le détail)</td><td><span class="pill pill-must">requis</span></td></tr>
+    <tr><td>Source d'acquisition + campagne</td><td>ROI par canal (pub, parrainage, etc.)</td><td><span class="pill pill-nice">utile</span></td></tr>
+  </table>
+
+  <h3>B. Projets immobiliers</h3>
+  <table>
+    <tr><th>Donnée</th><th>Usage</th></tr>
+    <tr><td>Identifiant + nom du projet</td><td>Référencement (Brézins, Capsule…)</td></tr>
+    <tr><td>Statut (ouvert, en collecte, en cours, terminé…)</td><td>Suivi de l'état</td></tr>
+    <tr><td>Montant cible / montant collecté</td><td>Vitesse de collecte</td></tr>
+    <tr><td>Rendement cible (%), durée (mois)</td><td>Matching avec le profil investisseur</td></tr>
+    <tr><td>Dates (ouverture, fin prévue), ville/région, type</td><td>Contexte projet</td></tr>
+  </table>
+
+  <h3>C. Souscriptions <span class="pill pill-must">le plus important</span></h3>
+  <table>
+    <tr><th>Donnée</th><th>Usage</th></tr>
+    <tr><td>Identifiant de la souscription</td><td>Référence</td></tr>
+    <tr><td>Identifiant investisseur + identifiant projet</td><td>Relier qui a investi dans quoi</td></tr>
+    <tr><td>Montant souscrit</td><td>Collecte, ticket moyen, attribution</td></tr>
+    <tr><td><strong>Date de signature + date de virement reçu</strong></td><td>Date précise = clé de l'attribution action → résultat</td></tr>
+    <tr><td>Statut (signé, payé, actif, remboursé)</td><td>Suivi du cycle de vie</td></tr>
+    <tr><td>Date de remboursement prévue / réelle, montants remboursés</td><td>Déclencher le « rebond » (réinvestissement)</td></tr>
+  </table>
+
+  <h3>D. Événements en temps réel (idéalement par webhook)</h3>
+  <ul>
+    <li>Nouvel inscrit</li>
+    <li>Onboarding / KYC validé</li>
+    <li><strong>Nouvelle souscription</strong> (avec date/heure précise)</li>
+    <li>(optionnel) Connexion / activité de l'investisseur sur votre plateforme</li>
+  </ul>
+
+  <div class="callout red">
+    <div class="ic">🔒</div>
+    <div>
+      <div class="callout-title">Ce que nous ne voulons PAS récupérer</div>
+      <div class="callout-body">
+        Aucune donnée KYC ultra-sensible : <strong>pas de numéro de pièce d'identité, pas de RIB/IBAN, pas de scan de
+        document, pas de mot de passe.</strong> Ces données restent chez vous (vous êtes responsables du KYC sous cadre ACPR).
+        De notre côté, moins on stocke de données sensibles, plus l'ensemble est sûr. Le booléen « onboarding validé : oui/non »
+        nous suffit largement.
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="num">4</span> Comment : les options techniques</h2>
+  <p>Plusieurs méthodes sont possibles. Dites-nous laquelle est la plus simple de votre côté — on s'adapte.</p>
+
+  <div class="opt-grid">
+    <div class="opt preferred">
+      <div class="opt-head"><strong>Option A — Webhooks + API REST</strong> <span class="opt-tag">notre préférence</span></div>
+      <p style="margin:0">Vous nous « poussez » les événements en temps réel (nouvelle inscription, souscription…) via des webhooks,
+      et on peut interroger une API REST pour les requêtes ponctuelles et le chargement initial. C'est le plus réactif
+      et le plus propre.</p>
+    </div>
+    <div class="opt">
+      <div class="opt-head"><strong>Option B — Exports CSV programmés</strong></div>
+      <p style="margin:0">Vous déposez régulièrement (ex. toutes les heures / chaque nuit) des fichiers CSV ou JSON sur un
+      espace sécurisé (S3 EU ou SFTP). Plus simple à mettre en place, mais en différé.</p>
+    </div>
+    <div class="opt">
+      <div class="opt-head"><strong>Option C — Accès lecture seule à une réplique de base</strong></div>
+      <p style="margin:0">Un accès en lecture seule à une copie (replica) de votre base de données. Très efficace, mais plus
+      engageant côté accès — uniquement si vous êtes à l'aise avec ça.</p>
+    </div>
+  </div>
+
+  <p>Pour démarrer, il nous faudra aussi un <strong>export initial</strong> de l'existant (investisseurs déjà inscrits,
+  projets, souscriptions historiques) pour amorcer la base.</p>
+
+  <h2><span class="num">5</span> Sécurité &amp; conformité</h2>
+  <ul>
+    <li><strong>Hébergement 100&nbsp;% Union Européenne</strong> (Francfort). Aucune donnée ne sort de l'UE.</li>
+    <li><strong>Authentification</strong> : nous nous connectons à votre API via un compte technique dédié (OAuth&nbsp;2.0 ou clé API + secret), stocké chiffré, jamais en clair.</li>
+    <li><strong>Webhooks signés</strong> (HMAC) pour qu'on vérifie que les données viennent bien de vous.</li>
+    <li><strong>Chiffrement</strong> en transit (TLS) et au repos (AES-256) sur toute la chaîne.</li>
+    <li><strong>RGPD</strong> : nous agissons comme sous-traitant de SAH. Un accord de traitement des données (DPA) sera signé entre nos structures. Le droit à l'oubli est propagé (si un investisseur demande l'effacement chez vous, on supprime chez nous).</li>
+    <li>Possibilité de restreindre l'accès à nos adresses IP de production (whitelist) si vous le souhaitez.</li>
+  </ul>
+
+  <h2><span class="num">6</span> Ce dont nous aurions besoin de votre part</h2>
+  <ul>
+    <li>Votre <strong>documentation d'API</strong> si elle existe (endpoints disponibles, formats).</li>
+    <li>La <strong>liste des champs</strong> que vous pouvez exposer pour chaque bloc (investisseurs, projets, souscriptions).</li>
+    <li>La <strong>méthode d'accès</strong> que vous préconisez (A, B ou C ci-dessus).</li>
+    <li>Les <strong>modalités d'authentification</strong> et de sécurité de votre côté.</li>
+    <li>Un <strong>contact technique</strong> dédié pour la mise en place.</li>
+    <li>Le <strong>délai</strong> sous lequel vous pourriez nous ouvrir un accès (même de test).</li>
+  </ul>
+
+  <div class="callout green">
+    <div class="ic">✅</div>
+    <div>
+      <div class="callout-title">Prochaine étape</div>
+      <div class="callout-body">
+        Idéalement, un court échange technique pour valider l'option d'intégration et la liste des champs.
+        On peut ensuite démarrer avec un environnement de test. On reste flexibles et on s'adapte à vos contraintes.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>THE PILOT — document confidentiel</span>
+    <span>BREACH × Seven At Home · mai 2026</span>
+  </div>
+
+</div>
+</body>
+</html>
