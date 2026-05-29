@@ -1,4 +1,5 @@
-import { AlertTriangle, List, Mail, Send, Users } from 'lucide-react';
+import { AlertTriangle, List, Mail, PenLine, Send, Users } from 'lucide-react';
+import Link from 'next/link';
 import {
   getBrevoAccount,
   getBrevoCampaigns,
@@ -73,13 +74,17 @@ export default async function EmailPage() {
             En direct depuis le compte <strong>{account.companyName}</strong> ({account.email})
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {emailCredits !== null && (
             <span className="badge badge-brand">{nb(emailCredits)} crédits email</span>
           )}
           {smsCredits !== null && (
             <span className="badge badge-neutral">{nb(smsCredits)} crédits SMS</span>
           )}
+          <Link href="/email/compose" className="btn btn-primary btn-sm">
+            <PenLine size={13} />
+            Composer
+          </Link>
         </div>
       </div>
 
