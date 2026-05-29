@@ -4,7 +4,14 @@ import { SAH_CATEGORY_LABELS, type SahIdeaCategory } from '@/lib/ai/prompts/sah-
 import { db } from '@/lib/db';
 import { socialIdeas } from '@/lib/db/schema';
 import { getSocialConfig } from '@/lib/social/settings';
-import { ClearRejectedButton, GenerateIdeasButton, IdeaActions, MixEditor } from './ideas-client';
+import {
+  ClearRejectedButton,
+  GenerateIdeasButton,
+  IdeaActions,
+  IdeaSearch,
+  MixEditor,
+  ValidateAllButton,
+} from './ideas-client';
 
 export const dynamic = 'force-dynamic';
 // La génération via Grok est synchrone (~20-40s) : on laisse de la marge.
@@ -124,6 +131,8 @@ export default async function SocialIdeasPage({
           </Link>
         ))}
         <div style={{ flex: 1 }} />
+        <IdeaSearch />
+        {filter === 'pending' && <ValidateAllButton count={counts.pending} />}
         {filter === 'rejected' && <ClearRejectedButton count={counts.rejected} />}
       </div>
 
@@ -142,6 +151,8 @@ export default async function SocialIdeasPage({
             ideas.map((idea, idx) => (
               <div
                 key={idea.id}
+                data-idea-row
+                data-haystack={`${idea.title} ${idea.angle} ${idea.rationale ?? ''}`.toLowerCase()}
                 style={{
                   display: 'flex',
                   gap: 16,

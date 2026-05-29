@@ -5,13 +5,14 @@ import {
   GalleryHorizontal,
   Layers,
   RotateCcw,
+  Search,
   Sparkles,
   Star,
   Trash2,
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { generateCarouselAction, generatePostsAction } from '../posts/actions';
 import {
   clearRejectedAction,
@@ -21,8 +22,77 @@ import {
   setMixAction,
   togglePriorityAction,
   unvalidateIdeaAction,
+  validateAllPendingAction,
   validateIdeaAction,
 } from './actions';
+
+/** Recherche live : filtre les lignes d'idées par data-haystack. Raccourci "/" pour focus. */
+export function IdeaSearch() {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+      if (e.key === '/' && tag !== 'input' && tag !== 'textarea') {
+        e.preventDefault();
+        ref.current?.focus();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  function onInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const q = e.target.value.trim().toLowerCase();
+    for (const el of document.querySelectorAll<HTMLElement>('[data-idea-row]')) {
+      const hay = el.dataset.haystack ?? '';
+      el.style.display = !q || hay.includes(q) ? '' : 'none';
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative', width: 240 }}>
+      <Search
+        size={14}
+        style={{
+          position: 'absolute',
+          left: 10,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: 'var(--text-3)',
+        }}
+      />
+      <input
+        ref={ref}
+        className="input"
+        placeholder="Filtrer (touche /)"
+        onChange={onInput}
+        style={{ paddingLeft: 30, width: '100%' }}
+      />
+    </div>
+  );
+}
+
+export function ValidateAllButton({ count }: { count: number }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  if (count === 0) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm"
+      disabled={pending}
+      onClick={() => {
+        if (confirm(`Valider les ${count} idée(s) en attente ?`))
+          startTransition(async () => {
+            await validateAllPendingAction();
+            router.refresh();
+          });
+      }}
+    >
+      Tout valider
+    </button>
+  );
+}
 
 type Mix = { projets: number; pedagogique: number; temoignages: number; mise_avant: number };
 const CAT_META: { key: keyof Mix; label: string }[] = [

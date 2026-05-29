@@ -239,3 +239,19 @@ export async function clearRejectedAction() {
   });
   revalidatePath('/social/ideas');
 }
+
+export async function validateAllPendingAction() {
+  const actor = await currentActor();
+  await db
+    .update(socialIdeas)
+    .set({ status: 'validated' })
+    .where(eq(socialIdeas.status, 'pending'));
+  await logAudit({
+    userId: actor.id,
+    userEmail: actor.email,
+    action: 'social.ideas.validate_all',
+    resourceType: 'social_idea',
+    resourceId: 'batch',
+  });
+  revalidatePath('/social/ideas');
+}

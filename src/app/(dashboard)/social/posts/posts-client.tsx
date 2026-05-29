@@ -1,16 +1,29 @@
 'use client';
 
-import { Check, ChevronLeft, ChevronRight, Code, Download, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Code,
+  Download,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import {
   deletePostAction,
   regenerateImageAction,
+  regeneratePostTextAction,
   schedulePostAction,
   setPostStatusAction,
   toggleImageModeAction,
   updatePostTextAction,
+  uploadPostImageAction,
 } from './actions';
+
+export type AmfIssue = { match: string; suggestedFix?: string };
 
 export type PostCardData = {
   id: string;
@@ -21,6 +34,7 @@ export type PostCardData = {
   hasImage: boolean;
   status: 'draft' | 'ready' | 'published';
   amfPassed: boolean | null;
+  amfIssues: AmfIssue[];
   scheduledDate: string | null;
   scheduledTime: string | null;
   ideaTitle: string | null;
@@ -41,6 +55,15 @@ export function PostCard({ post }: { post: PostCardData }) {
   const [slide, setSlide] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    run(() => uploadPostImageAction(post.id, fd));
+  }
 
   const v = `?v=${encodeURIComponent(post.updatedAt)}`;
   const visualSrc = post.isCarousel
@@ -157,25 +180,33 @@ export function PostCard({ post }: { post: PostCardData }) {
           >
             Aperçu plein
           </a>
-          {!post.isCarousel && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => run(() => regenerateImageAction(post.id))}
-              disabled={pending}
-            >
-              {post.hasImage ? '🎨 Re-générer photo' : '🎨 Générer photo'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => run(() => regenerateImageAction(post.id))}
+            disabled={pending}
+          >
+            🎨 {post.hasImage ? 'Re-générer photo' : 'Générer photo'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={pending}
+          >
+            <Upload size={14} /> Importer
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: 'none' }}
+            onChange={onUpload}
+          />
           {post.hasImage && (
             <>
-              <a
-                className="btn btn-ghost btn-sm"
-                href={`/api/social/visual/post/${post.id}?export=1`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Download size={14} /> Visuel
+              <a className="btn btn-ghost btn-sm" href={`/api/social/visual/post/${post.id}/image`}>
+                <Download size={14} /> Image
               </a>
               <button
                 type="button"
@@ -189,6 +220,23 @@ export function PostCard({ post }: { post: PostCardData }) {
           )}
         </div>
 
+        {/* Alertes AMF détaillées */}
+        {post.amfPassed === false && post.amfIssues.length > 0 && (
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--danger)',
+              background: 'var(--danger-bg, rgba(239,68,68,0.08))',
+              border: '1px solid var(--danger)',
+              borderRadius: 8,
+              padding: '8px 10px',
+            }}
+          >
+            <strong>⚠️ AMF</strong> : {post.amfIssues.map((i) => i.match).join(', ')} — corrige avant
+            de marquer « prêt ».
+          </div>
+        )}
+
         {/* Texte éditable */}
         <textarea
           className="textarea"
@@ -199,14 +247,27 @@ export function PostCard({ post }: { post: PostCardData }) {
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{text.length} caractères</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => run(() => updatePostTextAction(post.id, text))}
-            disabled={pending || text === post.text}
-          >
-            💾 Sauver texte
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {!post.isCarousel && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                title="Régénérer le texte via Grok"
+                onClick={() => run(() => regeneratePostTextAction(post.id))}
+                disabled={pending}
+              >
+                <RefreshCw size={14} /> Régénérer
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => run(() => updatePostTextAction(post.id, text))}
+              disabled={pending || text === post.text}
+            >
+              💾 Sauver texte
+            </button>
+          </div>
         </div>
 
         {/* Planning */}

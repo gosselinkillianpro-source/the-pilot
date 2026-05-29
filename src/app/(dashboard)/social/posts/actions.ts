@@ -339,3 +339,91 @@ export async function regenerateImageAction(postId: string): Promise<SetStatusRe
     return { ok: false, message: e instanceof Error ? e.message : 'Échec génération image' };
   }
 }
+
+/* ---------- Import d'une image manuelle (FormData) ---------- */
+const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+export async function uploadPostImageAction(
+  postId: string,
+  formData: FormData,
+): Promise<SetStatusResult> {
+  const id = idSchema.parse(postId);
+  const file = formData.get('file');
+  if (!(file instanceof File)) return { ok: false, message: 'Aucun fichier' };
+  if (!ALLOWED_IMAGE_MIME.has(file.type)) {
+    return { ok: false, message: 'Format non supporté (jpg, png, webp)' };
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    return { ok: false, message: 'Image trop lourde (max 8 Mo)' };
+  }
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const path = await uploadSocialImage(buffer, file.type, `post-${id}-upload`);
+    await db
+      .update(socialPosts)
+      .set({
+        imagePath: path,
+        imagePrompt: '(image importée manuellement)',
+        noImage: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(socialPosts.id, id));
+    revalidatePath('/social/posts');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Échec de l'import" };
+  }
+}
+
+/* ---------- Régénération du texte d'un post (1 plateforme) ---------- */
+export async function regeneratePostTextAction(postId: string): Promise<SetStatusResult> {
+  const id = idSchema.parse(postId);
+  if (!process.env.OPENROUTER_API_KEY) {
+    return { ok: false, message: 'OPENROUTER_API_KEY manquante' };
+  }
+  const rows = await db
+    .select({
+      platform: socialPosts.platform,
+      isCarousel: socialPosts.isCarousel,
+      ideaTitle: socialIdeas.title,
+      ideaAngle: socialIdeas.angle,
+      ideaCategory: socialIdeas.category,
+      ideaRationale: socialIdeas.rationale,
+    })
+    .from(socialPosts)
+    .leftJoin(socialIdeas, eq(socialIdeas.id, socialPosts.ideaId))
+    .where(eq(socialPosts.id, id))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return { ok: false, message: 'Post introuvable' };
+  if (row.isCarousel)
+    return { ok: false, message: 'Régénération texte non dispo pour un carrousel' };
+
+  const idea: IdeaInput = {
+    title: row.ideaTitle ?? 'Seven At Home',
+    category: row.ideaCategory,
+    angle: row.ideaAngle ?? '',
+    rationale: row.ideaRationale,
+  };
+  const memoryContext = await buildSocialMemoryContext();
+  try {
+    const { system, user } = buildPostPrompt(row.platform as SahPlatform, idea, memoryContext);
+    const raw = await grokChat(system, user);
+    let text = raw.trim();
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1).trim();
+    const scan = scanAmfCompliance(text);
+    await db
+      .update(socialPosts)
+      .set({
+        text,
+        amfPassed: scan.compliant,
+        amfIssues: scan.issues.length > 0 ? scan.issues : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(socialPosts.id, id));
+    revalidatePath('/social/posts');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec régénération' };
+  }
+}
