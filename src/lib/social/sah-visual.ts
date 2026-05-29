@@ -129,40 +129,28 @@ export function renderPostCard(
   let textColor: string;
   let bodyColor: string;
   let borderColor: string;
-  let tagBg: string;
-  let tagBorder: string;
   let taglineColor: string;
-  let gridColor: string;
 
   if (hasImage) {
     bgOverlay = `linear-gradient(180deg, rgba(26,26,26,0.55) 0%, rgba(26,26,26,0.25) 30%, rgba(26,26,26,0.92) 100%), url('${post.imageDataUri}') center/cover no-repeat`;
     textColor = '#FFFFFF';
     bodyColor = 'rgba(255,255,255,0.92)';
     borderColor = 'rgba(255,255,255,0.18)';
-    tagBg = 'rgba(218,201,154,0.22)';
-    tagBorder = 'rgba(218,201,154,0.55)';
     taglineColor = 'rgba(255,255,255,0.72)';
-    gridColor = 'rgba(255,255,255,0)';
   } else if (isDark) {
     bgOverlay =
-      'radial-gradient(ellipse 70% 50% at 100% 0%, rgba(218,201,154,0.22), transparent 60%), radial-gradient(ellipse 55% 40% at 0% 100%, rgba(218,201,154,0.10), transparent 60%), linear-gradient(135deg, #1A1A1A 0%, #232323 100%)';
+      'radial-gradient(ellipse 80% 60% at 100% 0%, rgba(218,201,154,0.16), transparent 60%), linear-gradient(135deg, #1A1A1A 0%, #232323 100%)';
     textColor = '#FFFFFF';
     bodyColor = 'rgba(255,255,255,0.82)';
     borderColor = 'rgba(255,255,255,0.12)';
-    tagBg = 'rgba(218,201,154,0.18)';
-    tagBorder = 'rgba(218,201,154,0.40)';
     taglineColor = 'rgba(255,255,255,0.58)';
-    gridColor = 'rgba(218,201,154,0.045)';
   } else {
     bgOverlay =
-      'radial-gradient(ellipse 70% 50% at 100% 0%, rgba(218,201,154,0.30), transparent 60%), radial-gradient(ellipse 55% 40% at 0% 100%, rgba(218,201,154,0.16), transparent 60%), linear-gradient(135deg, #FCFBF8 0%, #F4F2EC 100%)';
+      'radial-gradient(ellipse 80% 60% at 100% 0%, rgba(218,201,154,0.18), transparent 60%), #FBFAF7';
     textColor = '#1A1A1A';
     bodyColor = 'rgba(26,26,26,0.74)';
     borderColor = 'rgba(26,26,26,0.10)';
-    tagBg = 'rgba(218,201,154,0.30)';
-    tagBorder = 'rgba(191,169,110,0.55)';
     taglineColor = 'rgba(26,26,26,0.55)';
-    gridColor = 'rgba(26,26,26,0.03)';
   }
 
   const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
@@ -171,28 +159,23 @@ ${FONT_IMPORT}
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body{font-family:'Inter',-apple-system,sans-serif;background:#FBFAF7;color:${textColor};-webkit-font-smoothing:antialiased;display:flex}
 .card{width:100%;height:100%;aspect-ratio: 4 / 5;padding:7% 6.5%;display:flex;flex-direction:column;justify-content:space-between;position:relative;background:${bgOverlay};overflow:hidden}
-.card::after{content:"";position:absolute;inset:0;background-image:linear-gradient(${gridColor} 1px,transparent 1px),linear-gradient(90deg,${gridColor} 1px,transparent 1px);background-size:5% 5%;pointer-events:none;z-index:0}
-.card::before{content:"";position:absolute;left:6.5%;right:6.5%;top:0;height:2px;background:linear-gradient(90deg,transparent,rgba(218,201,154,0.65) 50%,transparent);z-index:1}
 .card>*{position:relative;z-index:1}
-.head{display:flex;align-items:center;justify-content:space-between}
-.logo{color:#DAC99A;font-weight:700;font-size:clamp(11px,1.8vw,22px);letter-spacing:0.18em;text-transform:uppercase}
+.head{display:flex;align-items:baseline;justify-content:space-between}
+.logo{color:${textColor};font-weight:600;font-size:clamp(10px,1.4vw,15px);letter-spacing:0.22em;text-transform:uppercase}
 .platform{color:${taglineColor};font-size:clamp(9px,1.3vw,14px);letter-spacing:0.1em;text-transform:uppercase;font-weight:500}
 .main{margin-top:auto;margin-bottom:auto}
-.tag{display:inline-flex;align-items:center;gap:8px;padding:0.65em 1.4em;background:${tagBg};border:1px solid ${tagBorder};border-radius:100px;color:#BFA96E;font-size:clamp(11px,1.7vw,18px);font-weight:600;margin-bottom:3.5%}
-.tag::before{content:"";width:6px;height:6px;border-radius:50%;background:#DAC99A;box-shadow:0 0 8px rgba(218,201,154,0.6)}
-.title-wrap{display:flex;align-items:flex-start;gap:4%;margin-bottom:4%}
-.title-bar{width:4px;align-self:stretch;background:linear-gradient(180deg,#DAC99A,#BFA96E);border-radius:100px;flex-shrink:0;box-shadow:0 0 12px rgba(218,201,154,0.4)}
-.title{font-size:clamp(34px,8.8vw,92px);font-weight:800;line-height:1.02;letter-spacing:-0.03em;color:${textColor};flex:1}
+.eyebrow{font-weight:600;font-size:clamp(10px,1.4vw,15px);letter-spacing:0.18em;text-transform:uppercase;color:#BFA96E;margin-bottom:5%}
+.title{font-size:clamp(34px,8.8vw,92px);font-weight:800;line-height:1.03;letter-spacing:-0.03em;color:${textColor};margin-bottom:5%}
 .title .accent{font-family:'Fraunces',Georgia,serif;font-style:italic;font-weight:500;color:#DAC99A;letter-spacing:-0.01em}
-.body{font-size:clamp(13px,2.4vw,26px);line-height:1.5;color:${bodyColor};max-width:92%}
+.body{font-size:clamp(13px,2.4vw,26px);line-height:1.55;color:${bodyColor};max-width:92%}
 .footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid ${borderColor};padding-top:5%}
 .tagline{color:${taglineColor};font-size:clamp(10px,1.5vw,16px);letter-spacing:0.05em;font-weight:500}
-.cta{background:#1A1A1A;color:#fff;padding:0.85em 1.8em;border-radius:12px;font-weight:600;font-size:clamp(11px,1.6vw,17px);box-shadow:0 6px 24px rgba(26,26,26,0.18);display:inline-flex;align-items:center;gap:0.6em}
-.cta::after{content:"→";font-size:1.1em}
+.cta{color:${textColor};font-weight:600;font-size:clamp(11px,1.6vw,17px);letter-spacing:0.02em;display:inline-flex;align-items:center;gap:0.5em;border-bottom:1px solid #DAC99A;padding-bottom:2px}
+.cta::after{content:"→";font-size:1.1em;color:#DAC99A}
 </style></head><body>
 <div class="card">
 <div class="head"><span class="logo">Seven At Home</span><span class="platform">${esc(platform)}</span></div>
-<div class="main"><div class="tag">${esc(tag)}</div><div class="title-wrap"><div class="title-bar"></div><h1 class="title">${autoAccent(title)}</h1></div><p class="body">${body}</p></div>
+<div class="main"><div class="eyebrow">${esc(tag)}</div><h1 class="title">${autoAccent(title)}</h1><p class="body">${body}</p></div>
 <div class="footer"><span class="tagline">sevenathome.com</span><span class="cta">${esc(cta)}</span></div>
 </div></body></html>`;
 
@@ -332,7 +315,7 @@ const SLIDE_CSS = `
 export function renderSlide(
   slide: SlideData,
   slideIndex: number,
-  _totalSlides: number,
+  totalSlides: number,
   post: PostForVisual,
   idea: IdeaForVisual,
   opts: { export?: boolean } = {},
@@ -343,7 +326,6 @@ export function renderSlide(
     CATEGORY_TAGS[category] ??
     'SEVEN AT HOME'
   ).toUpperCase();
-  const cornerTag = slide.tag ?? `Slide ${slideIndex + 1}`;
   const pageNum = String(slideIndex + 1).padStart(2, '0');
   const hasImage = !post.noImage && Boolean(post.imageDataUri);
 
@@ -358,26 +340,18 @@ html, body { width: 100%; height: 100%; overflow: hidden; }
 body{font-family:'Inter',-apple-system,sans-serif;background:#FBFAF7;color:#1A1A1A;-webkit-font-smoothing:antialiased;display:flex}
 ${SLIDE_CSS}
 .card{width:100%;height:100%;aspect-ratio: 4 / 5;padding:5.5% 6%;display:flex;flex-direction:column;position:relative;background:${slideBg};overflow:hidden}
-.card::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(120,140,180,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,140,180,0.05) 1px,transparent 1px);background-size:4% 4%;pointer-events:none;z-index:0}
-.card::before{content:"";position:absolute;left:6%;right:6%;top:0;height:2px;background:linear-gradient(90deg,transparent,rgba(218,201,154,0.65) 50%,transparent);z-index:1}
 .card>*{position:relative;z-index:1}
-.head{display:flex;align-items:center;justify-content:space-between}
-.logo-block{display:flex;align-items:center;gap:14px}
-.logo-circle{width:clamp(40px,5.2vw,70px);height:clamp(40px,5.2vw,70px);border-radius:50%;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.logo-mark{color:#DAC99A;font-weight:800;font-size:clamp(14px,2vw,24px);letter-spacing:-0.04em}
-.logo-name{font-weight:700;font-size:clamp(13px,1.9vw,22px);color:#1A1A1A;line-height:1.1}
-.logo-sub{font-weight:500;font-size:clamp(9px,1.1vw,12px);color:rgba(26,26,26,0.5);letter-spacing:0.18em;text-transform:uppercase;margin-top:2px}
-.corner-tag{display:inline-flex;align-items:center;gap:8px;background:rgba(218,201,154,0.16);border:1px solid rgba(218,201,154,0.35);border-radius:100px;padding:clamp(6px,1vw,10px) clamp(14px,2vw,22px);font-weight:600;font-size:clamp(11px,1.5vw,16px);color:#BFA96E}
-.corner-tag::before{content:"";width:7px;height:7px;border-radius:50%;background:#DAC99A;box-shadow:0 0 8px rgba(218,201,154,0.7)}
-.section-label{display:inline-flex;align-items:center;background:rgba(218,201,154,0.18);border:1px solid rgba(218,201,154,0.35);border-radius:100px;padding:clamp(7px,1.1vw,11px) clamp(16px,2.2vw,26px);font-weight:700;font-size:clamp(10px,1.4vw,15px);color:#BFA96E;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:3.5%;box-shadow:0 2px 8px rgba(218,201,154,0.15)}
-.page-num{font-weight:700;font-size:clamp(11px,1.6vw,17px);color:rgba(26,26,26,0.5);background:#fff;padding:clamp(8px,1.2vw,12px) clamp(14px,1.8vw,20px);border-radius:100px;box-shadow:0 2px 8px rgba(0,0,0,0.04)}
-.baseline{font-weight:400;font-size:clamp(9px,1.3vw,13px);color:rgba(26,26,26,0.4)}
-.main-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;margin:3% 0}
+.head{display:flex;align-items:baseline;justify-content:space-between}
+.wordmark{font-weight:600;font-size:clamp(10px,1.4vw,15px);letter-spacing:0.22em;text-transform:uppercase;color:#1A1A1A}
+.page{font-weight:500;font-size:clamp(10px,1.3vw,14px);letter-spacing:0.1em;color:rgba(26,26,26,0.4)}
+.eyebrow{font-weight:600;font-size:clamp(10px,1.3vw,14px);letter-spacing:0.18em;text-transform:uppercase;color:#BFA96E;margin-bottom:5%}
+.foot{font-weight:500;font-size:clamp(9px,1.2vw,13px);letter-spacing:0.08em;color:rgba(26,26,26,0.38)}
+.main-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;margin:5% 0}
 </style></head><body>
 <div class="card">
-<div class="head"><div class="logo-block"><div class="logo-circle"><span class="logo-mark">7</span></div><div><div class="logo-name">Seven At Home</div><div class="logo-sub">Investir avec clarté</div></div></div><span class="corner-tag">${esc(cornerTag)}</span></div>
-<div class="main-wrap"><div class="section-label">${esc(sectionLabel)}</div>${layoutBody(slide)}</div>
-<div class="head" style="margin-top:auto"><span class="baseline">Contenu informatif — communication pédagogique</span><span class="page-num">${pageNum}</span></div>
+<div class="head"><span class="wordmark">Seven At Home</span><span class="page">${pageNum} / ${String(totalSlides).padStart(2, '0')}</span></div>
+<div class="main-wrap"><div class="eyebrow">${esc(sectionLabel)}</div>${layoutBody(slide)}</div>
+<div class="foot" style="margin-top:auto">sevenathome.com</div>
 </div></body></html>`;
 
   return opts.export ? toExport(html) : html;
