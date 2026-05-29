@@ -18,10 +18,175 @@ import {
   deleteIdeaAction,
   generateIdeasAction,
   rejectIdeaAction,
+  setMixAction,
   togglePriorityAction,
   unvalidateIdeaAction,
   validateIdeaAction,
 } from './actions';
+
+type Mix = { projets: number; pedagogique: number; temoignages: number; mise_avant: number };
+const CAT_META: { key: keyof Mix; label: string }[] = [
+  { key: 'projets', label: 'Projets' },
+  { key: 'pedagogique', label: 'Pédagogique' },
+  { key: 'temoignages', label: 'Témoignages' },
+  { key: 'mise_avant', label: 'Mise en avant Seven' },
+];
+
+export function MixEditor({
+  initialMix,
+  initialPostsPerWeek,
+  actual,
+}: {
+  initialMix: Mix;
+  initialPostsPerWeek: number;
+  actual: Mix;
+}) {
+  const router = useRouter();
+  const [mix, setMix] = useState<Mix>(initialMix);
+  const [postsPerWeek, setPostsPerWeek] = useState(initialPostsPerWeek);
+  const [pending, startTransition] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const total = mix.projets + mix.pedagogique + mix.temoignages + mix.mise_avant;
+  const ideasNeeded = Math.ceil(postsPerWeek / 3);
+
+  function setCat(key: keyof Mix, value: number) {
+    setMix((m) => ({ ...m, [key]: Number.isFinite(value) ? value : 0 }));
+  }
+
+  function save() {
+    setMsg(null);
+    startTransition(async () => {
+      const res = await setMixAction({ ...mix, postsPerWeek });
+      if (!res.ok) setMsg(res.message);
+      else {
+        setMsg('Enregistré');
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <div className="view-card">
+      <div className="view-card-header">
+        <div className="view-card-title">Mix éditorial cible</div>
+        <span style={{ fontSize: 12, color: total === 100 ? 'var(--success)' : 'var(--danger)' }}>
+          Total : {total}%
+        </span>
+      </div>
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+          1 idée validée = 3 posts (FB/IG/LinkedIn). Pour {postsPerWeek} posts/semaine, il te faut ~
+          {ideasNeeded} idées validées.
+        </div>
+
+        {/* Jauges réel vs cible */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {CAT_META.map((c) => {
+            const target = mix[c.key];
+            const current = actual[c.key];
+            const inRange = current >= target - 5 && current <= target + 5;
+            const color = inRange
+              ? 'var(--ai)'
+              : current < target
+                ? 'var(--danger)'
+                : 'var(--warning)';
+            return (
+              <div key={c.key}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 12,
+                    marginBottom: 4,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {c.label}
+                    <input
+                      className="input"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={target}
+                      onChange={(e) => setCat(c.key, Number.parseInt(e.target.value, 10))}
+                      style={{ width: 60, padding: '2px 6px', fontSize: 12 }}
+                    />
+                    <span style={{ color: 'var(--text-3)' }}>%</span>
+                  </span>
+                  <span style={{ color: 'var(--text-3)' }}>
+                    réel {current}% / cible {target}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    position: 'relative',
+                    height: 8,
+                    borderRadius: 100,
+                    background: 'var(--glass-bg-strong)',
+                    overflow: 'visible',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.min(current, 100)}%`,
+                      borderRadius: 100,
+                      background: color,
+                      transition: 'width 0.3s',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: -3,
+                      left: `${Math.min(target, 100)}%`,
+                      width: 2,
+                      height: 14,
+                      background: 'var(--text-1)',
+                      borderRadius: 2,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+          <div className="form-field" style={{ width: 140 }}>
+            <label className="form-label" htmlFor="ppw">
+              Posts / semaine
+            </label>
+            <input
+              id="ppw"
+              className="input"
+              type="number"
+              min={1}
+              max={50}
+              value={postsPerWeek}
+              onChange={(e) => setPostsPerWeek(Number.parseInt(e.target.value, 10) || 1)}
+            />
+          </div>
+          <div style={{ flex: 1 }} />
+          {msg && (
+            <span className={`badge ${msg === 'Enregistré' ? 'badge-success' : 'badge-danger'}`}>
+              {msg}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={pending || total !== 100}
+            onClick={save}
+          >
+            Enregistrer le mix
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function GenerateIdeasButton() {
   const [n, setN] = useState(10);

@@ -169,3 +169,11 @@ create policy social_reports_admin_all on public.social_competitor_reports for a
 drop policy if exists social_reports_exec_read on public.social_competitor_reports;
 create policy social_reports_exec_read on public.social_competitor_reports for select
   using (public.auth_role() = 'executive');
+
+alter table public.social_settings enable row level security;
+drop policy if exists social_settings_admin_all on public.social_settings;
+create policy social_settings_admin_all on public.social_settings for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_settings_exec_read on public.social_settings;
+create policy social_settings_exec_read on public.social_settings for select
+  using (public.auth_role() = 'executive');

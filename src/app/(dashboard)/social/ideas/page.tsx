@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { SAH_CATEGORY_LABELS, type SahIdeaCategory } from '@/lib/ai/prompts/sah-brand';
 import { db } from '@/lib/db';
 import { socialIdeas } from '@/lib/db/schema';
-import { ClearRejectedButton, GenerateIdeasButton, IdeaActions } from './ideas-client';
+import { getSocialConfig } from '@/lib/social/settings';
+import { ClearRejectedButton, GenerateIdeasButton, IdeaActions, MixEditor } from './ideas-client';
 
 export const dynamic = 'force-dynamic';
 // La génération via Grok est synchrone (~20-40s) : on laisse de la marge.
@@ -65,6 +66,26 @@ export default async function SocialIdeasPage({
     if (r.priority) counts.priority += r.c;
   }
 
+  // Répartition réelle des idées validées par catégorie (pour comparer à la cible)
+  const catRows = await db
+    .select({ category: socialIdeas.category, c: sql<number>`count(*)::int` })
+    .from(socialIdeas)
+    .where(eq(socialIdeas.status, 'validated'))
+    .groupBy(socialIdeas.category);
+  const totalValidated = catRows.reduce((acc, r) => acc + r.c, 0) || 1;
+  const pct = (cat: string) => {
+    const found = catRows.find((r) => r.category === cat);
+    return found ? Math.round((found.c / totalValidated) * 100) : 0;
+  };
+  const actual = {
+    projets: pct('projets'),
+    pedagogique: pct('pedagogique'),
+    temoignages: pct('temoignages'),
+    mise_avant: pct('mise_avant'),
+  };
+
+  const config = await getSocialConfig();
+
   return (
     <>
       <div
@@ -84,6 +105,12 @@ export default async function SocialIdeasPage({
         </div>
         <GenerateIdeasButton />
       </div>
+
+      <MixEditor
+        initialMix={config.mix}
+        initialPostsPerWeek={config.postsPerWeek}
+        actual={actual}
+      />
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {FILTERS.map((f) => (

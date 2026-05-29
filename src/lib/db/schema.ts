@@ -296,6 +296,13 @@ export const emailFlowRuns = pgTable('email_flow_runs', {
    Données marketing/business uniquement (jamais de PII investisseur).
    ============================================================ */
 
+// Réglages clé/valeur du Social Hub (mix éditorial, posts par semaine, etc.)
+export const socialSettings = pgTable('social_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Notes de contexte éditables injectées dans les prompts (vision, angles à pousser, faits SAH)
 export const socialContextNotes = pgTable('social_context_notes', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -4,11 +4,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { SAH_IDEA_CATEGORIES } from '@/lib/ai/prompts/sah-brand';
-import {
-  buildIdeasPrompt,
-  DEFAULT_EDITORIAL_MIX,
-  extractJson,
-} from '@/lib/ai/prompts/social-ideas';
+import { buildIdeasPrompt, extractJson } from '@/lib/ai/prompts/social-ideas';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -16,6 +12,7 @@ import { socialIdeas } from '@/lib/db/schema';
 import { grokSearch } from '@/lib/integrations/openrouter/client';
 import { buildSocialMemoryContext } from '@/lib/social/context';
 import { logLlmCall } from '@/lib/social/llm-log';
+import { getSocialConfig, type SocialConfig, setSocialConfig } from '@/lib/social/settings';
 
 /** Auth best-effort tant que le login n'est pas branché (aligné sur le module email). */
 async function currentActor(): Promise<{ id: string | null; email: string }> {
@@ -28,6 +25,39 @@ async function currentActor(): Promise<{ id: string | null; email: string }> {
 }
 
 const generateSchema = z.object({ n: z.number().int().min(3).max(25).default(10) });
+
+const mixSchema = z.object({
+  projets: z.number().int().min(0).max(100),
+  pedagogique: z.number().int().min(0).max(100),
+  temoignages: z.number().int().min(0).max(100),
+  mise_avant: z.number().int().min(0).max(100),
+  postsPerWeek: z.number().int().min(1).max(50),
+});
+
+export type SetMixResult = { ok: true } | { ok: false; message: string };
+
+export async function setMixAction(input: {
+  projets: number;
+  pedagogique: number;
+  temoignages: number;
+  mise_avant: number;
+  postsPerWeek: number;
+}): Promise<SetMixResult> {
+  const parsed = mixSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Valeurs invalides' };
+  const { projets, pedagogique, temoignages, mise_avant, postsPerWeek } = parsed.data;
+  const total = projets + pedagogique + temoignages + mise_avant;
+  if (total !== 100) {
+    return { ok: false, message: `Le total doit faire 100% (actuellement ${total}%)` };
+  }
+  const config: SocialConfig = {
+    mix: { projets, pedagogique, temoignages, mise_avant },
+    postsPerWeek,
+  };
+  await setSocialConfig(config);
+  revalidatePath('/social/ideas');
+  return { ok: true };
+}
 
 export type GenerateIdeasResult = { ok: true; inserted: number } | { ok: false; message: string };
 
@@ -57,9 +87,10 @@ export async function generateIdeasAction(input: { n: number }): Promise<Generat
     .orderBy(desc(socialIdeas.createdAt))
     .limit(80);
 
+  const config = await getSocialConfig();
   const prompt = buildIdeasPrompt({
     n,
-    mix: DEFAULT_EDITORIAL_MIX,
+    mix: config.mix,
     memoryContext,
     recentIdeas: recent,
   });

@@ -15,6 +15,13 @@
       "when": 1780061757114,
       "tag": "0001_remarkable_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780065169598,
+      "tag": "0002_melodic_cerebro",
+      "breakpoints": true
     }
   ]
 }
