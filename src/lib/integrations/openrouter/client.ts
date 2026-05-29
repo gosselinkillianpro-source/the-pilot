@@ -74,7 +74,7 @@ function headers(): Record<string, string> {
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
     'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-    'X-Title': 'THE PILOT — Social Hub',
+    'X-Title': 'THE PILOT - Social Hub',
   };
 }
 
