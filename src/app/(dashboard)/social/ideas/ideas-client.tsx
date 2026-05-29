@@ -1,8 +1,18 @@
 'use client';
 
-import { Check, RotateCcw, Sparkles, Star, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  GalleryHorizontal,
+  Layers,
+  RotateCcw,
+  Sparkles,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { generateCarouselAction, generatePostsAction } from '../posts/actions';
 import {
   clearRejectedAction,
   deleteIdeaAction,
@@ -113,6 +123,7 @@ export function IdeaActions({
         </>
       ) : (
         <>
+          {status === 'validated' && <GeneratePostsButtons ideaId={ideaId} />}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -136,6 +147,55 @@ export function IdeaActions({
         </>
       )}
     </div>
+  );
+}
+
+function GeneratePostsButtons({ ideaId }: { ideaId: string }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  function gen(kind: 'posts' | 'carousel') {
+    setErr(null);
+    startTransition(async () => {
+      const res =
+        kind === 'posts'
+          ? await generatePostsAction({ ideaId, withImage: false })
+          : await generateCarouselAction({ ideaId, nSlides: 6 });
+      if (!res.ok) {
+        setErr(res.message);
+        return;
+      }
+      router.push('/social/posts');
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-ai btn-sm"
+        title="Générer 3 posts (FB/IG/LinkedIn)"
+        onClick={() => gen('posts')}
+        disabled={pending}
+      >
+        <Layers size={14} /> {pending ? '…' : 'Posts'}
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        title="Générer 3 carrousels (6 slides)"
+        onClick={() => gen('carousel')}
+        disabled={pending}
+      >
+        <GalleryHorizontal size={14} /> Carrousel
+      </button>
+      {err && (
+        <span className="badge badge-danger" title={err}>
+          {err.slice(0, 24)}
+        </span>
+      )}
+    </>
   );
 }
 

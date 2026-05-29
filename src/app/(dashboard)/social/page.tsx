@@ -14,21 +14,21 @@ const MODULES = [
     icon: ImageIcon,
     title: 'Posts',
     desc: '3 posts par idée (FB/IG/LinkedIn) + visuels premium SAH, scan AMF, export Figma.',
-    live: false,
+    live: true,
   },
   {
     href: '/social/competitive',
     icon: Radar,
     title: 'Veille concurrents',
     desc: 'Analyse Grok des concurrents, opportunités SAH, conversion en idées.',
-    live: false,
+    live: true,
   },
   {
     href: '/social/calendar',
     icon: Calendar,
-    title: 'Calendrier',
-    desc: 'Planning éditorial + export CSV Metricool.',
-    live: false,
+    title: 'Calendrier & export',
+    desc: 'Planning éditorial + notes de contexte + export CSV Metricool.',
+    live: true,
   },
 ];
 
