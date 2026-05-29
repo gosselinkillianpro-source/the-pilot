@@ -10,21 +10,14 @@ import {
 } from '@/lib/ai/prompts/social-competitive';
 import { extractJson } from '@/lib/ai/prompts/social-ideas';
 import { logAudit } from '@/lib/audit';
-import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialCompetitorReports, socialIdeas } from '@/lib/db/schema';
 import { grokSearch } from '@/lib/integrations/openrouter/client';
+import { getSocialActor } from '@/lib/social/actor';
 import { buildSocialMemoryContext } from '@/lib/social/context';
 import { logLlmCall } from '@/lib/social/llm-log';
 
-async function currentActor(): Promise<{ id: string | null; email: string }> {
-  try {
-    const user = await getAuthenticatedUser();
-    return { id: user.id, email: user.email };
-  } catch {
-    return { id: null, email: 'dev-local' };
-  }
-}
+const currentActor = getSocialActor;
 
 function weekStart(): string {
   // Lundi de la semaine courante (ISO date). Date pure, pas d'heure.
@@ -66,7 +59,7 @@ export async function runCompetitorWatchAction(): Promise<WatchResult> {
   }
 
   await logLlmCall({
-    userId: actor.id,
+    userId: actor.createdBy,
     provider: 'openrouter',
     model: 'grok',
     purpose: 'social.competitor_watch',
@@ -76,7 +69,7 @@ export async function runCompetitorWatchAction(): Promise<WatchResult> {
   });
 
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.competitor.watch',
     resourceType: 'social_competitor_report',
@@ -154,13 +147,13 @@ export async function competitorToIdeasAction(input: {
       status: 'pending',
       sourceResearch: `Veille concurrent : ${row.competitor}`,
       fromCompetitor: row.competitor,
-      createdBy: actor.id,
+      createdBy: actor.createdBy,
     });
     inserted += 1;
   }
 
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.competitor.to_ideas',
     resourceType: 'social_idea',

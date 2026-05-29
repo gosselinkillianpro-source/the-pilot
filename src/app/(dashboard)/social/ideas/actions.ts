@@ -6,23 +6,15 @@ import { z } from 'zod';
 import { SAH_IDEA_CATEGORIES } from '@/lib/ai/prompts/sah-brand';
 import { buildIdeasPrompt, extractJson } from '@/lib/ai/prompts/social-ideas';
 import { logAudit } from '@/lib/audit';
-import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialIdeas } from '@/lib/db/schema';
 import { grokSearch } from '@/lib/integrations/openrouter/client';
+import { getSocialActor } from '@/lib/social/actor';
 import { buildSocialMemoryContext } from '@/lib/social/context';
 import { logLlmCall } from '@/lib/social/llm-log';
 import { getSocialConfig, type SocialConfig, setSocialConfig } from '@/lib/social/settings';
 
-/** Auth best-effort tant que le login n'est pas branché (aligné sur le module email). */
-async function currentActor(): Promise<{ id: string | null; email: string }> {
-  try {
-    const user = await getAuthenticatedUser();
-    return { id: user.id, email: user.email };
-  } catch {
-    return { id: null, email: 'dev-local' };
-  }
-}
+const currentActor = getSocialActor;
 
 const generateSchema = z.object({ n: z.number().int().min(3).max(25).default(10) });
 
@@ -102,7 +94,7 @@ export async function generateIdeasAction(input: { n: number }): Promise<Generat
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Erreur génération';
     await logLlmCall({
-      userId: actor.id,
+      userId: actor.createdBy,
       provider: 'openrouter',
       model: 'grok',
       purpose: 'social.ideas',
@@ -114,7 +106,7 @@ export async function generateIdeasAction(input: { n: number }): Promise<Generat
   }
 
   await logLlmCall({
-    userId: actor.id,
+    userId: actor.createdBy,
     provider: 'openrouter',
     model: 'grok',
     purpose: 'social.ideas',
@@ -149,13 +141,13 @@ export async function generateIdeasAction(input: { n: number }): Promise<Generat
       category: isIdeaCategory(obj.category) ? obj.category : null,
       status: 'pending',
       sourceResearch: sources || null,
-      createdBy: actor.id,
+      createdBy: actor.createdBy,
     });
     inserted += 1;
   }
 
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.ideas.generate',
     resourceType: 'social_idea',
@@ -174,7 +166,7 @@ async function setStatus(ideaId: string, status: 'pending' | 'validated' | 'reje
   const actor = await currentActor();
   await db.update(socialIdeas).set({ status }).where(eq(socialIdeas.id, id));
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: `social.idea.${status}`,
     resourceType: 'social_idea',
@@ -200,7 +192,7 @@ export async function deleteIdeaAction(ideaId: string) {
   const actor = await currentActor();
   await db.delete(socialIdeas).where(eq(socialIdeas.id, id));
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.idea.delete',
     resourceType: 'social_idea',
@@ -230,7 +222,7 @@ export async function clearRejectedAction() {
     );
   }
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.ideas.clear_rejected',
     resourceType: 'social_idea',
@@ -247,7 +239,7 @@ export async function validateAllPendingAction() {
     .set({ status: 'validated' })
     .where(eq(socialIdeas.status, 'pending'));
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.ideas.validate_all',
     resourceType: 'social_idea',

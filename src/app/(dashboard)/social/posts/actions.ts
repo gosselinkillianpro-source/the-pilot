@@ -13,22 +13,15 @@ import {
   type IdeaInput,
 } from '@/lib/ai/prompts/social-posts';
 import { logAudit } from '@/lib/audit';
-import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialCarouselSlides, socialIdeas, socialPosts } from '@/lib/db/schema';
 import { grokChat, nanoBananaImage } from '@/lib/integrations/openrouter/client';
+import { getSocialActor } from '@/lib/social/actor';
 import { buildSocialMemoryContext } from '@/lib/social/context';
 import { logLlmCall } from '@/lib/social/llm-log';
 import { uploadSocialImage } from '@/lib/social/storage';
 
-async function currentActor(): Promise<{ id: string | null; email: string }> {
-  try {
-    const user = await getAuthenticatedUser();
-    return { id: user.id, email: user.email };
-  } catch {
-    return { id: null, email: 'dev-local' };
-  }
-}
+const currentActor = getSocialActor;
 
 const idSchema = z.string().uuid();
 
@@ -85,7 +78,7 @@ export async function generatePostsAction(input: {
   }
 
   await logLlmCall({
-    userId: actor.id,
+    userId: actor.createdBy,
     provider: 'openrouter',
     model: 'grok',
     purpose: 'social.posts',
@@ -108,13 +101,13 @@ export async function generatePostsAction(input: {
       status: 'draft',
       amfPassed: scan.compliant,
       amfIssues: scan.issues.length > 0 ? scan.issues : null,
-      createdBy: actor.id,
+      createdBy: actor.createdBy,
     });
   }
   await db.update(socialIdeas).set({ status: 'validated' }).where(eq(socialIdeas.id, ideaId));
 
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.posts.generate',
     resourceType: 'social_post',
@@ -157,7 +150,7 @@ export async function generateCarouselAction(input: {
   });
 
   await logLlmCall({
-    userId: actor.id,
+    userId: actor.createdBy,
     provider: 'openrouter',
     model: 'grok',
     purpose: 'social.carousel',
@@ -181,7 +174,7 @@ export async function generateCarouselAction(input: {
         status: 'draft',
         amfPassed: scan.compliant,
         amfIssues: scan.issues.length > 0 ? scan.issues : null,
-        createdBy: actor.id,
+        createdBy: actor.createdBy,
       })
       .returning({ id: socialPosts.id });
     const postId = inserted[0]?.id;
@@ -202,7 +195,7 @@ export async function generateCarouselAction(input: {
   await db.update(socialIdeas).set({ status: 'validated' }).where(eq(socialIdeas.id, ideaId));
 
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.carousel.generate',
     resourceType: 'social_post',
@@ -260,7 +253,7 @@ export async function setPostStatusAction(
 
   await db.update(socialPosts).set({ status, updatedAt: new Date() }).where(eq(socialPosts.id, id));
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: `social.post.${status}`,
     resourceType: 'social_post',
@@ -284,7 +277,7 @@ export async function deletePostAction(postId: string) {
   const actor = await currentActor();
   await db.delete(socialPosts).where(eq(socialPosts.id, id));
   await logAudit({
-    userId: actor.id,
+    userId: actor.createdBy,
     userEmail: actor.email,
     action: 'social.post.delete',
     resourceType: 'social_post',

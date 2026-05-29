@@ -3,16 +3,12 @@
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialContextNotes } from '@/lib/db/schema';
+import { getSocialActor } from '@/lib/social/actor';
 
 async function actorId(): Promise<string | null> {
-  try {
-    return (await getAuthenticatedUser()).id;
-  } catch {
-    return null;
-  }
+  return (await getSocialActor()).createdBy;
 }
 
 const noteSchema = z.object({
