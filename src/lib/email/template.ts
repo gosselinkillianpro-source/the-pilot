@@ -1,7 +1,12 @@
 /**
- * Template d'email Seven At Home — HTML compatible clients mail (tables + styles inline).
- * Tous les emails sortants passent par ici : header marque + contenu + footer légal/AMF.
- * Fonction pure (utilisable côté serveur ET client pour l'aperçu).
+ * Template d'email Seven At Home.
+ * Objectifs : (1) identité de marque SAH (or #A0783B, crème, texte sombre, accent serif),
+ * (2) HTML email-safe (tables + styles inline, polices web-safe),
+ * (3) maximiser la délivrabilité / éviter l'onglet Promotions :
+ *     - mise en page sobre type "lettre", une seule colonne étroite
+ *     - majorité de texte, aucune image lourde, pas de gros bandeau coloré
+ *     - un seul lien d'action, footer légal complet (société + adresse + désinscription)
+ * Fonction pure (utilisable serveur ET client pour l'aperçu).
  */
 
 export type EmailTemplateInput = {
@@ -9,9 +14,18 @@ export type EmailTemplateInput = {
   bodyText: string;
   ctaLabel?: string;
   ctaUrl?: string;
-  /** Encart d'information affiché en haut du contenu (ex: bandeau mode test). */
+  /** Encart d'information en haut (ex: bandeau mode test). */
   notice?: string;
 };
+
+const GOLD = '#A0783B';
+const DARK = '#0D0D0B';
+const TX2 = '#5A5754';
+const TX3 = '#9A9794';
+const BG = '#F8F6F2';
+const BORDER = '#E8E4DC';
+const SANS = "-apple-system,'Segoe UI',Arial,Helvetica,sans-serif";
+const SERIF = "Georgia,'Times New Roman',serif";
 
 function escapeHtml(s: string): string {
   return s
@@ -27,64 +41,74 @@ export function renderEmailTemplate(input: EmailTemplateInput): string {
     .map((l) => l.trim())
     .map((l) =>
       l === ''
-        ? '<div style="height:12px;line-height:12px">&nbsp;</div>'
-        : `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#0A0E1A">${escapeHtml(l)}</p>`,
+        ? '<div style="height:14px;line-height:14px">&nbsp;</div>'
+        : `<p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.7;color:${DARK}">${escapeHtml(l)}</p>`,
     )
     .join('');
 
   const titleHtml = input.title?.trim()
-    ? `<h1 style="margin:0 0 18px;font-size:22px;font-weight:700;line-height:1.25;color:#0A0E1A">${escapeHtml(input.title)}</h1>`
+    ? `<h1 style="margin:0 0 20px;font-family:${SERIF};font-style:italic;font-weight:400;font-size:24px;line-height:1.3;color:${DARK}">${escapeHtml(input.title)}</h1>`
     : '';
 
   const ctaHtml =
     input.ctaLabel?.trim() && input.ctaUrl?.trim()
-      ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px">
-           <tr><td style="border-radius:8px;background:#2563EB">
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 8px">
+           <tr><td style="border-radius:8px;background:${GOLD}">
              <a href="${escapeHtml(input.ctaUrl)}" target="_blank" rel="noopener"
-                style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none">
+                style="display:inline-block;padding:12px 24px;font-family:${SANS};font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px">
                ${escapeHtml(input.ctaLabel)}
              </a>
            </td></tr>
          </table>`
       : '';
 
+  const noticeHtml = input.notice?.trim()
+    ? `<div style="background:#FBF3DF;border:1px solid ${GOLD};border-radius:8px;padding:10px 14px;margin-bottom:22px;font-family:${SANS};font-size:13px;color:#6B5320">${escapeHtml(input.notice)}</div>`
+    : '';
+
   return `<!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F4F6FA;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F6FA;padding:24px 0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+</head>
+<body style="margin:0;padding:0;background:${BG};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BG};padding:32px 0">
     <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:92%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 24px rgba(15,20,35,0.06)">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:92%;background:#ffffff;border:1px solid ${BORDER};border-radius:12px">
+        <tr><td style="padding:40px 44px">
 
-        <!-- Header marque -->
-        <tr><td style="background:#2563EB;padding:22px 32px">
-          <span style="font-size:18px;font-weight:800;letter-spacing:0.04em;color:#ffffff">SEVEN AT HOME</span>
-        </td></tr>
+          <!-- Wordmark -->
+          <div style="margin-bottom:6px">
+            <span style="font-family:${SERIF};font-style:italic;font-size:22px;color:${GOLD}">Seven</span><span style="font-family:${SANS};font-size:22px;font-weight:700;letter-spacing:-0.01em;color:${DARK}"> At Home</span>
+          </div>
+          <div style="height:1px;background:${BORDER};margin:0 0 28px"></div>
 
-        <!-- Contenu -->
-        <tr><td style="padding:32px">
-          ${
-            input.notice?.trim()
-              ? `<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:#78350F">${escapeHtml(input.notice)}</div>`
-              : ''
-          }
+          ${noticeHtml}
           ${titleHtml}
           ${paragraphs}
           ${ctaHtml}
+
+          <!-- Signature -->
+          <p style="margin:26px 0 0;font-family:${SANS};font-size:15px;line-height:1.7;color:${DARK}">
+            L'équipe Seven At Home
+          </p>
+
         </td></tr>
 
-        <!-- Footer legal + AMF -->
-        <tr><td style="padding:22px 32px;background:#F4F6FA;border-top:1px solid #E5E8EF">
-          <p style="margin:0 0 8px;font-size:11px;line-height:1.5;color:#6B7280">
-            <strong>Seven At Home</strong> — Seven Capital Invest SA · RCS Romans 943&nbsp;832&nbsp;543<br>
+        <!-- Footer -->
+        <tr><td style="padding:22px 44px 30px;border-top:1px solid ${BORDER}">
+          <p style="margin:0 0 8px;font-family:${SANS};font-size:12px;line-height:1.6;color:${TX2}">
+            <strong style="color:${DARK}">Seven Capital Invest SA</strong> · RCS Romans 943&nbsp;832&nbsp;543<br>
             Club deal immobilier privé.
           </p>
-          <p style="margin:0 0 8px;font-size:11px;line-height:1.5;color:#6B7280">
-            Investir comporte un risque de perte en capital. <strong>Rendement cible, capital non garanti.</strong>
+          <p style="margin:0 0 10px;font-family:${SANS};font-size:11px;line-height:1.6;color:${TX3}">
+            Investir comporte un risque de perte en capital. Rendement cible, capital non garanti.
             Les performances passées ne préjugent pas des performances futures.
           </p>
-          <p style="margin:0;font-size:11px;color:#9CA3AF">
-            <a href="{{unsubscribe}}" style="color:#9CA3AF">Se désinscrire</a>
+          <p style="margin:0;font-family:${SANS};font-size:11px;color:${TX3}">
+            <a href="{{unsubscribe}}" style="color:${TX3};text-decoration:underline">Se désinscrire</a>
           </p>
         </td></tr>
 
