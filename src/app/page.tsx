@@ -29,12 +29,11 @@ export default function HomePage() {
 
         <h1
           style={{
-            fontFamily: 'var(--font-display)',
-            fontStyle: 'italic',
-            fontWeight: 400,
-            fontSize: 'clamp(56px, 9vw, 112px)',
-            lineHeight: 0.92,
-            letterSpacing: '-0.035em',
+            fontFamily: 'var(--font-sans)',
+            fontWeight: 800,
+            fontSize: 'clamp(52px, 8vw, 104px)',
+            lineHeight: 0.95,
+            letterSpacing: '-0.04em',
             background: 'linear-gradient(135deg, #0A0E1A 0%, #2563EB 50%, #7C3AED 100%)',
             WebkitBackgroundClip: 'text',
             backgroundClip: 'text',

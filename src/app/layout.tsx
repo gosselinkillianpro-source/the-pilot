@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Horizon } from '@/components/shared/horizon';
 import './globals.css';
 
@@ -12,14 +12,6 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   variable: '--font-mono',
   subsets: ['latin'],
-  display: 'swap',
-});
-
-const instrumentSerif = Instrument_Serif({
-  variable: '--font-display',
-  subsets: ['latin'],
-  weight: '400',
-  style: 'italic',
   display: 'swap',
 });
 
@@ -37,7 +29,7 @@ export default function RootLayout({
     <html
       lang="fr"
       data-theme="light"
-      className={`${inter.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
     >
       <body>
         <Horizon />

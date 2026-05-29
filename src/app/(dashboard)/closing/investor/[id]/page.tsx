@@ -115,8 +115,8 @@ export default async function InvestorPage({ params }: Props) {
           </div>
           <div
             style={{
-              fontFamily: 'var(--font-display)',
-              fontStyle: 'italic',
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 700,
               fontSize: '1.875rem',
               color:
                 investor.score >= 80

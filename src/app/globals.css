@@ -176,7 +176,7 @@
   --color-danger: var(--danger);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-display: var(--font-display);
+  --font-display: var(--font-sans);
 }
 
 /* Base — dans @layer base pour que les utilities Tailwind passent au-dessus */
@@ -808,11 +808,10 @@
   margin-bottom: 16px;
 }
 .kpi-hero-value {
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
   font-size: 2.5rem;
-  font-weight: 400;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
   line-height: 1;
   color: var(--text-1);
   font-feature-settings: 'tnum';
@@ -1033,8 +1032,7 @@
   background: var(--surface);
   border-left: 2px solid var(--ai);
   border-radius: 0 6px 6px 0;
-  font-family: var(--font-display);
-  font-style: italic;
+  font-family: var(--font-sans);
   font-size: 0.9375rem;
   color: var(--text-1);
   line-height: 1.55;
@@ -1177,11 +1175,10 @@
    PAGE TITLE
    ============================================================ */
 .page-title {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-weight: 700;
   font-size: 1.875rem;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   line-height: 1.1;
   color: var(--text-1);
 }

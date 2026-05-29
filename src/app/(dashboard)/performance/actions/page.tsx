@@ -263,7 +263,10 @@ export default function ActionsRoiPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap' }}>
                 {j.steps.map((step, i) => (
-                  <div key={`${j.id}-${i}`} style={{ display: 'flex', alignItems: 'center' }}>
+                  <div
+                    key={`${j.id}-${step.day}-${step.kind}`}
+                    style={{ display: 'flex', alignItems: 'center' }}
+                  >
                     <div
                       style={{
                         display: 'flex',
