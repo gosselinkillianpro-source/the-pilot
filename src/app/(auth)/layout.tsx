@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -23,31 +24,18 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            textDecoration: 'none',
             justifyContent: 'center',
+            textDecoration: 'none',
           }}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 9,
-              background: 'var(--brand)',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '1rem',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 14px rgba(37, 99, 235, 0.22)',
-            }}
-          >
-            P
-          </div>
-          <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-1)' }}>
-            THE PILOT
-          </span>
+          <Image
+            src="/brand/pilot-wordmark.png"
+            alt="PILOT"
+            width={140}
+            height={35}
+            priority
+            style={{ height: 34, width: 'auto' }}
+          />
         </Link>
 
         <div className="view-card" style={{ padding: 28 }}>

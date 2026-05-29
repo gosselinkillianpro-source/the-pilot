@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { SidebarLink } from '@/components/shared/sidebar-nav';
@@ -39,10 +40,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     >
       <aside className="view-sidebar">
         <Link href="/" className="view-sidebar-brand">
-          <div className="view-sidebar-brand-mark">P</div>
-          <div className="view-sidebar-brand-name" style={{ color: 'var(--text-1)' }}>
-            THE PILOT
-          </div>
+          <Image
+            src="/brand/pilot-wordmark.png"
+            alt="PILOT"
+            width={112}
+            height={28}
+            priority
+            style={{ height: 26, width: 'auto' }}
+          />
         </Link>
 
         <div className="view-topbar-search" style={{ width: '100%', minWidth: 0 }}>
