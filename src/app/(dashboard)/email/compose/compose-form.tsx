@@ -3,10 +3,10 @@
 import { AlertTriangle, CheckCircle, List as ListIcon, Send, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
+import { renderEmailTemplate } from '@/lib/email/template';
 import { type SendEmailResult, sendEmailAction } from './actions';
 
 type BrevoListLite = { id: number; name: string; uniqueSubscribers: number };
-
 type Mode = 'people' | 'list' | 'group';
 
 function parseEmails(raw: string): string[] {
@@ -27,7 +27,10 @@ export function ComposeForm({
 }) {
   const [mode, setMode] = useState<Mode>('people');
   const [subject, setSubject] = useState('');
+  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [ctaLabel, setCtaLabel] = useState('');
+  const [ctaUrl, setCtaUrl] = useState('');
   const [peopleRaw, setPeopleRaw] = useState('');
   const [listId, setListId] = useState<number | null>(lists[0]?.id ?? null);
   const [groupName, setGroupName] = useState('');
@@ -35,7 +38,18 @@ export function ComposeForm({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SendEmailResult | null>(null);
 
-  const amf = useMemo(() => scanAmfCompliance(`${subject}\n${body}`), [subject, body]);
+  const fullHtml = useMemo(
+    () =>
+      renderEmailTemplate({
+        title,
+        bodyText: body || ' ',
+        ctaLabel,
+        ctaUrl,
+      }),
+    [title, body, ctaLabel, ctaUrl],
+  );
+
+  const amf = useMemo(() => scanAmfCompliance(`${subject}\n${fullHtml}`), [subject, fullHtml]);
 
   const peopleEmails = parseEmails(peopleRaw);
   const groupEmails = parseEmails(groupRaw);
@@ -52,14 +66,13 @@ export function ComposeForm({
     setResult(null);
     setSubmitting(true);
     try {
-      const html = body
-        .split('\n')
-        .map((l) => (l.trim() === '' ? '<br/>' : `<p style="margin:0 0 12px">${l}</p>`))
-        .join('');
       const res = await sendEmailAction({
         mode,
         subject,
-        htmlContent: html,
+        title: title || undefined,
+        bodyText: body,
+        ctaLabel: ctaLabel || undefined,
+        ctaUrl: ctaUrl || undefined,
         emails: mode === 'people' ? peopleEmails : undefined,
         listId: mode === 'list' && listId ? listId : undefined,
         listName: mode === 'list' ? selectedList?.name : undefined,
@@ -88,12 +101,11 @@ export function ComposeForm({
   const TABS: { id: Mode; label: string; icon: typeof Users }[] = [
     { id: 'people', label: 'Personnes', icon: Users },
     { id: 'list', label: 'Liste', icon: ListIcon },
-    { id: 'group', label: 'Nouveau groupe', icon: UserPlus },
+    { id: 'group', label: 'Groupe', icon: UserPlus },
   ];
 
   return (
     <div className="w-full flex flex-col gap-4">
-      {/* Bandeau mode test — pleine largeur */}
       {testMode && (
         <div className="alert alert-warning">
           <span className="alert-icon">
@@ -109,12 +121,14 @@ export function ComposeForm({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        {/* Colonne gauche : destinataires */}
-        <div className="lg:col-span-1 flex flex-col gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* Colonne édition */}
+        <div className="flex flex-col gap-4">
+          {/* Destinataires */}
           <div className="view-card">
             <div className="view-card-header">
               <div className="view-card-title">Destinataires</div>
+              <span className="badge badge-neutral">{recipientLabel}</span>
             </div>
             <div
               className="view-card-body"
@@ -123,13 +137,14 @@ export function ComposeForm({
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {TABS.map((t) => {
                   const Icon = t.icon;
-                  const active = mode === t.id;
                   return (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setMode(t.id)}
-                      className={active ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                      className={
+                        mode === t.id ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'
+                      }
                     >
                       <Icon size={13} />
                       {t.label}
@@ -146,17 +161,12 @@ export function ComposeForm({
                   <textarea
                     id="people"
                     className="textarea"
-                    style={{ minHeight: 120 }}
                     placeholder="jean@example.fr, marie@example.fr"
                     value={peopleRaw}
                     onChange={(e) => setPeopleRaw(e.target.value)}
                   />
-                  <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
-                    Séparées par virgule ou retour ligne.
-                  </span>
                 </div>
               )}
-
               {mode === 'list' && (
                 <div className="form-field">
                   <label className="form-label" htmlFor="list">
@@ -176,7 +186,6 @@ export function ComposeForm({
                   </select>
                 </div>
               )}
-
               {mode === 'group' && (
                 <>
                   <div className="form-field">
@@ -193,51 +202,30 @@ export function ComposeForm({
                   </div>
                   <div className="form-field">
                     <label className="form-label" htmlFor="gemails">
-                      Contacts du groupe
+                      Contacts (emails)
                     </label>
                     <textarea
                       id="gemails"
                       className="textarea"
-                      style={{ minHeight: 120 }}
                       placeholder="jean@example.fr, marie@example.fr"
                       value={groupRaw}
                       onChange={(e) => setGroupRaw(e.target.value)}
                     />
                   </div>
-                  <span style={{ fontSize: 11, color: 'var(--text-4)' }}>
-                    Crée une liste dans Brevo puis y ajoute les contacts.
-                  </span>
                 </>
               )}
-
-              <div
-                style={{
-                  marginTop: 4,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  background: 'var(--surface-2)',
-                  fontSize: 12,
-                  color: 'var(--text-2)',
-                }}
-              >
-                Cible : <strong>{recipientLabel}</strong>
-              </div>
             </div>
           </div>
-        </div>
 
-        {/* Colonne droite : message (large) + envoi */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
+          {/* Contenu */}
           <div className="view-card">
             <div className="view-card-header">
-              <div className="view-card-title">Message</div>
+              <div className="view-card-title">Contenu de l'email</div>
               {subject || body ? (
                 amf.compliant ? (
                   <span className="badge badge-success badge-dot">AMF OK</span>
                 ) : (
-                  <span className="badge badge-danger badge-dot">
-                    AMF : {amf.issues.length} problème(s)
-                  </span>
+                  <span className="badge badge-danger badge-dot">AMF : {amf.issues.length}</span>
                 )
               ) : null}
             </div>
@@ -247,14 +235,26 @@ export function ComposeForm({
             >
               <div className="form-field">
                 <label className="form-label" htmlFor="subject">
-                  Objet
+                  Objet de l'email
                 </label>
                 <input
                   id="subject"
                   className="input"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Objet de l'email"
+                  placeholder="Ex: Nouveau projet disponible"
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="title">
+                  Titre (grand, en haut du mail) — optionnel
+                </label>
+                <input
+                  id="title"
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex: Un nouveau projet à Lyon"
                 />
               </div>
               <div className="form-field">
@@ -264,11 +264,37 @@ export function ComposeForm({
                 <textarea
                   id="body"
                   className="textarea"
-                  style={{ minHeight: 280 }}
+                  style={{ minHeight: 200 }}
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  placeholder="Écris ton message. Rappel AMF : pas de « garanti », « sans risque »… Mentionne « rendement cible, capital non garanti » si tu cites un rendement."
+                  placeholder="Écris ton message. Une ligne vide = un saut de paragraphe. Rappel AMF : évite « garanti », « sans risque »."
                 />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-field">
+                  <label className="form-label" htmlFor="ctaLabel">
+                    Bouton — texte (optionnel)
+                  </label>
+                  <input
+                    id="ctaLabel"
+                    className="input"
+                    value={ctaLabel}
+                    onChange={(e) => setCtaLabel(e.target.value)}
+                    placeholder="Ex: Voir le projet"
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="form-label" htmlFor="ctaUrl">
+                    Bouton — lien
+                  </label>
+                  <input
+                    id="ctaUrl"
+                    className="input"
+                    value={ctaUrl}
+                    onChange={(e) => setCtaUrl(e.target.value)}
+                    placeholder="https://app.sevenathome.com/..."
+                  />
+                </div>
               </div>
 
               {!amf.compliant && (subject || body) && (
@@ -277,7 +303,7 @@ export function ComposeForm({
                     <AlertTriangle size={16} />
                   </span>
                   <div className="alert-body">
-                    <div className="alert-title">Conformité AMF — à corriger avant envoi</div>
+                    <div className="alert-title">Conformité AMF — à corriger</div>
                     <div className="alert-description">
                       <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
                         {amf.issues.map((i) => (
@@ -322,15 +348,7 @@ export function ComposeForm({
             </div>
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              flexWrap: 'wrap',
-              padding: '12px 0',
-            }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn btn-primary btn-lg"
@@ -340,10 +358,36 @@ export function ComposeForm({
               <Send size={16} />
               {submitting ? 'Envoi…' : testMode ? `Envoyer (test → ${testAddress})` : 'Envoyer'}
             </button>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-              Destinataires : {recipientLabel}
-            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Cible : {recipientLabel}</span>
           </div>
+        </div>
+
+        {/* Colonne aperçu */}
+        <div className="flex flex-col gap-2" style={{ position: 'sticky', top: 16 }}>
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              color: 'var(--text-4)',
+              paddingLeft: 4,
+            }}
+          >
+            Aperçu de l'email
+          </div>
+          <iframe
+            title="Aperçu de l'email"
+            srcDoc={fullHtml}
+            style={{
+              width: '100%',
+              height: 600,
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              background: '#fff',
+              boxShadow: 'var(--shadow-glass-md)',
+            }}
+          />
         </div>
       </div>
     </div>

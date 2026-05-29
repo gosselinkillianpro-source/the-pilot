@@ -5,6 +5,7 @@ import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getEmailConfig } from '@/lib/email/config';
+import { renderEmailTemplate } from '@/lib/email/template';
 import {
   addContactsToList,
   createBrevoList,
@@ -15,7 +16,10 @@ import {
 const schema = z.object({
   mode: z.enum(['people', 'list', 'group']),
   subject: z.string().min(1, 'Objet requis').max(200),
-  htmlContent: z.string().min(1, 'Message requis'),
+  title: z.string().max(200).optional(),
+  bodyText: z.string().min(1, 'Message requis'),
+  ctaLabel: z.string().max(60).optional(),
+  ctaUrl: z.string().optional(),
   emails: z.array(z.string().email()).optional(),
   listId: z.number().optional(),
   listName: z.string().optional(),
@@ -31,16 +35,16 @@ export type SendEmailResult =
   | { ok: false; reason: 'error'; message: string };
 
 export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailResult> {
-  // 1. Auth (best-effort tant que le login n'est pas branché — voir TODO)
+  // 1. Auth best-effort (le login arrive plus tard)
   let actorId: string | null = null;
   let actorEmail = 'dev-local';
   try {
     const user = await getAuthenticatedUser();
     actorId = user.id;
     actorEmail = user.email;
-    // TODO (au branchement du login) : await requireRole(user, ['admin', 'closer'])
+    // TODO (login) : await requireRole(user, ['admin', 'closer'])
   } catch {
-    // Pas encore de session (login à venir). En mode test c'est sans risque.
+    // pas de session encore — en mode test, sans risque
   }
 
   // 2. Validation
@@ -53,9 +57,18 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
     };
   }
   const data = parsed.data;
+  const config = getEmailConfig();
 
-  // 3. Scan AMF (bloquant) — sujet + corps
-  const scan = scanAmfCompliance(`${data.subject}\n${data.htmlContent}`);
+  // 3. Rendu du template final (header marque + footer legal/AMF)
+  const htmlContent = renderEmailTemplate({
+    title: data.title,
+    bodyText: data.bodyText,
+    ctaLabel: data.ctaLabel,
+    ctaUrl: data.ctaUrl,
+  });
+
+  // 4. Scan AMF (bloquant) sur l'email final — le footer fournit déjà le disclaimer requis
+  const scan = scanAmfCompliance(`${data.subject}\n${htmlContent}`);
   if (!scan.compliant) {
     return {
       ok: false,
@@ -64,10 +77,8 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
     };
   }
 
-  const config = getEmailConfig();
-
   try {
-    // 4. Résoudre les destinataires + description lisible
+    // 5. Résolution des destinataires
     let description = '';
     let recipientCount = 0;
     let realRecipients: { email: string }[] = [];
@@ -85,7 +96,6 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
       if (!groupName) return { ok: false, reason: 'error', message: 'Nom du groupe requis' };
       if (groupEmails.length === 0)
         return { ok: false, reason: 'error', message: 'Aucun contact dans le groupe' };
-      // Création du groupe = créer une liste Brevo + y ajouter les contacts (ne mail personne)
       const list = await createBrevoList(`${groupName} (THE PILOT)`);
       await ensureContacts(groupEmails);
       await addContactsToList(list.id, groupEmails);
@@ -93,51 +103,51 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
       realRecipients = groupEmails.map((email) => ({ email }));
       description = `nouveau groupe « ${groupName} » (${groupEmails.length} contacts)`;
     } else {
-      // mode 'list'
       if (!data.listId) return { ok: false, reason: 'error', message: 'Aucune liste sélectionnée' };
-      recipientCount = 0; // on ne ré-énumère pas la liste ici
       description = `liste « ${data.listName ?? data.listId} »`;
     }
 
-    // 5. Garde-fou MODE TEST : tout part vers l'adresse de test
+    // 6. Garde-fou MODE TEST
     let sentTo: string;
     if (config.testMode) {
       if (!config.testAddress) {
         return { ok: false, reason: 'error', message: 'EMAIL_TEST_ADDRESS non configurée' };
       }
-      const banner = `<div style="background:#FEF3C7;border:1px solid #F59E0B;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-family:sans-serif;font-size:13px;color:#78350F">
-        <strong>[MODE TEST]</strong> Cet email serait parti à : <strong>${description}</strong>. Aucun vrai destinataire n'a été contacté.
-      </div>`;
+      const testHtml = renderEmailTemplate({
+        title: data.title,
+        bodyText: data.bodyText,
+        ctaLabel: data.ctaLabel,
+        ctaUrl: data.ctaUrl,
+        notice: `[MODE TEST] Cet email serait parti à : ${description}. Aucun vrai destinataire contacté.`,
+      });
       await sendTransactionalEmail({
         to: [{ email: config.testAddress }],
         subject: `[TEST] ${data.subject}`,
-        htmlContent: banner + data.htmlContent,
+        htmlContent: testHtml,
         senderName: config.senderName,
         senderAddress: config.senderAddress,
       });
       sentTo = config.testAddress;
     } else {
-      // Envoi réel
       if (data.mode === 'list') {
-        // En réel, l'envoi à une liste passe par une campagne Brevo (non implémenté dans ce 1er jet)
         return {
           ok: false,
           reason: 'error',
           message:
-            "Envoi réel à une liste : passe d'abord par le mode test. La campagne réelle sera activée à l'étape suivante.",
+            "Envoi réel à une liste : passe d'abord par le mode test. La campagne réelle sera activée ensuite.",
         };
       }
       await sendTransactionalEmail({
         to: realRecipients,
         subject: data.subject,
-        htmlContent: data.htmlContent,
+        htmlContent,
         senderName: config.senderName,
         senderAddress: config.senderAddress,
       });
       sentTo = description;
     }
 
-    // 6. Audit
+    // 7. Audit
     await logAudit({
       userId: actorId,
       userEmail: actorEmail,
