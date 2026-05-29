@@ -125,3 +125,47 @@ alter table public.llm_calls enable row level security;
 drop policy if exists llm_calls_admin_read on public.llm_calls;
 create policy llm_calls_admin_read on public.llm_calls for select
   using (public.auth_role() = 'admin');
+
+-- ============================================================
+-- SOCIAL HUB — contenu marketing (pas de PII).
+-- admin RW complet, executive lecture. Insertion système via service_role.
+-- ============================================================
+alter table public.social_context_notes enable row level security;
+drop policy if exists social_notes_admin_all on public.social_context_notes;
+create policy social_notes_admin_all on public.social_context_notes for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_notes_exec_read on public.social_context_notes;
+create policy social_notes_exec_read on public.social_context_notes for select
+  using (public.auth_role() = 'executive');
+
+alter table public.social_ideas enable row level security;
+drop policy if exists social_ideas_admin_all on public.social_ideas;
+create policy social_ideas_admin_all on public.social_ideas for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_ideas_exec_read on public.social_ideas;
+create policy social_ideas_exec_read on public.social_ideas for select
+  using (public.auth_role() = 'executive');
+
+alter table public.social_posts enable row level security;
+drop policy if exists social_posts_admin_all on public.social_posts;
+create policy social_posts_admin_all on public.social_posts for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_posts_exec_read on public.social_posts;
+create policy social_posts_exec_read on public.social_posts for select
+  using (public.auth_role() = 'executive');
+
+alter table public.social_carousel_slides enable row level security;
+drop policy if exists social_slides_admin_all on public.social_carousel_slides;
+create policy social_slides_admin_all on public.social_carousel_slides for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_slides_exec_read on public.social_carousel_slides;
+create policy social_slides_exec_read on public.social_carousel_slides for select
+  using (public.auth_role() = 'executive');
+
+alter table public.social_competitor_reports enable row level security;
+drop policy if exists social_reports_admin_all on public.social_competitor_reports;
+create policy social_reports_admin_all on public.social_competitor_reports for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists social_reports_exec_read on public.social_competitor_reports;
+create policy social_reports_exec_read on public.social_competitor_reports for select
+  using (public.auth_role() = 'executive');

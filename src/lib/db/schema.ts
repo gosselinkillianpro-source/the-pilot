@@ -116,6 +116,24 @@ export const emailFlowRunStatusEnum = pgEnum('email_flow_run_status', [
 
 export const llmStatusEnum = pgEnum('llm_status', ['success', 'error', 'timeout']);
 
+/* --- Social Hub --- */
+export const socialIdeaStatusEnum = pgEnum('social_idea_status', [
+  'pending',
+  'validated',
+  'rejected',
+]);
+
+export const socialIdeaCategoryEnum = pgEnum('social_idea_category', [
+  'projets',
+  'pedagogique',
+  'temoignages',
+  'mise_avant',
+]);
+
+export const socialPlatformEnum = pgEnum('social_platform', ['facebook', 'instagram', 'linkedin']);
+
+export const socialPostStatusEnum = pgEnum('social_post_status', ['draft', 'ready', 'published']);
+
 /* ============================================================
    USERS — utilisateurs internes (Killian, Guillaume, Stéphane…)
    ============================================================ */
@@ -270,6 +288,83 @@ export const emailFlowRuns = pgTable('email_flow_runs', {
   emailContent: text('email_content'),
   amfCompliancePassed: boolean('amf_compliance_passed'),
   brevoMessageId: text('brevo_message_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ============================================================
+   SOCIAL HUB — idées, posts, carrousels, veille, contexte
+   Données marketing/business uniquement (jamais de PII investisseur).
+   ============================================================ */
+
+// Notes de contexte éditables injectées dans les prompts (vision, angles à pousser, faits SAH)
+export const socialContextNotes = pgTable('social_context_notes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Idées de contenu générées par l'IA, à valider par un humain
+export const socialIdeas = pgTable('social_ideas', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  title: text('title').notNull(),
+  angle: text('angle').notNull(),
+  rationale: text('rationale'),
+  category: socialIdeaCategoryEnum('category'),
+  status: socialIdeaStatusEnum('status').notNull().default('pending'),
+  priority: boolean('priority').notNull().default(false),
+  sourceResearch: text('source_research'),
+  // Si l'idée vient de la veille concurrentielle
+  fromCompetitor: text('from_competitor'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Posts générés (1 idée → jusqu'à 3 posts, un par plateforme)
+export const socialPosts = pgTable('social_posts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ideaId: uuid('idea_id').references(() => socialIdeas.id, { onDelete: 'set null' }),
+  // Projet SAH éventuellement référencé (réutilise la table projects existante)
+  projectId: uuid('project_id').references(() => projects.id),
+  platform: socialPlatformEnum('platform').notNull(),
+  text: text('text').notNull(),
+  isCarousel: boolean('is_carousel').notNull().default(false),
+  noImage: boolean('no_image').notNull().default(true),
+  // Chemin Supabase Storage de l'image (si visuel photo)
+  imagePath: text('image_path'),
+  imagePrompt: text('image_prompt'),
+  scheduledDate: text('scheduled_date'),
+  scheduledTime: text('scheduled_time'),
+  status: socialPostStatusEnum('status').notNull().default('draft'),
+  amfPassed: boolean('amf_passed'),
+  amfIssues: jsonb('amf_issues'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Slides d'un carrousel (layout varié stocké en JSON dans extra)
+export const socialCarouselSlides = pgTable('social_carousel_slides', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  postId: uuid('post_id')
+    .notNull()
+    .references(() => socialPosts.id, { onDelete: 'cascade' }),
+  slideIndex: integer('slide_index').notNull(),
+  title: text('title').notNull(),
+  body: text('body'),
+  // layout + champs spécifiques (sub_cards, bullets, stats, etc.)
+  extra: jsonb('extra'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Rapports de veille concurrentielle (1 par concurrent par run)
+export const socialCompetitorReports = pgTable('social_competitor_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  competitor: text('competitor').notNull(),
+  report: jsonb('report').notNull(),
+  weekStart: text('week_start').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -8,6 +8,13 @@
       "when": 1780046394525,
       "tag": "0000_third_vision",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780061757114,
+      "tag": "0001_remarkable_sunfire",
+      "breakpoints": true
     }
   ]
 }
