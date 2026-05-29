@@ -84,16 +84,17 @@ export function renderEmailTemplate(input: EmailTemplateInput): string {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:92%;background:#ffffff;border:1px solid ${BORDER};border-radius:12px">
         <tr><td style="padding:40px 44px">
 
-          <!-- Logo + wordmark -->
-          <div style="margin-bottom:6px">
-            ${
-              LOGO_URL
-                ? `<img src="${LOGO_URL}" alt="Seven At Home" height="34" style="display:block;border:0;outline:none;margin-bottom:12px">`
-                : ''
-            }
-            <span style="font-family:${SANS};font-size:22px;font-weight:700;letter-spacing:-0.01em;color:${DARK}">Seven At Home</span>
-          </div>
-          <div style="height:1px;background:${BORDER};margin:0 0 28px"></div>
+          <!-- Logo -->
+          ${
+            LOGO_URL
+              ? `<div style="margin-bottom:24px">
+                   <img src="${LOGO_URL}" alt="Seven At Home" height="64" style="display:block;height:64px;width:auto;border:0;outline:none">
+                 </div>`
+              : `<div style="margin-bottom:6px">
+                   <span style="font-family:${SANS};font-size:22px;font-weight:700;letter-spacing:-0.01em;color:${DARK}">Seven At Home</span>
+                 </div>
+                 <div style="height:1px;background:${BORDER};margin:0 0 28px"></div>`
+          }
 
           ${noticeHtml}
           ${titleHtml}
