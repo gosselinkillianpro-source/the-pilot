@@ -41,7 +41,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <aside className="view-sidebar">
         <Link href="/" className="view-sidebar-brand">
           <Image
-            src="/brand/pilot-wordmark.png"
+            src="/brand/pilot-logo-wordmark.png"
             alt="PILOT"
             width={112}
             height={28}

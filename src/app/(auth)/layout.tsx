@@ -29,7 +29,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           }}
         >
           <Image
-            src="/brand/pilot-wordmark.png"
+            src="/brand/pilot-logo-wordmark.png"
             alt="PILOT"
             width={140}
             height={35}
