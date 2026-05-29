@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             Closing
             <span className="view-sidebar-link-badge">14</span>
           </SidebarLink>
-          <SidebarLink href="/email/flows">
+          <SidebarLink href="/email">
             <Mail />
             Email
           </SidebarLink>
