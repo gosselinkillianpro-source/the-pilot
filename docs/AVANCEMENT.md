@@ -2,7 +2,7 @@
 
 > Journal de bord pour reprendre le dev d'une session à l'autre.
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
-> Dernière mise à jour : 2026-05-29.
+> Dernière mise à jour : 2026-05-29 (ajout login + 2FA).
 
 ---
 
@@ -29,6 +29,17 @@ L'app tourne en local (`pnpm dev` → http://localhost:3000). Toutes les vérifs
 - `/ads`, `/social`, `/performance`, `/performance/actions` : mock
 - Données fake : `src/lib/mock-data.ts` (à remplacer par les vraies données SAH quand l'API SAH sera dispo)
 
+### Connexion / sécurité (NOUVEAU — fonctionnel)
+- **Login email + mot de passe** : `/login` (Supabase Auth). Pas d'inscription publique (outil interne).
+- **2FA obligatoire** (admin, closer, closer_junior) via code à 6 chiffres (TOTP, type Google Authenticator) :
+  - 1ère connexion → `/mfa/setup` (scan d'un QR code) ; connexions suivantes → `/mfa` (saisie du code).
+  - `executive` : 2FA non imposé.
+- **Verrouillage des routes** : middleware `src/lib/auth/session.ts`. Pas connecté → `/login` ; 2FA non validé → `/mfa` ou `/mfa/setup`.
+- **Déconnexion** : bouton dans la sidebar (`src/components/shared/user-menu.tsx`). La sidebar affiche le vrai nom/rôle (déduits de l'email).
+- **Créer un compte** : `node --env-file=.env.local scripts/create-user.mjs <email> <mdp> [role]` (role défaut : admin).
+- Actions auth : `src/app/(auth)/actions.ts`. Audit log sur connexion/déconnexion/enrôlement 2FA.
+- ⚠️ **Désormais l'app est verrouillée** : il FAUT un compte (script ci-dessus) pour entrer, même en local.
+
 ### Envoi d'email (fonctionnel)
 - 3 modes : personnes / liste Brevo existante / nouveau groupe.
 - **Scan AMF** bloquant (`src/lib/ai/amf-compliance.ts`).
@@ -40,7 +51,7 @@ L'app tourne en local (`pnpm dev` → http://localhost:3000). Toutes les vérifs
 
 ## Ce qui n'est PAS encore fait
 
-1. **Login / auth réelle** : pas d'écran de connexion. L'app n'est pas encore protégée par "qui es-tu" (OK en local). À faire : Supabase Auth + 2FA + Cloudflare Access. (Un `TODO requireRole` est posé dans `email/compose/actions.ts`.)
+1. **Cloudflare Access** : la couche réseau (qui peut atteindre l'app) reste à brancher en prod. Le login Supabase + 2FA est fait (cf. plus haut). Reste aussi un `TODO requireRole` à câbler dans `email/compose/actions.ts` maintenant que l'auth existe.
 2. **Intégration données SAH** : BLOQUÉ tant que l'appel technique SAH n'a pas eu lieu (cf. `docs/appel-sah-questions.md`). C'est ce qui permettra de remplacer les données fake par les vraies.
 3. **Attribution réelle** (ROI par action) : la vue existe en mock ; le calcul réel viendra avec les données SAH + le tracking des actions.
 4. **Envoi réel aux listes** : en mode test seulement pour l'instant. Le passage en réel (campagne Brevo) sera activé quand `EMAIL_TEST_MODE=false`.

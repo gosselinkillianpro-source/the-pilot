@@ -10,6 +10,17 @@ export type AuthenticatedUser = {
   role: UserRole;
 };
 
+/**
+ * Rôles pour lesquels la double authentification (2FA / TOTP) est OBLIGATOIRE.
+ * Règle de sécurité CLAUDE.md #5. Les `executive` peuvent l'activer mais ne sont
+ * pas bloqués sans.
+ */
+export const MFA_REQUIRED_ROLES: readonly UserRole[] = ['admin', 'closer', 'closer_junior'];
+
+export function roleRequiresMfa(role: UserRole): boolean {
+  return MFA_REQUIRED_ROLES.includes(role);
+}
+
 export async function getSupabaseServerClient() {
   const cookieStore = await cookies();
 

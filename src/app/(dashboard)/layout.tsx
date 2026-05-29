@@ -13,8 +13,20 @@ import {
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { SidebarLink } from '@/components/shared/sidebar-nav';
+import { UserMenu } from '@/components/shared/user-menu';
+import { getAuthenticatedUser } from '@/lib/auth';
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+function deriveDisplay(email: string): { name: string; initials: string } {
+  const local = email.split('@')[0] ?? 'utilisateur';
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  const name = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  const initials = (parts[0]?.[0] ?? local[0] ?? '?').concat(parts[1]?.[0] ?? '').toUpperCase();
+  return { name: name || local, initials };
+}
+
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const user = await getAuthenticatedUser();
+  const { name, initials } = deriveDisplay(user.email);
   return (
     <div
       style={{
@@ -76,14 +88,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </SidebarLink>
         </div>
 
-        <div className="view-sidebar-user">
-          <div className="avatar avatar-sm avatar-blue avatar-status">KL</div>
-          <div className="view-sidebar-user-info">
-            <div className="view-sidebar-user-name">Killian</div>
-            <div className="view-sidebar-user-role">Admin</div>
-          </div>
-          <ChevronDown size={14} style={{ color: 'var(--text-3)' }} />
-        </div>
+        <UserMenu name={name} role={user.role} initials={initials} />
       </aside>
 
       <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
