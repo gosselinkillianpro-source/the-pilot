@@ -18,6 +18,11 @@ export type EmailTemplateInput = {
   notice?: string;
 };
 
+// URL publique du logo Seven At Home (à renseigner — voir NEXT_PUBLIC_EMAIL_LOGO_URL).
+// Vide => on affiche seulement le texte. Pour les emails, le logo DOIT être une URL hébergée
+// (les images en base64 ou jointes sont bloquées par Gmail et nuisent à la délivrabilité).
+const LOGO_URL = process.env.NEXT_PUBLIC_EMAIL_LOGO_URL ?? '';
+
 const GOLD = '#A0783B';
 const DARK = '#0D0D0B';
 const TX2 = '#5A5754';
@@ -79,9 +84,14 @@ export function renderEmailTemplate(input: EmailTemplateInput): string {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:92%;background:#ffffff;border:1px solid ${BORDER};border-radius:12px">
         <tr><td style="padding:40px 44px">
 
-          <!-- Wordmark -->
+          <!-- Logo + wordmark -->
           <div style="margin-bottom:6px">
-            <span style="font-family:${SERIF};font-style:italic;font-size:22px;color:${GOLD}">Seven</span><span style="font-family:${SANS};font-size:22px;font-weight:700;letter-spacing:-0.01em;color:${DARK}"> At Home</span>
+            ${
+              LOGO_URL
+                ? `<img src="${LOGO_URL}" alt="Seven At Home" height="34" style="display:block;border:0;outline:none;margin-bottom:12px">`
+                : ''
+            }
+            <span style="font-family:${SANS};font-size:22px;font-weight:700;letter-spacing:-0.01em;color:${DARK}">Seven At Home</span>
           </div>
           <div style="height:1px;background:${BORDER};margin:0 0 28px"></div>
 
