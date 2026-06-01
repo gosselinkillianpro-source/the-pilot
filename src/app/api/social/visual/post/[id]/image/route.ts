@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { getApiUserOrNull } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialPosts } from '@/lib/db/schema';
 import { imageToDataUri } from '@/lib/social/storage';
@@ -8,6 +9,8 @@ export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  if (!(await getApiUserOrNull())) return new Response('Unauthorized', { status: 401 });
+
   const { id } = await ctx.params;
   const rows = await db
     .select({ imagePath: socialPosts.imagePath, platform: socialPosts.platform })

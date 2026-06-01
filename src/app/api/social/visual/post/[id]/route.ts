@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
+import { getApiUserOrNull } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialIdeas, socialPosts } from '@/lib/db/schema';
 import { renderPostCard } from '@/lib/social/sah-visual';
@@ -9,6 +10,8 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  if (!(await getApiUserOrNull())) return new Response('Unauthorized', { status: 401 });
+
   const { id } = await ctx.params;
   const isExport = req.nextUrl.searchParams.get('export') === '1';
 

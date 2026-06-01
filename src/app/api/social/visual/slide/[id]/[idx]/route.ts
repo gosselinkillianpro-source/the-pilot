@@ -1,5 +1,6 @@
 import { asc, eq } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
+import { getApiUserOrNull } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialCarouselSlides, socialIdeas, socialPosts } from '@/lib/db/schema';
 import { renderSlide, type SlideData } from '@/lib/social/sah-visual';
@@ -9,6 +10,8 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; idx: string }> },
 ): Promise<Response> {
+  if (!(await getApiUserOrNull())) return new Response('Unauthorized', { status: 401 });
+
   const { id, idx } = await ctx.params;
   const slideIndex = Number.parseInt(idx, 10);
   const isExport = req.nextUrl.searchParams.get('export') === '1';

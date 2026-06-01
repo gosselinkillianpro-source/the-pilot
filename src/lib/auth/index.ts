@@ -69,3 +69,16 @@ export async function requireRole(
     throw new Error(`FORBIDDEN: role ${user.role} not in ${allowedRoles.join(',')}`);
   }
 }
+
+/**
+ * Variante non bloquante pour les Route Handlers (/api) : renvoie l'utilisateur
+ * authentifié ou `null`, sans lever d'exception. Permet de répondre proprement
+ * un 401 au lieu d'un 500. Défense en profondeur en plus du middleware.
+ */
+export async function getApiUserOrNull(): Promise<AuthenticatedUser | null> {
+  try {
+    return await getAuthenticatedUser();
+  } catch {
+    return null;
+  }
+}

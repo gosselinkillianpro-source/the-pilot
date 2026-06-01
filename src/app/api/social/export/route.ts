@@ -1,10 +1,13 @@
 import { asc, eq } from 'drizzle-orm';
+import { getApiUserOrNull } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { socialIdeas, socialPosts } from '@/lib/db/schema';
 import { buildMetricoolCsv, type MetricoolPost } from '@/lib/integrations/metricool/export';
 import { publicImageUrl } from '@/lib/social/storage';
 
 export async function GET(): Promise<Response> {
+  if (!(await getApiUserOrNull())) return new Response('Unauthorized', { status: 401 });
+
   // Seuls les posts "prêts" sont exportés.
   const rows = await db
     .select({
