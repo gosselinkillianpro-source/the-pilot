@@ -81,6 +81,10 @@ export default async function EmailPage() {
           {smsCredits !== null && (
             <span className="badge badge-neutral">{nb(smsCredits)} crédits SMS</span>
           )}
+          <Link href="/email/sent" className="btn btn-secondary btn-sm">
+            <Send size={13} />
+            Boîte d'envoi
+          </Link>
           <Link href="/email/compose" className="btn btn-primary btn-sm">
             <PenLine size={13} />
             Composer

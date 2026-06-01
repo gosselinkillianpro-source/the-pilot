@@ -133,3 +133,110 @@ export async function getBrevoTransactional(): Promise<BrevoTransactional> {
     clicks: data.clicks ?? 0,
   };
 }
+
+/* ---------- Boîte d'envoi (emails transactionnels envoyés + statut) ---------- */
+export type SentEmailStatus =
+  | 'sent'
+  | 'delivered'
+  | 'opened'
+  | 'clicked'
+  | 'bounced'
+  | 'spam'
+  | 'blocked';
+
+export type SentEmail = {
+  id: string;
+  subject: string;
+  to: string;
+  date: string | null;
+  tags: string[];
+  status: SentEmailStatus;
+};
+
+type RawEvent = {
+  messageId?: string;
+  event?: string;
+  email?: string;
+  subject?: string;
+  date?: string;
+};
+
+// Priorité d'affichage : on retient l'état le plus "avancé" connu pour un email.
+const STATUS_RANK: Record<SentEmailStatus, number> = {
+  sent: 0,
+  delivered: 1,
+  opened: 2,
+  clicked: 3,
+  bounced: 4,
+  spam: 5,
+  blocked: 6,
+};
+
+function mapEventToStatus(event: string): SentEmailStatus {
+  switch (event) {
+    case 'delivered':
+      return 'delivered';
+    case 'opened':
+    case 'uniqueOpened':
+    case 'loadedByProxy':
+      return 'opened';
+    case 'clicks':
+    case 'click':
+      return 'clicked';
+    case 'hardBounces':
+    case 'softBounces':
+    case 'bounces':
+      return 'bounced';
+    case 'spam':
+      return 'spam';
+    case 'blocked':
+    case 'invalid':
+      return 'blocked';
+    default:
+      return 'sent'; // requests, deferred, etc.
+  }
+}
+
+/**
+ * Liste des derniers emails transactionnels envoyés, reconstruite à partir des
+ * événements Brevo (/smtp/statistics/events) groupés par messageId.
+ * Pour chaque email : destinataire, objet, date d'envoi (la plus ancienne vue)
+ * et statut le plus avancé (livré → ouvert → cliqué → bounce…).
+ */
+export async function getSentEmails(limit = 50): Promise<SentEmail[]> {
+  const ev = await brevoGet<{ events?: RawEvent[] }>('/smtp/statistics/events?limit=1000', 120);
+
+  type Acc = {
+    id: string;
+    subject: string;
+    to: string;
+    date: string | null;
+    status: SentEmailStatus;
+  };
+  const byId = new Map<string, Acc>();
+
+  for (const e of ev.events ?? []) {
+    if (!e.messageId) continue;
+    const status = mapEventToStatus(e.event ?? '');
+    const existing = byId.get(e.messageId);
+    if (!existing) {
+      byId.set(e.messageId, {
+        id: e.messageId,
+        subject: e.subject ?? '(sans objet)',
+        to: e.email ?? '—',
+        date: e.date ?? null,
+        status,
+      });
+      continue;
+    }
+    // Statut le plus avancé.
+    if (STATUS_RANK[status] > STATUS_RANK[existing.status]) existing.status = status;
+    // Date d'envoi = la plus ancienne observée pour ce message.
+    if (e.date && (!existing.date || e.date < existing.date)) existing.date = e.date;
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    .slice(0, limit)
+    .map(({ id, subject, to, date, status }) => ({ id, subject, to, date, tags: [], status }));
+}
