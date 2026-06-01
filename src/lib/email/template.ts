@@ -132,7 +132,9 @@ export function renderEmailTemplate(input: EmailTemplateInput): string {
 
 export type PersonalEmailInput = {
   bodyText: string;
-  /** Nom affiché en signature (ex: prénom du closer). Défaut: "Seven At Home". */
+  /** Texte d'aperçu (préheader) affiché par le client mail après l'objet. */
+  preheader?: string;
+  /** Prénom du signataire (ex: closer). Défaut: "Guillaume". "Seven At Home" est ajouté dessous. */
   signatureName?: string;
   /** Encart d'information en haut (ex: bandeau mode test) — rendu en texte simple. */
   notice?: string;
@@ -159,7 +161,11 @@ export function renderPersonalEmail(input: PersonalEmailInput): string {
     ? `<p style="margin:0 0 16px;font-family:${SANS};font-size:13px;line-height:1.5;color:${TX3}">${escapeHtml(input.notice)}</p>`
     : '';
 
-  const signature = (input.signatureName ?? 'Seven At Home').trim();
+  const preheaderHtml = input.preheader?.trim()
+    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;opacity:0">${escapeHtml(input.preheader)}</div>`
+    : '';
+
+  const signatureName = (input.signatureName ?? 'Guillaume').trim();
 
   return `<!doctype html>
 <html lang="fr">
@@ -169,13 +175,14 @@ export function renderPersonalEmail(input: PersonalEmailInput): string {
 <meta name="color-scheme" content="light">
 </head>
 <body style="margin:0;padding:0;background:#ffffff;">
+  ${preheaderHtml}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:20px 0">
     <tr><td align="left" style="padding:0 24px">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%">
         <tr><td>
           ${noticeHtml}
           ${paragraphs}
-          <p style="margin:18px 0 0;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(signature)}</p>
+          <p style="margin:18px 0 0;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(signatureName)}<br>Seven At Home</p>
           <p style="margin:24px 0 0;font-family:${SANS};font-size:11px;line-height:1.5;color:${TX3}">
             Seven Capital Invest SA — investir comporte un risque de perte en capital. Rendement cible, capital non garanti.
           </p>

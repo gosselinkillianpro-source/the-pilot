@@ -27,6 +27,8 @@ const schema = z.object({
   groupEmails: z.array(z.string().email()).optional(),
   // 'brand' = template de marque (campagnes) ; 'personal' = rendu épuré 1-à-1 (closers)
   variant: z.enum(['brand', 'personal']).optional(),
+  // Texte d'aperçu (préheader) — surtout pour la variante personnelle.
+  preheader: z.string().max(200).optional(),
 });
 
 export type SendEmailInput = z.infer<typeof schema>;
@@ -64,7 +66,7 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
   // 3. Rendu du template final selon la variante (marque vs personnel 1-à-1)
   const renderHtml = (notice?: string) =>
     data.variant === 'personal'
-      ? renderPersonalEmail({ bodyText: data.bodyText, notice })
+      ? renderPersonalEmail({ bodyText: data.bodyText, preheader: data.preheader, notice })
       : renderEmailTemplate({
           title: data.title,
           bodyText: data.bodyText,

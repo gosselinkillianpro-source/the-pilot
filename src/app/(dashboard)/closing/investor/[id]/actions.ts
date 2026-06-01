@@ -17,6 +17,7 @@ export type DraftProposalResult =
   | {
       ok: true;
       subject: string;
+      preheader: string;
       bodyText: string;
       costEur: number;
       amfWarnings: { match: string; suggestedFix: string }[];
@@ -86,12 +87,15 @@ export async function draftProposalEmailAction(investorId: string): Promise<Draf
 
     // 5. Scan AMF du brouillon (avertissement non bloquant ici : l'humain corrige,
     //    et l'envoi (sendEmailAction) re-scanne et bloque pour de bon si besoin).
-    const scan = scanAmfCompliance(`${result.draft.subject}\n${result.draft.bodyText}`);
+    const scan = scanAmfCompliance(
+      `${result.draft.subject}\n${result.draft.preheader}\n${result.draft.bodyText}`,
+    );
     const amfWarnings = scan.issues.map((i) => ({ match: i.match, suggestedFix: i.suggestedFix }));
 
     return {
       ok: true,
       subject: result.draft.subject,
+      preheader: result.draft.preheader,
       bodyText: result.draft.bodyText,
       costEur: estimateCostEur(result.model, result.promptTokens, result.completionTokens),
       amfWarnings,

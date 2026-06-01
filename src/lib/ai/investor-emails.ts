@@ -1,5 +1,6 @@
 import 'server-only';
 import { ANTHROPIC_MODELS, anthropic } from './anthropic';
+import { EMAIL_BRAIN } from './prompts/email-brain';
 
 export type InvestorContext = {
   firstName: string;
@@ -20,6 +21,7 @@ export type ProjectContext = {
 
 export type InvestorEmailDraft = {
   subject: string;
+  preheader: string;
   bodyText: string;
 };
 
@@ -39,22 +41,18 @@ export class MissingAnthropicKeyError extends Error {
   }
 }
 
-const SYSTEM_PROMPT = `Tu es le copywriter de Seven At Home, plateforme privée française d'investissement immobilier en club deal. Tu rédiges un email personnalisé d'un closer à un investisseur, en français, vouvoiement.
+// Instructions propres à la tâche (le cadre/voix/AMF vient du brain, chargé en système caché).
+const TASK_INSTRUCTIONS = `INSTRUCTIONS POUR CETTE TÂCHE
+Tu rédiges un email de PROPOSITION pour un investisseur de Seven At Home, en appliquant strictement l'Email Brain ci-dessus (voix, cadre AMF, matrice de statut, délivrabilité).
 
-RÈGLES ABSOLUES (conformité AMF — non négociables) :
-- N'INVENTE JAMAIS de chiffres. Utilise UNIQUEMENT les données projets fournies (nom, ville, rendement cible, durée). N'invente ni montant collecté, ni date, ni statistique.
-- N'emploie JAMAIS les mots : "garanti", "garantie", "sans risque", "risque zéro", "sûr", "certain", "assuré", "crowdfunding", "financement participatif".
-- Dès que tu cites un rendement, tu DOIS écrire juste à côté la mention exacte : "rendement cible, capital non garanti".
-- Ton factuel, sobre, sans pression commerciale, sans superlatifs ni promesses. Pas d'urgence artificielle.
-- N'évoque aucune donnée KYC sensible (pièce d'identité, RIB).
-
-OBJECTIF : un email de proposition adapté à la situation de l'investisseur (score d'engagement, segment, montant déjà investi ou évoqué, étape dans le parcours). Propose 1 à 2 projets pertinents parmi ceux fournis.
-
-STYLE (important) : écris comme un message personnel d'un humain à un autre, PAS comme une newsletter. Langage simple et direct, phrases courtes, vocabulaire du quotidien (évite le jargon financier et les tournures commerciales). Va à l'essentiel. Très court : 80-130 mots maximum. Objet court et concret (pas d'accroche marketing, pas d'emoji).
+- Identifie le statut de l'investisseur (section 3 du brain) à partir des données fournies (total investi, montant évoqué, étape, score) et applique la ligne correspondante.
+- N'utilise QUE les données projets fournies pour tout chiffre (nom, ville, rendement cible, durée). N'invente aucun chiffre, aucune date, aucune statistique, aucun chiffre de track record.
+- Propose 1 à 2 projets pertinents parmi ceux fournis.
+- Ne mets PAS de signature dans le corps : elle est ajoutée automatiquement ("Guillaume / Seven At Home"). Termine le corps sur ta dernière phrase utile.
+- Objet : minuscule sauf la première lettre, 4 à 7 mots, sans emoji, sans chiffre ni symbole. Préheader : prolonge l'objet sans le répéter, jamais vide.
 
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises de code :
-{"subject": "objet de l'email", "body": "corps de l'email en texte simple, avec sauts de ligne \\n"}
-N'inclus PAS de formule de signature finale (elle est ajoutée automatiquement).`;
+{"subject": "...", "preheader": "...", "body": "corps en texte simple avec sauts de ligne \\n, SANS la signature finale"}`;
 
 function buildUserPrompt(investor: InvestorContext, projects: ProjectContext[]): string {
   const investorBlock = [
@@ -91,12 +89,17 @@ function parseDraft(raw: string): InvestorEmailDraft {
   }
   const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
     subject?: unknown;
+    preheader?: unknown;
     body?: unknown;
   };
   if (typeof parsed.subject !== 'string' || typeof parsed.body !== 'string') {
     throw new Error('Réponse IA incomplète (objet ou corps manquant).');
   }
-  return { subject: parsed.subject.trim(), bodyText: parsed.body.trim() };
+  return {
+    subject: parsed.subject.trim(),
+    preheader: typeof parsed.preheader === 'string' ? parsed.preheader.trim() : '',
+    bodyText: parsed.body.trim(),
+  };
 }
 
 export async function draftProposalEmail(
@@ -113,7 +116,11 @@ export async function draftProposalEmail(
   const response = await anthropic.messages.create({
     model,
     max_tokens: 1200,
-    system: SYSTEM_PROMPT,
+    // Le brain est volumineux et stable → bloc système mis en cache (coût quasi nul aux appels suivants).
+    system: [
+      { type: 'text', text: EMAIL_BRAIN, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: TASK_INSTRUCTIONS },
+    ],
     messages: [{ role: 'user', content: buildUserPrompt(investor, projects) }],
   });
 

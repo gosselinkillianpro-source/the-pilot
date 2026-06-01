@@ -44,6 +44,20 @@ describe('scanAmfCompliance', () => {
     expect(result.compliant).toBe(true);
   });
 
+  it('accepte "le capital n\'est pas garanti" (formulation AMF correcte)', () => {
+    const result = scanAmfCompliance(
+      "Rendement cible 15%. Comme tout investissement, le capital n'est pas garanti et présente un risque de perte.",
+    );
+    expect(result.compliant).toBe(true);
+  });
+
+  it('accepte "risque de perte" comme disclaimer valable avec un rendement', () => {
+    const result = scanAmfCompliance(
+      "Objectif de rendement 15% par an. Le capital n'est pas garanti, risque de perte en capital.",
+    );
+    expect(result.compliant).toBe(true);
+  });
+
   it('assertAmfCompliant throw si non conforme', () => {
     expect(() => assertAmfCompliant('Investissement garanti 12%')).toThrow(
       /AMF_COMPLIANCE_BLOCKED/,

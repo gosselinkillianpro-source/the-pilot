@@ -7,7 +7,13 @@ import { draftProposalEmailAction } from './actions';
 
 type AmfWarning = { match: string; suggestedFix: string };
 
-type Draft = { subject: string; bodyText: string; costEur: number; amfWarnings: AmfWarning[] };
+type Draft = {
+  subject: string;
+  preheader: string;
+  bodyText: string;
+  costEur: number;
+  amfWarnings: AmfWarning[];
+};
 
 type SendState =
   | { kind: 'idle' }
@@ -26,6 +32,7 @@ export function InvestorEmailPanel({
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [subject, setSubject] = useState('');
+  const [preheader, setPreheader] = useState('');
   const [bodyText, setBodyText] = useState('');
   const [genError, setGenError] = useState<string | null>(null);
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
@@ -42,11 +49,13 @@ export function InvestorEmailPanel({
       }
       setDraft({
         subject: res.subject,
+        preheader: res.preheader,
         bodyText: res.bodyText,
         costEur: res.costEur,
         amfWarnings: res.amfWarnings,
       });
       setSubject(res.subject);
+      setPreheader(res.preheader);
       setBodyText(res.bodyText);
     });
   }
@@ -57,6 +66,7 @@ export function InvestorEmailPanel({
       const res = await sendEmailAction({
         mode: 'people',
         subject,
+        preheader,
         bodyText,
         emails: [email],
         variant: 'personal',
@@ -131,6 +141,18 @@ export function InvestorEmailPanel({
                 className="input"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="ai-preheader">
+                Aperçu (préheader)
+              </label>
+              <input
+                id="ai-preheader"
+                className="input"
+                value={preheader}
+                onChange={(e) => setPreheader(e.target.value)}
+                placeholder="Texte affiché après l'objet dans la boîte de réception"
               />
             </div>
             <div className="form-field">

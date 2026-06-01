@@ -15,7 +15,11 @@ const AMF_CRITICAL_TERMS = [
 
 const YIELD_MENTION_PATTERNS = [/\d+\s*%\s*(par an|annuel|de rendement)/i, /rendement[\s\w]*\d+/i];
 
-const REQUIRED_DISCLAIMER_PATTERNS = [/capital\s+non\s+garanti/i, /rendement\s+cible/i];
+const REQUIRED_DISCLAIMER_PATTERNS = [
+  /capital\s+non\s+garanti/i,
+  /rendement\s+cible/i,
+  /risque\s+de\s+perte/i,
+];
 
 const AMF_SUGGESTIONS: Record<string, string> = {
   garanti: 'remplacer par "cible" ou supprimer',
@@ -50,11 +54,13 @@ export type AmfScanResult = {
 const SAFE_DISCLAIMER_PLACEHOLDER = '__amf_safe_disclaimer__';
 
 /**
- * Masque les occurrences "non garanti(e|s|es)" pour qu'elles ne soient pas détectées
- * comme un terme interdit lors du scan. Ces formulations sont au contraire le disclaimer attendu.
+ * Masque les formulations de disclaimer "non garanti" ET "pas garanti"
+ * (ex: "le capital n'est pas garanti") pour qu'elles ne soient pas prises pour le terme
+ * interdit "garanti". Ce sont au contraire les formulations AMF attendues.
+ * Un vrai usage positif ("rendement garanti") n'est PAS précédé de non/pas → reste détecté.
  */
 function maskSafeDisclaimers(text: string): string {
-  return text.replace(/non\s+garanti(e|s|es)?\b/gi, SAFE_DISCLAIMER_PLACEHOLDER);
+  return text.replace(/(?:non|pas)\s+garanti(?:e|s|es)?\b/gi, SAFE_DISCLAIMER_PLACEHOLDER);
 }
 
 export function scanAmfCompliance(text: string): AmfScanResult {
