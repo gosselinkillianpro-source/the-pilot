@@ -134,7 +134,7 @@ export type PersonalEmailInput = {
   bodyText: string;
   /** Texte d'aperçu (préheader) affiché par le client mail après l'objet. */
   preheader?: string;
-  /** Prénom du signataire (ex: closer). Défaut: "Guillaume". "Seven At Home" est ajouté dessous. */
+  /** Signature affichée. Défaut: "L'équipe Seven At Home" (les closers varient). */
   signatureName?: string;
   /** Encart d'information en haut (ex: bandeau mode test) — rendu en texte simple. */
   notice?: string;
@@ -165,7 +165,7 @@ export function renderPersonalEmail(input: PersonalEmailInput): string {
     ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;opacity:0">${escapeHtml(input.preheader)}</div>`
     : '';
 
-  const signatureName = (input.signatureName ?? 'Guillaume').trim();
+  const signatureName = (input.signatureName ?? "L'équipe Seven At Home").trim();
 
   return `<!doctype html>
 <html lang="fr">
@@ -182,7 +182,7 @@ export function renderPersonalEmail(input: PersonalEmailInput): string {
         <tr><td>
           ${noticeHtml}
           ${paragraphs}
-          <p style="margin:18px 0 0;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(signatureName)}<br>Seven At Home</p>
+          <p style="margin:18px 0 0;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(signatureName)}</p>
           <p style="margin:24px 0 0;font-family:${SANS};font-size:11px;line-height:1.5;color:${TX3}">
             Seven Capital Invest SA — investir comporte un risque de perte en capital. Rendement cible, capital non garanti.
           </p>
