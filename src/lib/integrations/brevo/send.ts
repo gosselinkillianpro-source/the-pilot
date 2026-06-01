@@ -28,6 +28,19 @@ async function brevoPost<T>(path: string, body: unknown): Promise<T> {
   return res.json().catch(() => ({})) as Promise<T>;
 }
 
+async function brevoPut(path: string, body: unknown): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: brevoHeaders(),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Brevo ${res.status} sur ${path} : ${text.slice(0, 300)}`);
+  }
+}
+
 async function brevoGet<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { headers: brevoHeaders(), cache: 'no-store' });
   if (!res.ok) throw new Error(`Brevo ${res.status} sur ${path}`);
@@ -82,4 +95,35 @@ export async function ensureContacts(emails: string[]): Promise<void> {
       // déjà existant ou erreur non bloquante — l'ajout à la liste gérera
     }
   }
+}
+
+/** Crée (ou met à jour si déjà présent) un contact avec ses attributs et listes. */
+export async function upsertBrevoContact(input: {
+  email: string;
+  attributes?: Record<string, unknown>;
+  listIds?: number[];
+}): Promise<void> {
+  await brevoPost('/contacts', {
+    email: input.email,
+    attributes: input.attributes,
+    listIds: input.listIds,
+    updateEnabled: true,
+  });
+}
+
+/** Met à jour un contact existant (attributs, ajout/retrait de listes). */
+export async function updateBrevoContact(
+  identifier: string,
+  input: { attributes?: Record<string, unknown>; listIds?: number[]; unlinkListIds?: number[] },
+): Promise<void> {
+  await brevoPut(`/contacts/${encodeURIComponent(identifier)}`, {
+    attributes: input.attributes,
+    listIds: input.listIds,
+    unlinkListIds: input.unlinkListIds,
+  });
+}
+
+/** Retire des contacts d'une liste. */
+export async function removeContactsFromList(listId: number, emails: string[]): Promise<void> {
+  await brevoPost(`/contacts/lists/${listId}/contacts/remove`, { emails });
 }

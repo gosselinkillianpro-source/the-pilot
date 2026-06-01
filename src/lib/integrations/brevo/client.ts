@@ -92,6 +92,60 @@ export async function getBrevoLists(): Promise<BrevoList[]> {
   return (data.lists ?? []).sort((a, b) => b.uniqueSubscribers - a.uniqueSubscribers);
 }
 
+/* ---------- Contacts ---------- */
+export type BrevoContact = {
+  id: number;
+  email: string;
+  attributes: Record<string, unknown>;
+  listIds: number[];
+  emailBlacklisted: boolean;
+  createdAt: string | null;
+};
+
+type RawContact = {
+  id: number;
+  email: string;
+  attributes?: Record<string, unknown>;
+  listIds?: number[];
+  emailBlacklisted?: boolean;
+  createdAt?: string;
+};
+
+function mapContact(c: RawContact): BrevoContact {
+  return {
+    id: c.id,
+    email: c.email,
+    attributes: c.attributes ?? {},
+    listIds: c.listIds ?? [],
+    emailBlacklisted: c.emailBlacklisted ?? false,
+    createdAt: c.createdAt ?? null,
+  };
+}
+
+export async function getBrevoContacts(
+  offset = 0,
+  limit = 50,
+): Promise<{ contacts: BrevoContact[]; total: number }> {
+  const data = await brevoGet<{ contacts?: RawContact[]; count?: number }>(
+    `/contacts?limit=${limit}&offset=${offset}&sort=desc`,
+    60,
+  );
+  return {
+    contacts: (data.contacts ?? []).map(mapContact),
+    total: data.count ?? 0,
+  };
+}
+
+/** Recherche d'un contact par email exact. `null` si introuvable. */
+export async function getBrevoContactByEmail(email: string): Promise<BrevoContact | null> {
+  try {
+    const c = await brevoGet<RawContact>(`/contacts/${encodeURIComponent(email)}`, 30);
+    return mapContact(c);
+  } catch {
+    return null;
+  }
+}
+
 export async function getBrevoCampaigns(limit = 30): Promise<BrevoCampaign[]> {
   const data = await brevoGet<{ campaigns?: RawCampaign[] }>(
     `/emailCampaigns?limit=${limit}&status=sent&sort=desc`,
