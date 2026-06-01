@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { getSupabaseServerClient, roleRequiresMfa, type UserRole } from '@/lib/auth';
+import { checkLoginAllowed, recordLoginFailure, recordLoginSuccess } from '@/lib/auth/rate-limit';
 
 /* ============================================================
    Schémas de validation
@@ -58,16 +59,42 @@ export async function signIn(_prev: ActionError | null, formData: FormData): Pro
     return { error: parsed.error.issues[0]?.message ?? 'Données invalides.' };
   }
 
+  const email = parsed.data.email;
+
+  // Garde-fou anti-force-brute : bloque après trop d'échecs.
+  const gate = await checkLoginAllowed(email);
+  if (gate.blocked) {
+    const min = Math.ceil(gate.retryAfterSec / 60);
+    return { error: `Trop de tentatives. Réessaie dans ${min} minute${min > 1 ? 's' : ''}.` };
+  }
+
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: parsed.data.email,
+    email,
     password: parsed.data.password,
   });
 
   if (error || !data.user) {
-    return { error: 'Email ou mot de passe incorrect.' };
+    const after = await recordLoginFailure(email);
+    if (after.blocked) {
+      const min = Math.ceil(after.retryAfterSec / 60);
+      await logAudit({
+        userId: null,
+        action: 'auth.login_locked',
+        resourceType: 'auth',
+        resourceId: email,
+        metadata: { reason: 'too_many_failed_attempts' },
+      });
+      return {
+        error: `Trop de tentatives. Connexion bloquée pendant ${min} minute${min > 1 ? 's' : ''}.`,
+      };
+    }
+    return {
+      error: `Email ou mot de passe incorrect. Il te reste ${after.remaining} essai${after.remaining > 1 ? 's' : ''}.`,
+    };
   }
 
+  await recordLoginSuccess(email);
   const role = (data.user.app_metadata?.role as UserRole | undefined) ?? 'executive';
   const destination = await destinationAfterAuth(role);
   redirect(destination);
