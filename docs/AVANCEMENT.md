@@ -2,7 +2,11 @@
 
 > Journal de bord pour reprendre le dev d'une session à l'autre.
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
-> Dernière mise à jour : 2026-05-29 (ajout login + 2FA).
+> Dernière mise à jour : 2026-06-01 (centre email Brevo + auth désactivée en local).
+
+> ## ⚠️ AVANT LA MISE EN LIGNE — réactiver l'authentification
+> L'auth est **désactivée en dev local** (`DISABLE_AUTH=true` dans `.env.local`). Un bandeau rouge le rappelle dans l'app.
+> **Avant tout déploiement** : retirer `DISABLE_AUTH` de `.env.local`. (En prod elle se rallume seule via le check `NODE_ENV`, mais à vérifier.) Le système login + 2FA est intact, rien n'a été supprimé.
 
 ---
 

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
+import { isAuthDisabled } from './dev-bypass';
 
 // Rôles qui exigent le 2FA (dupliqué ici volontairement : le middleware tourne
 // en edge runtime, on évite d'importer le module auth complet — voir src/lib/auth/index.ts).
@@ -17,6 +18,11 @@ function isPublicPath(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
+  // DEV LOCAL : auth désactivée → aucun verrouillage, accès direct. Jamais actif en prod.
+  if (isAuthDisabled()) {
+    return NextResponse.next({ request });
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 

@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { SidebarLink } from '@/components/shared/sidebar-nav';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { isAuthDisabled } from '@/lib/auth/dev-bypass';
 
 function deriveDisplay(email: string): { name: string; initials: string } {
   const local = email.split('@')[0] ?? 'utilisateur';
@@ -97,6 +98,22 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </aside>
 
       <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
+        {isAuthDisabled() && (
+          <div
+            style={{
+              background: 'var(--danger)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              textAlign: 'center',
+              padding: '6px 12px',
+              letterSpacing: '0.02em',
+            }}
+          >
+            🔓 Authentification DÉSACTIVÉE (dev local) — à RÉACTIVER avant la mise en ligne (retirer
+            DISABLE_AUTH de .env.local)
+          </div>
+        )}
         <div className="view-topbar">
           <div className="view-topbar-breadcrumb">
             <span className="crumb">Workspace</span>

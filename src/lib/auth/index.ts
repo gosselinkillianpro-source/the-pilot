@@ -1,6 +1,14 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { Database } from '@/lib/db/types';
+import { isAuthDisabled } from './dev-bypass';
+
+// Utilisateur fictif utilisé UNIQUEMENT quand l'auth est désactivée en dev local.
+const DEV_LOCAL_USER: AuthenticatedUser = {
+  id: '00000000-0000-0000-0000-000000000000',
+  email: 'dev-local@thepilot',
+  role: 'admin',
+};
 
 export type UserRole = 'admin' | 'closer' | 'closer_junior' | 'executive';
 
@@ -45,6 +53,11 @@ export async function getSupabaseServerClient() {
 }
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser> {
+  // DEV LOCAL : auth désactivée → admin fictif (jamais en prod, voir dev-bypass.ts).
+  if (isAuthDisabled()) {
+    return DEV_LOCAL_USER;
+  }
+
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.auth.getUser();
 
