@@ -40,6 +40,15 @@ L'app tourne en local (`pnpm dev` → http://localhost:3000). Toutes les vérifs
 - Actions auth : `src/app/(auth)/actions.ts`. Audit log sur connexion/déconnexion/enrôlement 2FA.
 - ⚠️ **Désormais l'app est verrouillée** : il FAUT un compte (script ci-dessus) pour entrer, même en local.
 
+### Centre Email — Brevo dans l'app (NOUVEAU, 4 phases)
+Objectif : ne plus aller sur Brevo. Tout depuis `/email`.
+- **Boîte d'envoi** (`/email/sent`) : liste des emails envoyés + statut (livré/ouvert/cliqué/bounce), reconstruite depuis `/smtp/statistics/events` (l'endpoint `/smtp/emails` renvoie 400).
+- **Contacts & listes** (`/email/contacts`) : liste paginée + recherche par email + créer contact / créer liste (actions sécurisées auth+rôle+audit).
+- **Campagnes** (`/email/campaign/new`) : créer une campagne (template marque + scan AMF) → **brouillon Brevo**. Envoi réel **gaté par `EMAIL_TEST_MODE`** (refusé tant qu'on est en test).
+- **Webhook** (`/api/webhooks/brevo`) : reçoit les events Brevo → table **`email_events`** (migration 0003, RLS posée). Protégé par **`BREVO_WEBHOOK_SECRET`** (fail-closed). Endpoint public (ajouté aux `PUBLIC_PREFIXES` du middleware). Alimentera le scoring email + l'activité contact.
+  - ⚠️ **À configurer pour recevoir les vrais events** : dans Brevo → Paramètres → Webhooks, URL = `https://<ton-domaine>/api/webhooks/brevo?token=<BREVO_WEBHOOK_SECRET>`. En local (localhost), Brevo ne peut pas joindre l'app → nécessite un déploiement ou un tunnel (ngrok). Le secret est déjà dans `.env.local`.
+- Pas reconstruits volontairement : l'éditeur visuel drag&drop et le constructeur d'automatisations (trop lourd, peu rentable).
+
 ### Email IA sur la fiche investisseur (NOUVEAU)
 - Sur `/closing/investor/[id]` : bouton **« Générer une proposition »** → l'IA (Claude) rédige un email calé sur le score + la situation + les projets ouverts. Brouillon **éditable**, puis envoi via `sendEmailAction` (mode test → adresse de test).
 - Garde-fous : prompt cadré AMF (`src/lib/ai/investor-emails.ts`), scan AMF, `requireRole(closer/admin)`, journalisation LLM (`src/lib/ai/log-llm.ts` → table `llm_calls`), audit.
