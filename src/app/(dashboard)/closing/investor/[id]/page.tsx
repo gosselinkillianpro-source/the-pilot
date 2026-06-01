@@ -2,6 +2,7 @@ import { ArrowLeft, Mail, Phone, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInitials, mockInvestors, mockInvestorTimeline, STAGE_LABELS } from '@/lib/mock-data';
+import { InvestorEmailPanel } from './investor-email-panel';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -199,6 +200,12 @@ export default async function InvestorPage({ params }: Props) {
               Régénérer le brief
             </button>
           </div>
+
+          <InvestorEmailPanel
+            investorId={investor.id}
+            firstName={investor.firstName}
+            email={investor.email}
+          />
 
           <div className="view-card">
             <div className="view-card-header">
