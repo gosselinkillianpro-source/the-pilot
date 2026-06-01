@@ -59,7 +59,7 @@ L'app tourne en local (`pnpm dev` → http://localhost:3000). Toutes les vérifs
 
 1. **Cloudflare Access** : la couche réseau (qui peut atteindre l'app) reste à brancher en prod. Le login Supabase + 2FA est fait (cf. plus haut). Reste aussi un `TODO requireRole` à câbler dans `email/compose/actions.ts` maintenant que l'auth existe.
 2. **Intégration données SAH** : BLOQUÉ tant que l'appel technique SAH n'a pas eu lieu (cf. `docs/appel-sah-questions.md`). C'est ce qui permettra de remplacer les données fake par les vraies.
-3. **Attribution réelle** (ROI par action) : la vue existe en mock ; le calcul réel viendra avec les données SAH + le tracking des actions.
+3. **Scoring IA + Attribution réelle** : spec complète dans **`docs/the-pilot-priorisation-performance.md`** (2 moteurs : scoring urgence×valeur + règle 48h ; attribution last-touch / « l'appel prime » / fenêtre 30j). Les vues existent en mock (`/closing/pipeline`, `/performance`). **Bloqué tant qu'on n'a pas les vraies données SAH** (souscriptions, dates projets, statuts KYC) + le tracking des actions (appels) + l'engagement email Brevo (clics/ouvertures). Signal n°1 à câbler : date de remboursement = date souscription + durée projet.
 4. **Envoi réel aux listes** : en mode test seulement pour l'instant. Le passage en réel (campagne Brevo) sera activé quand `EMAIL_TEST_MODE=false`.
 5. **Logo email en PNG** : actuellement OFFIC-3.png (fond plein, OK). Un logo transparent (.webp) causait un fond noir → à garder en fond plein.
 6. **Dark mode** : variables prêtes, toggle non branché.
