@@ -8,8 +8,12 @@ const MFA_REQUIRED_ROLES = ['admin', 'closer', 'closer_junior'];
 // Routes accessibles sans être connecté.
 const PUBLIC_PATHS = ['/', '/login', '/mfa', '/mfa/setup'];
 
+// Endpoints publics par nature (appelés par des services externes), protégés par
+// leur propre secret/signature dans le handler — jamais par le mur de connexion.
+const PUBLIC_PREFIXES = ['/api/webhooks/'];
+
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.includes(pathname);
+  return PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
 export async function updateSession(request: NextRequest) {

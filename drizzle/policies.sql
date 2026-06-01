@@ -177,3 +177,16 @@ create policy social_settings_admin_all on public.social_settings for all
 drop policy if exists social_settings_exec_read on public.social_settings;
 create policy social_settings_exec_read on public.social_settings for select
   using (public.auth_role() = 'executive');
+
+-- ============================================================
+-- EMAIL EVENTS (analytics email reçus par webhook)
+-- Écriture : webhook serveur via service connection (contourne la RLS).
+-- Lecture : toute l'équipe. Aucune écriture par les clients authentifiés.
+-- ============================================================
+alter table public.email_events enable row level security;
+drop policy if exists email_events_admin_all on public.email_events;
+create policy email_events_admin_all on public.email_events for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists email_events_team_read on public.email_events;
+create policy email_events_team_read on public.email_events for select
+  using (public.auth_role() in ('closer', 'closer_junior', 'executive'));

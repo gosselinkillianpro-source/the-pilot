@@ -412,3 +412,21 @@ export const llmCalls = pgTable('llm_calls', {
   outputSummary: text('output_summary'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ============================================================
+   EMAIL EVENTS — événements Brevo reçus par webhook
+   (livré, ouvert, cliqué, bounce…). Alimente le scoring email
+   et l'activité par contact. Stocké brut + champs indexables.
+   ============================================================ */
+export const emailEvents = pgTable('email_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  messageId: text('message_id'),
+  email: text('email').notNull(),
+  event: text('event').notNull(),
+  subject: text('subject'),
+  link: text('link'),
+  tag: text('tag'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }),
+  payload: jsonb('payload'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
