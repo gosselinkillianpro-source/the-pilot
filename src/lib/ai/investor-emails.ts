@@ -111,7 +111,6 @@ export async function draftProposalEmail(
   const response = await anthropic.messages.create({
     model,
     max_tokens: 1200,
-    temperature: 0.6,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(investor, projects) }],
   });
