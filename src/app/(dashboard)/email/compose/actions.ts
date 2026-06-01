@@ -5,7 +5,7 @@ import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getEmailConfig } from '@/lib/email/config';
-import { renderEmailTemplate } from '@/lib/email/template';
+import { renderEmailTemplate, renderPersonalEmail } from '@/lib/email/template';
 import {
   addContactsToList,
   createBrevoList,
@@ -25,6 +25,8 @@ const schema = z.object({
   listName: z.string().optional(),
   groupName: z.string().optional(),
   groupEmails: z.array(z.string().email()).optional(),
+  // 'brand' = template de marque (campagnes) ; 'personal' = rendu épuré 1-à-1 (closers)
+  variant: z.enum(['brand', 'personal']).optional(),
 });
 
 export type SendEmailInput = z.infer<typeof schema>;
@@ -59,13 +61,18 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
   const data = parsed.data;
   const config = getEmailConfig();
 
-  // 3. Rendu du template final (header marque + footer legal/AMF)
-  const htmlContent = renderEmailTemplate({
-    title: data.title,
-    bodyText: data.bodyText,
-    ctaLabel: data.ctaLabel,
-    ctaUrl: data.ctaUrl,
-  });
+  // 3. Rendu du template final selon la variante (marque vs personnel 1-à-1)
+  const renderHtml = (notice?: string) =>
+    data.variant === 'personal'
+      ? renderPersonalEmail({ bodyText: data.bodyText, notice })
+      : renderEmailTemplate({
+          title: data.title,
+          bodyText: data.bodyText,
+          ctaLabel: data.ctaLabel,
+          ctaUrl: data.ctaUrl,
+          notice,
+        });
+  const htmlContent = renderHtml();
 
   // 4. Scan AMF (bloquant) sur l'email final — le footer fournit déjà le disclaimer requis
   const scan = scanAmfCompliance(`${data.subject}\n${htmlContent}`);
@@ -113,13 +120,9 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
       if (!config.testAddress) {
         return { ok: false, reason: 'error', message: 'EMAIL_TEST_ADDRESS non configurée' };
       }
-      const testHtml = renderEmailTemplate({
-        title: data.title,
-        bodyText: data.bodyText,
-        ctaLabel: data.ctaLabel,
-        ctaUrl: data.ctaUrl,
-        notice: `[MODE TEST] Cet email serait parti à : ${description}. Aucun vrai destinataire contacté.`,
-      });
+      const testHtml = renderHtml(
+        `[MODE TEST] Cet email serait parti à : ${description}. Aucun vrai destinataire contacté.`,
+      );
       await sendTransactionalEmail({
         to: [{ email: config.testAddress }],
         subject: `[TEST] ${data.subject}`,

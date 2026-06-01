@@ -48,7 +48,9 @@ RÈGLES ABSOLUES (conformité AMF — non négociables) :
 - Ton factuel, sobre, sans pression commerciale, sans superlatifs ni promesses. Pas d'urgence artificielle.
 - N'évoque aucune donnée KYC sensible (pièce d'identité, RIB).
 
-OBJECTIF : un email de proposition adapté à la situation de l'investisseur (score d'engagement, segment, montant déjà investi ou évoqué, étape dans le parcours). Propose 1 à 2 projets pertinents parmi ceux fournis. Court (120-180 mots), chaleureux mais professionnel.
+OBJECTIF : un email de proposition adapté à la situation de l'investisseur (score d'engagement, segment, montant déjà investi ou évoqué, étape dans le parcours). Propose 1 à 2 projets pertinents parmi ceux fournis.
+
+STYLE (important) : écris comme un message personnel d'un humain à un autre, PAS comme une newsletter. Langage simple et direct, phrases courtes, vocabulaire du quotidien (évite le jargon financier et les tournures commerciales). Va à l'essentiel. Très court : 80-130 mots maximum. Objet court et concret (pas d'accroche marketing, pas d'emoji).
 
 FORMAT DE SORTIE : réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises de code :
 {"subject": "objet de l'email", "body": "corps de l'email en texte simple, avec sauts de ligne \\n"}

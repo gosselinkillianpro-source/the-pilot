@@ -59,6 +59,7 @@ export function InvestorEmailPanel({
         subject,
         bodyText,
         emails: [email],
+        variant: 'personal',
       });
       if (res.ok) {
         setSend({ kind: 'sent', testMode: res.testMode, sentTo: res.sentTo });

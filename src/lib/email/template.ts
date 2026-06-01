@@ -129,3 +129,60 @@ export function renderEmailTemplate(input: EmailTemplateInput): string {
 </body>
 </html>`;
 }
+
+export type PersonalEmailInput = {
+  bodyText: string;
+  /** Nom affiché en signature (ex: prénom du closer). Défaut: "Seven At Home". */
+  signatureName?: string;
+  /** Encart d'information en haut (ex: bandeau mode test) — rendu en texte simple. */
+  notice?: string;
+};
+
+/**
+ * Rendu "email personnel" pour les messages 1-à-1 d'un closer.
+ * Volontairement épuré pour viser la boîte principale plutôt que l'onglet Promotions :
+ * pas d'image/logo, pas de bouton, pas de lien de désinscription, pas de mise en page
+ * "newsletter". Juste un texte signé + une mention légale/AMF discrète (obligatoire).
+ */
+export function renderPersonalEmail(input: PersonalEmailInput): string {
+  const paragraphs = input.bodyText
+    .split('\n')
+    .map((l) => l.trim())
+    .map((l) =>
+      l === ''
+        ? '<div style="height:12px;line-height:12px">&nbsp;</div>'
+        : `<p style="margin:0 0 14px;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(l)}</p>`,
+    )
+    .join('');
+
+  const noticeHtml = input.notice?.trim()
+    ? `<p style="margin:0 0 16px;font-family:${SANS};font-size:13px;line-height:1.5;color:${TX3}">${escapeHtml(input.notice)}</p>`
+    : '';
+
+  const signature = (input.signatureName ?? 'Seven At Home').trim();
+
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+</head>
+<body style="margin:0;padding:0;background:#ffffff;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:20px 0">
+    <tr><td align="left" style="padding:0 24px">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%">
+        <tr><td>
+          ${noticeHtml}
+          ${paragraphs}
+          <p style="margin:18px 0 0;font-family:${SANS};font-size:15px;line-height:1.6;color:${DARK}">${escapeHtml(signature)}</p>
+          <p style="margin:24px 0 0;font-family:${SANS};font-size:11px;line-height:1.5;color:${TX3}">
+            Seven Capital Invest SA — investir comporte un risque de perte en capital. Rendement cible, capital non garanti.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
