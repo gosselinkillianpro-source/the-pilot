@@ -89,6 +89,10 @@ export default async function EmailPage() {
             <Send size={13} />
             Boîte d'envoi
           </Link>
+          <Link href="/email/campaign/new" className="btn btn-secondary btn-sm">
+            <Send size={13} />
+            Campagne
+          </Link>
           <Link href="/email/compose" className="btn btn-primary btn-sm">
             <PenLine size={13} />
             Composer

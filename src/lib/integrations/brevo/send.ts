@@ -127,3 +127,32 @@ export async function updateBrevoContact(
 export async function removeContactsFromList(listId: number, emails: string[]): Promise<void> {
   await brevoPost(`/contacts/lists/${listId}/contacts/remove`, { emails });
 }
+
+/**
+ * Crée une campagne email Brevo. Sans `scheduledAt` et sans envoi explicite,
+ * elle reste en BROUILLON (aucun email envoyé). L'envoi est une action séparée.
+ */
+export async function createBrevoCampaign(input: {
+  name: string;
+  subject: string;
+  htmlContent: string;
+  senderName: string;
+  senderAddress: string;
+  listIds: number[];
+  scheduledAt?: string; // ISO ; si absent → brouillon
+}): Promise<{ id: number }> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    subject: input.subject,
+    sender: { name: input.senderName, email: input.senderAddress },
+    htmlContent: input.htmlContent,
+    recipients: { listIds: input.listIds },
+  };
+  if (input.scheduledAt) body.scheduledAt = input.scheduledAt;
+  return brevoPost<{ id: number }>('/emailCampaigns', body);
+}
+
+/** Envoie immédiatement une campagne existante (sortie du brouillon). À gater côté appelant. */
+export async function sendBrevoCampaignNow(campaignId: number): Promise<void> {
+  await brevoPost(`/emailCampaigns/${campaignId}/sendNow`, {});
+}
