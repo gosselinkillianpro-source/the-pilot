@@ -40,6 +40,12 @@ L'app tourne en local (`pnpm dev` → http://localhost:3000). Toutes les vérifs
 - Actions auth : `src/app/(auth)/actions.ts`. Audit log sur connexion/déconnexion/enrôlement 2FA.
 - ⚠️ **Désormais l'app est verrouillée** : il FAUT un compte (script ci-dessus) pour entrer, même en local.
 
+### Email IA sur la fiche investisseur (NOUVEAU)
+- Sur `/closing/investor/[id]` : bouton **« Générer une proposition »** → l'IA (Claude) rédige un email calé sur le score + la situation + les projets ouverts. Brouillon **éditable**, puis envoi via `sendEmailAction` (mode test → adresse de test).
+- Garde-fous : prompt cadré AMF (`src/lib/ai/investor-emails.ts`), scan AMF, `requireRole(closer/admin)`, journalisation LLM (`src/lib/ai/log-llm.ts` → table `llm_calls`), audit.
+- ⚠️ **Nécessite `ANTHROPIC_API_KEY` dans `.env.local`** (sinon message clair, pas de crash). À ajouter puis relancer le serveur.
+- Type « Proposition » fait. À venir : emails **compte-rendu d'appel** + **action post-appel** (même mécanique + champ « notes d'appel »).
+
 ### Envoi d'email (fonctionnel)
 - 3 modes : personnes / liste Brevo existante / nouveau groupe.
 - **Scan AMF** bloquant (`src/lib/ai/amf-compliance.ts`).
