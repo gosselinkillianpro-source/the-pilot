@@ -1,9 +1,9 @@
-# Réglages pnpm (pnpm 10+ les lit ici, plus dans le champ "pnpm" de package.json).
-# Autorise les scripts d'installation des dépendances à binaire natif (sinon build bloqué).
-onlyBuiltDependencies:
-  - '@biomejs/biome'
-  - esbuild
-  - msw
-  - protobufjs
-  - sharp
-  - unrs-resolver
+# Réglages pnpm. Autorise explicitement les scripts d'installation (binaires natifs).
+# pnpm 11 exige un choix true/false par paquet via "allowBuilds".
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  msw: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
