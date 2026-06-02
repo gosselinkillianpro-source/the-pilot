@@ -1,8 +1,9 @@
-allowBuilds:
-  esbuild: set this to true or false
-  msw: set this to true or false
-  protobufjs: set this to true or false
-  sharp: set this to true or false
+# Réglages pnpm (pnpm 10+ les lit ici, plus dans le champ "pnpm" de package.json).
+# Autorise les scripts d'installation des dépendances à binaire natif (sinon build bloqué).
 onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - esbuild
+  - msw
+  - protobufjs
   - sharp
   - unrs-resolver
