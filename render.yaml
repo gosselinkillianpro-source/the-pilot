@@ -1,0 +1,53 @@
+# Render Blueprint — déploiement THE PILOT (région EU Frankfurt).
+# Les SECRETS ne sont PAS dans ce fichier : ils se règlent dans le dashboard Render
+# (envVars en `sync: false` = Render te demande la valeur, jamais commitée).
+#
+# Mise en place : Render → New → Blueprint → connecter le repo GitHub → il lit ce fichier.
+services:
+  - type: web
+    name: the-pilot
+    runtime: node
+    region: frankfurt # Union Européenne (RGPD)
+    plan: starter
+    branch: main
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /login
+    envVars:
+      # Force la prod : l'auth est TOUJOURS active (DISABLE_AUTH sans effet ici).
+      - key: NODE_ENV
+        value: production
+      # --- Secrets à renseigner dans le dashboard Render (jamais commités) ---
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_WEBHOOK_SECRET
+        sync: false
+      - key: EMAIL_TEST_MODE
+        sync: false
+      - key: EMAIL_TEST_ADDRESS
+        sync: false
+      - key: EMAIL_SENDER_NAME
+        sync: false
+      - key: EMAIL_SENDER_ADDRESS
+        sync: false
+      - key: NEXT_PUBLIC_EMAIL_LOGO_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_GROK_MODEL
+        sync: false
+      - key: OPENROUTER_IMAGE_MODEL
+        sync: false

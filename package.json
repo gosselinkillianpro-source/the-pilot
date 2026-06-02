@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "THE PILOT — Cabine de pilotage marketing 360 pour Seven At Home",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
