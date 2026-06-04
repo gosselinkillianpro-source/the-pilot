@@ -276,10 +276,18 @@ export type BreachStats = {
   };
   totalInvested: number;
   subCount: number;
+  walletTotal: number; // solde portefeuille cumulé (€)
+  avgTicketPerInvestor: number;
+  avgPerSub: number;
+  avgDaysToFirstSub: number | null; // délai moyen inscription → 1re souscription
   byCode: { code: string; total: number; onboarded: number; invested: number }[];
+  byCity: { city: string; total: number }[];
+  byMonth: { month: string; signups: number }[];
+  topProjects: { name: string; investors: number; collected: number }[];
   // Référence pour comparer : hors BREACH
   otherTotal: number;
   otherOnboarded: number;
+  otherAvgTicketPerInvestor: number;
 };
 
 type FunnelRow = {
@@ -288,6 +296,7 @@ type FunnelRow = {
   onboarded: number;
   new7d: number;
   new30d: number;
+  wallet_cents: string | number;
 };
 type InvestedRow = { investors: number; total_invested: string | number; sub_count: number };
 type CodeRow = {
@@ -296,7 +305,16 @@ type CodeRow = {
   onboarded: number;
   invested: string | number;
 };
-type OtherRow = { total: number; onboarded: number };
+type OtherRow = {
+  total: number;
+  onboarded: number;
+  investors: number;
+  total_invested: string | number;
+};
+type CityRow = { address_city: string | null; total: number };
+type MonthRow = { month: string; signups: number };
+type ProjRow = { name: string | null; investors: number; collected: string | number };
+type TimingRow = { avg_days: string | number | null };
 
 /** Toutes les stats des leads venant des pubs de Killian (code bonus contenant BREACH). */
 export async function getBreachStats(): Promise<BreachStats> {
@@ -306,7 +324,8 @@ export async function getBreachStats(): Promise<BreachStats> {
       count(*) filter (where registration_complete)::int as registered,
       count(*) filter (where onboarding_complete)::int as onboarded,
       count(*) filter (where sah_created_at >= now() - interval '7 days')::int as new7d,
-      count(*) filter (where sah_created_at >= now() - interval '30 days')::int as new30d
+      count(*) filter (where sah_created_at >= now() - interval '30 days')::int as new30d,
+      coalesce(sum(coalesce(wallet_balance_cents, 0)), 0) as wallet_cents
     from investors
     where deleted_at is null and bonus_code ilike '%breach%'
   `)) as unknown as FunnelRow[];
@@ -334,37 +353,102 @@ export async function getBreachStats(): Promise<BreachStats> {
     order by total desc
   `)) as unknown as CodeRow[];
 
+  const byCity = (await db.execute(sql`
+    select address_city, count(*)::int as total
+    from investors
+    where deleted_at is null and bonus_code ilike '%breach%' and address_city is not null
+    group by address_city order by total desc limit 8
+  `)) as unknown as CityRow[];
+
+  const byMonth = (await db.execute(sql`
+    select to_char(date_trunc('month', sah_created_at), 'YYYY-MM') as month, count(*)::int as signups
+    from investors
+    where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
+    group by month order by month desc limit 6
+  `)) as unknown as MonthRow[];
+
+  const topProjects = (await db.execute(sql`
+    select p.name,
+      count(distinct s.investor_id)::int as investors,
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as collected
+    from subscriptions s
+    join investors i on i.id = s.investor_id
+    join projects p on p.id = s.project_id
+    where i.bonus_code ilike '%breach%'
+    group by p.name order by collected desc limit 8
+  `)) as unknown as ProjRow[];
+
+  const timing = (await db.execute(sql`
+    select avg(extract(epoch from (fs.first_signed - i.sah_created_at)) / 86400) as avg_days
+    from investors i
+    join (
+      select investor_id, min(signed_at) as first_signed
+      from subscriptions where status <> 'cancelled' and signed_at is not null
+      group by investor_id
+    ) fs on fs.investor_id = i.id
+    where i.bonus_code ilike '%breach%' and i.sah_created_at is not null
+  `)) as unknown as TimingRow[];
+
   const other = (await db.execute(sql`
     select
-      count(*)::int as total,
-      count(*) filter (where onboarding_complete)::int as onboarded
-    from investors
-    where deleted_at is null and (bonus_code is null or bonus_code not ilike '%breach%')
+      count(distinct i.id)::int as total,
+      count(distinct i.id) filter (where i.onboarding_complete)::int as onboarded,
+      count(distinct s.investor_id)::int as investors,
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total_invested
+    from investors i
+    left join subscriptions s on s.investor_id = i.id
+    where i.deleted_at is null and (i.bonus_code is null or i.bonus_code not ilike '%breach%')
   `)) as unknown as OtherRow[];
 
-  const f = funnel[0] ?? { total: 0, registered: 0, onboarded: 0, new7d: 0, new30d: 0 };
+  const f = funnel[0] ?? {
+    total: 0,
+    registered: 0,
+    onboarded: 0,
+    new7d: 0,
+    new30d: 0,
+    wallet_cents: 0,
+  };
   const inv = invested[0] ?? { investors: 0, total_invested: 0, sub_count: 0 };
-  const o = other[0] ?? { total: 0, onboarded: 0 };
+  const o = other[0] ?? { total: 0, onboarded: 0, investors: 0, total_invested: 0 };
+
+  const totalInvested = Number(inv.total_invested) || 0;
+  const investors = Number(inv.investors) || 0;
+  const subCount = Number(inv.sub_count) || 0;
+  const avgDays = timing[0]?.avg_days != null ? Number(timing[0].avg_days) : null;
+  const otherInvestors = Number(o.investors) || 0;
+  const otherInvested = Number(o.total_invested) || 0;
 
   return {
     funnel: {
       total: Number(f.total),
       registered: Number(f.registered),
       onboarded: Number(f.onboarded),
-      investors: Number(inv.investors),
+      investors,
       new7d: Number(f.new7d),
       new30d: Number(f.new30d),
     },
-    totalInvested: Number(inv.total_invested) || 0,
-    subCount: Number(inv.sub_count) || 0,
+    totalInvested,
+    subCount,
+    walletTotal: Math.round((Number(f.wallet_cents) || 0) / 100),
+    avgTicketPerInvestor: investors > 0 ? Math.round(totalInvested / investors) : 0,
+    avgPerSub: subCount > 0 ? Math.round(totalInvested / subCount) : 0,
+    avgDaysToFirstSub: avgDays != null ? Math.round(avgDays) : null,
     byCode: byCode.map((c) => ({
       code: c.bonus_code ?? '(sans code)',
       total: Number(c.total),
       onboarded: Number(c.onboarded),
       invested: Number(c.invested) || 0,
     })),
+    byCity: byCity.map((c) => ({ city: c.address_city ?? '—', total: Number(c.total) })),
+    byMonth: byMonth.map((m) => ({ month: m.month, signups: Number(m.signups) })).reverse(),
+    topProjects: topProjects.map((p) => ({
+      name: p.name ?? '—',
+      investors: Number(p.investors),
+      collected: Number(p.collected) || 0,
+    })),
     otherTotal: Number(o.total),
     otherOnboarded: Number(o.onboarded),
+    otherAvgTicketPerInvestor: otherInvestors > 0 ? Math.round(otherInvested / otherInvestors) : 0,
   };
 }
 

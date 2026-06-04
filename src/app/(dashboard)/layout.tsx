@@ -1,12 +1,14 @@
 import {
   BarChart3,
   Bell,
+  Building2,
   ChevronDown,
   LayoutGrid,
   Mail,
   Search,
   Share2,
   Sparkles,
+  Target,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -66,6 +68,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <SidebarLink href="/closing">
             <Users />
             Closing
+          </SidebarLink>
+          <SidebarLink href="/projects">
+            <Building2 />
+            Projets
+          </SidebarLink>
+          <SidebarLink href="/breach" style={{ color: 'var(--ai)' }}>
+            <Target />
+            BREACH
           </SidebarLink>
           <SidebarLink href="/email">
             <Mail />
