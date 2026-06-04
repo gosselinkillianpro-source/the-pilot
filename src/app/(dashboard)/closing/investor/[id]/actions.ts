@@ -6,6 +6,11 @@ import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { estimateCostEur } from '@/lib/ai/anthropic';
 import {
+  type CallBrief,
+  draftCallBrief,
+  MissingAnthropicKeyError as MissingKeyBrief,
+} from '@/lib/ai/call-brief';
+import {
   draftProposalEmail,
   type InvestorContext,
   MissingAnthropicKeyError,
@@ -15,6 +20,7 @@ import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getInvestorScored } from '@/lib/db/queries/call-queue';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { closerTasks, interactions, investors } from '@/lib/db/schema';
 
@@ -217,6 +223,76 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
+  }
+}
+
+export type CallBriefActionResult =
+  | { ok: true; brief: CallBrief; costEur: number }
+  | { ok: false; reason: 'no_key' | 'not_found' | 'error'; message: string };
+
+/** Génère un brief d'appel IA (script + objections + projets) calé sur le score. */
+export async function draftCallBriefAction(investorId: string): Promise<CallBriefActionResult> {
+  const user = await getAuthenticatedUser();
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+
+  const investor = await getInvestorById(investorId);
+  if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
+
+  const scored = await getInvestorScored(investorId);
+  const projects = (await getInvestableProjects()).map((p) => ({
+    name: p.name,
+    city: p.city ?? '',
+    targetYieldAnnual: Number(p.targetYieldAnnual ?? 0),
+    durationMonths: p.durationMonths ?? 0,
+  }));
+
+  try {
+    const result = await draftCallBrief(
+      {
+        firstName: investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur',
+        statusLabel: scored?.scored.statusLabel ?? 'Inscrit',
+        queueLabel: scored?.scored.queueLabel ?? 'File d’appel',
+        callGoal: scored?.scored.callGoal ?? 'Faire le point.',
+        factors: scored?.scored.factors ?? [],
+        totalInvested: scored?.totalInvested ?? 0,
+      },
+      projects,
+    );
+
+    await logLlmCall({
+      userId: user.id,
+      model: result.model,
+      purpose: 'call_brief',
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      latencyMs: result.latencyMs,
+      status: 'success',
+      inputSummary: `call brief for ${investor.id}`,
+      outputSummary: result.brief.objectif,
+    });
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'ai.draft_call_brief',
+      resourceType: 'investor',
+      resourceId: investor.id,
+    });
+
+    return {
+      ok: true,
+      brief: result.brief,
+      costEur: estimateCostEur(result.model, result.promptTokens, result.completionTokens),
+    };
+  } catch (e) {
+    if (e instanceof MissingKeyBrief) {
+      return {
+        ok: false,
+        reason: 'no_key',
+        message: 'Clé IA absente : ajoute ANTHROPIC_API_KEY puis relance.',
+      };
+    }
+    return { ok: false, reason: 'error', message: e instanceof Error ? e.message : 'Erreur.' };
   }
 }
 

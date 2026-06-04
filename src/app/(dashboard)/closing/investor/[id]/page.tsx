@@ -9,6 +9,7 @@ import {
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
 import { getInvestorStage } from '@/lib/investor-stage';
+import { CallBriefPanel } from './call-brief-panel';
 import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel } from './investor-email-panel';
 
@@ -226,6 +227,9 @@ export default async function InvestorPage({ params }: Props) {
               </div>
             </div>
           )}
+
+          {/* Brief d'appel IA */}
+          <CallBriefPanel investorId={investor.id} />
 
           {/* Enregistrer un appel */}
           <CallLogPanel investorId={investor.id} />
