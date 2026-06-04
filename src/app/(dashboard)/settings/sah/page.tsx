@@ -6,6 +6,7 @@ import {
   type SahColumn,
   type SahDiagnostics,
 } from '@/lib/integrations/sah/client';
+import { SyncButton } from './sync-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +85,22 @@ export default async function SahExplorerPage() {
                 Connexion réussie. Transmets le diagnostic ci-dessous à Claude pour construire la
                 synchronisation.
               </div>
+            </div>
+          </div>
+
+          <div className="view-card">
+            <div className="view-card-header">
+              <div className="view-card-title">Synchronisation (investisseurs + projets)</div>
+            </div>
+            <div
+              className="view-card-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+            >
+              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
+                Copie les champs non sensibles de SAH (users, projects) dans THE PILOT. Lecture
+                seule côté SAH. Les souscriptions et dates de remboursement viendront ensuite.
+              </p>
+              <SyncButton />
             </div>
           </div>
 
