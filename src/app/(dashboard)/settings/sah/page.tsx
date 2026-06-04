@@ -1,6 +1,11 @@
 import { AlertTriangle, Database } from 'lucide-react';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { getSahSchema, type SahColumn } from '@/lib/integrations/sah/client';
+import {
+  getSahDiagnostics,
+  getSahSchema,
+  type SahColumn,
+  type SahDiagnostics,
+} from '@/lib/integrations/sah/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,9 +29,10 @@ export default async function SahExplorerPage() {
   }
 
   let schema: SahColumn[] = [];
+  let diag: SahDiagnostics | null = null;
   let error: string | null = null;
   try {
-    schema = await getSahSchema();
+    [schema, diag] = await Promise.all([getSahSchema(), getSahDiagnostics()]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
   }
@@ -75,11 +81,62 @@ export default async function SahExplorerPage() {
                 {byTable.size} tables · {schema.length} colonnes
               </div>
               <div className="alert-description">
-                Connexion réussie. Transmets cette structure à Claude pour construire la
+                Connexion réussie. Transmets le diagnostic ci-dessous à Claude pour construire la
                 synchronisation.
               </div>
             </div>
           </div>
+
+          {diag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">Diagnostic (à copier à Claude)</div>
+                <span className="badge badge-brand">non sensible</span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+              >
+                <div>
+                  <strong style={{ fontSize: 13 }}>Volumes</strong>
+                  {diag.counts.map((c) => (
+                    <div key={c.table} style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                      {c.table} : <strong>{c.rows < 0 ? 'non lisible' : c.rows}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <strong style={{ fontSize: 13 }}>
+                    KYC validé (onboarding) : {diag.kycValidatedCount}
+                  </strong>
+                </div>
+                <div>
+                  <strong style={{ fontSize: 13 }}>Valeurs de users_profiles.status</strong>
+                  {diag.profileStatuses.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>—</div>
+                  ) : (
+                    diag.profileStatuses.map((s) => (
+                      <div key={s.value} style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                        « {s.value} » : <strong>{s.count}</strong>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div>
+                  <strong style={{ fontSize: 13 }}>États du questionnaire (suitability)</strong>
+                  {diag.suitabilityStates.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>—</div>
+                  ) : (
+                    diag.suitabilityStates.map((s) => (
+                      <div key={s.value} style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                        « {s.value} » : <strong>{s.count}</strong>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {[...byTable.entries()].map(([table, cols]) => (
             <div key={table} className="view-card">
