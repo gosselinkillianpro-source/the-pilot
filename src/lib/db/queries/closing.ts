@@ -1,7 +1,18 @@
 import 'server-only';
-import { and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { closerTasks, interactions, investors, users } from '@/lib/db/schema';
+
+export const PIPELINE_STAGES = [
+  { value: 'new', label: 'Nouveau' },
+  { value: 'contacted', label: 'Contacté' },
+  { value: 'meeting_booked', label: 'RDV pris' },
+  { value: 'meeting_done', label: 'RDV fait' },
+  { value: 'proposal_sent', label: 'Proposition' },
+  { value: 'closed_won', label: 'Gagné' },
+  { value: 'closed_lost', label: 'Perdu' },
+  { value: 'dormant', label: 'En sommeil' },
+] as const;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -71,6 +82,58 @@ export async function getDueTasks(opts?: { closerId?: string }): Promise<CloserT
     .orderBy(closerTasks.dueAt);
 
   return rows.map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now.getTime() }));
+}
+
+export type BoardCard = {
+  id: string;
+  fullName: string | null;
+  city: string | null;
+  assignedCloserId: string | null;
+};
+export type BoardColumn = { stage: string; label: string; total: number; cards: BoardCard[] };
+
+const BOARD_CARD_CAP = 25;
+
+/** Tableau Kanban : investisseurs regroupés par étape de pipeline (cartes plafonnées). */
+export async function getPipelineBoard(): Promise<BoardColumn[]> {
+  const rows = await db
+    .select({
+      id: investors.id,
+      fullName: investors.fullName,
+      city: investors.addressCity,
+      stage: investors.pipelineStage,
+      assignedCloserId: investors.assignedCloserId,
+      updatedAt: investors.updatedAt,
+    })
+    .from(investors)
+    .where(isNull(investors.deletedAt))
+    .orderBy(desc(investors.updatedAt));
+
+  return PIPELINE_STAGES.map((s) => {
+    const all = rows.filter((r) => r.stage === s.value);
+    return {
+      stage: s.value,
+      label: s.label,
+      total: all.length,
+      cards: all.slice(0, BOARD_CARD_CAP).map((r) => ({
+        id: r.id,
+        fullName: r.fullName,
+        city: r.city,
+        assignedCloserId: r.assignedCloserId,
+      })),
+    };
+  });
+}
+
+export type CloserOption = { id: string; name: string | null; role: string };
+
+/** Liste des closers (pour l'assignation). */
+export async function getClosers(): Promise<CloserOption[]> {
+  const rows = await db
+    .select({ id: users.id, name: users.fullName, role: users.role })
+    .from(users)
+    .where(inArray(users.role, ['admin', 'closer', 'closer_junior']));
+  return rows;
 }
 
 /** Compte des appels passés aujourd'hui (pour le suivi d'activité du closer). */

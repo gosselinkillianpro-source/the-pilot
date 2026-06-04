@@ -2,13 +2,14 @@ import { ArrowLeft, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInvestorScored } from '@/lib/db/queries/call-queue';
-import { getInvestorTimeline, type TimelineItem } from '@/lib/db/queries/closing';
+import { getClosers, getInvestorTimeline, type TimelineItem } from '@/lib/db/queries/closing';
 import {
   getInvestorById,
   getInvestorSubscriptions,
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
 import { getInvestorStage } from '@/lib/investor-stage';
+import { AssignCloser } from './assign-closer';
 import { CallBriefPanel } from './call-brief-panel';
 import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel } from './investor-email-panel';
@@ -112,10 +113,11 @@ export default async function InvestorPage({ params }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const [subs, scored, timeline] = await Promise.all([
+  const [subs, scored, timeline, closers] = await Promise.all([
     getInvestorSubscriptions(investor.id),
     getInvestorScored(investor.id),
     getInvestorTimeline(investor.id),
+    getClosers(),
   ]);
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
@@ -371,6 +373,18 @@ export default async function InvestorPage({ params }: Props) {
         </div>
 
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Suivi closing : assignation */}
+          <Card title="Suivi closing">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Closer assigné</span>
+              <AssignCloser
+                investorId={investor.id}
+                current={investor.assignedCloserId}
+                closers={closers}
+              />
+            </div>
+          </Card>
+
           {/* Identité */}
           <Card title="Identité">
             <Row label="Civilité" value={civ || '—'} />

@@ -296,6 +296,94 @@ export async function draftCallBriefAction(investorId: string): Promise<CallBrie
   }
 }
 
+const updateStageSchema = z.object({
+  investorId: z.string().uuid(),
+  stage: z.enum(PIPELINE_STAGES),
+});
+
+/** Déplace un lead dans le pipeline (Kanban). */
+export async function updateStageAction(input: {
+  investorId: string;
+  stage: string;
+}): Promise<CallActionResult> {
+  let parsed: z.infer<typeof updateStageSchema>;
+  try {
+    parsed = updateStageSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await db
+      .update(investors)
+      .set({ pipelineStage: parsed.stage, pipelineStageUpdatedAt: new Date() })
+      .where(eq(investors.id, parsed.investorId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.stage_changed',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { stage: parsed.stage },
+    });
+    revalidatePath('/closing/board');
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+/** Assigne (ou retire) un closer à un lead. */
+const assignSchema = z.object({
+  investorId: z.string().uuid(),
+  closerId: z.string().uuid().nullable(),
+});
+
+export async function assignCloserAction(input: {
+  investorId: string;
+  closerId: string | null;
+}): Promise<CallActionResult> {
+  let parsed: z.infer<typeof assignSchema>;
+  try {
+    parsed = assignSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin']); // l'assignation reste une décision admin
+  } catch {
+    return { ok: false, message: 'Assignation réservée aux admins.' };
+  }
+  try {
+    await db
+      .update(investors)
+      .set({ assignedCloserId: parsed.closerId })
+      .where(eq(investors.id, parsed.investorId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.assigned',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { closerId: parsed.closerId },
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    revalidatePath('/closing/queue');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
 const completeTaskSchema = z.object({ taskId: z.string().uuid() });
 
 /** Marque un rappel/tâche comme fait. */
