@@ -138,12 +138,27 @@ export type ProfilCompletCandidate = {
   truePersons: number;
 };
 
+export type StatusLadderRow = {
+  /** Valeur de status ajoutée à cet étage. */
+  value: string;
+  /** Profils (grain ligne) ayant exactement ce status. */
+  profiles: number;
+  /** Personnes ayant AU MOINS un profil avec ce status. */
+  persons: number;
+  /** Personnes couvertes cumulativement (bool_or sur l'ensemble jusqu'ici). */
+  cumulativePersons: number;
+};
+
 export type ProfilCompletDiagnostic = {
   totalProfiles: number;
   totalPersons: number;
   /** Cibles tirées du fichier exporté le 2026-06-04 (pour repérer la bonne colonne). */
   targets: { profilesComplete: number; personsComplete: number; personsOnboarded: number };
   candidates: ProfilCompletCandidate[];
+  /** Échelle des valeurs de status, avec couverture cumulée au grain personne. */
+  statusLadder: StatusLadderRow[];
+  /** Contrôles de cohérence (grain personne). */
+  sanity: { validatePersons: number; onboardedPersons: number };
 };
 
 /**
@@ -208,10 +223,52 @@ export async function getProfilCompletDiagnostic(): Promise<ProfilCompletDiagnos
       Math.abs(a.trueProfiles - TARGET_PROFILES) - Math.abs(b.trueProfiles - TARGET_PROFILES),
   );
 
+  // Échelle des valeurs de status (la plus probable pour "profil complet").
+  const statusRows = await sql<{ status: string | null; profiles: number; persons: number }[]>`
+    select status, count(*)::int as profiles, count(distinct user_id)::int as persons
+    from users_profiles
+    group by status
+    order by persons desc
+  `.catch(() => []);
+
+  // Couverture cumulée au grain personne : bool_or sur l'ensemble grandissant des
+  // valeurs de status (triées par fréquence). On cherche l'étage qui atteint 2111.
+  const statusLadder: StatusLadderRow[] = [];
+  const acc: (string | null)[] = [];
+  for (const r of statusRows) {
+    acc.push(r.status);
+    const nonNull = acc.filter((v): v is string => v !== null);
+    const includesNull = acc.some((v) => v === null);
+    const cond = includesNull
+      ? sql`(status = any(${nonNull}) or status is null)`
+      : sql`status = any(${nonNull})`;
+    const c = await sql<{ n: number }[]>`
+      select count(distinct user_id)::int as n from users_profiles where ${cond}
+    `.catch(() => [{ n: -1 }]);
+    statusLadder.push({
+      value: r.status ?? '(vide)',
+      profiles: r.profiles,
+      persons: r.persons,
+      cumulativePersons: c[0]?.n ?? -1,
+    });
+  }
+
+  // Contrôles : notre mapping actuel (status='validate') et l'onboarding (déjà juste).
+  const validate = await sql<{ n: number }[]>`
+    select count(distinct user_id)::int as n from users_profiles where status = 'validate'
+  `.catch(() => [{ n: -1 }]);
+  const onboarded = await sql<{ n: number }[]>`
+    select count(distinct user_id)::int as n
+    from users_profiles
+    where wallet_status = '6' or lw_onboarding_status = 'accepted'
+  `.catch(() => [{ n: -1 }]);
+
   return {
     totalProfiles: totals[0]?.profiles ?? -1,
     totalPersons: totals[0]?.persons ?? -1,
     targets: { profilesComplete: 2168, personsComplete: 2111, personsOnboarded: 1795 },
     candidates,
+    statusLadder,
+    sanity: { validatePersons: validate[0]?.n ?? -1, onboardedPersons: onboarded[0]?.n ?? -1 },
   };
 }

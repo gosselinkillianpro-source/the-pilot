@@ -252,6 +252,73 @@ export default async function SahExplorerPage() {
                     </div>
                   );
                 })}
+
+                <hr
+                  style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '4px 0' }}
+                />
+
+                <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
+                  <strong>Échelle des valeurs de `status`</strong> (la plus probable pour « profil
+                  complet »). La colonne <em>cumul</em> = nb de personnes couvertes en ajoutant les
+                  valeurs une à une. On cherche l'étage où <em>cumul</em> ={' '}
+                  <strong>{profilDiag.targets.personsComplete}</strong>.
+                </p>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 90px 110px 120px',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--text-3)',
+                    padding: '0 4px',
+                  }}
+                >
+                  <span>status</span>
+                  <span style={{ textAlign: 'right' }}>profils</span>
+                  <span style={{ textAlign: 'right' }}>personnes</span>
+                  <span style={{ textAlign: 'right' }}>cumul (pers.)</span>
+                </div>
+                {profilDiag.statusLadder.map((s) => {
+                  const match =
+                    Math.abs(s.cumulativePersons - profilDiag.targets.personsComplete) <= 20;
+                  return (
+                    <div
+                      key={s.value}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 90px 110px 120px',
+                        gap: 8,
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '4px',
+                        borderRadius: 6,
+                        background: match ? 'var(--success-bg, #e6f6ec)' : 'transparent',
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-1)' }}>
+                        {match ? '✅ ' : ''}
+                        {s.value}
+                      </span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-3)' }}>
+                        {s.profiles}
+                      </span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>
+                        {s.persons}
+                      </span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-1)', fontWeight: 600 }}>
+                        {s.cumulativePersons}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                  Contrôles (grain personne) : <code>status='validate'</code> ={' '}
+                  <strong>{profilDiag.sanity.validatePersons}</strong> (notre mapping actuel, cible
+                  ~1779) · onboardés = <strong>{profilDiag.sanity.onboardedPersons}</strong> (cible
+                  1795).
+                </p>
               </div>
             </div>
           )}
