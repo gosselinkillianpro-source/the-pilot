@@ -134,6 +134,30 @@ export default async function SahExplorerPage() {
                     ))
                   )}
                 </div>
+                <div>
+                  <strong style={{ fontSize: 13 }}>lw_onboarding_status (KYC Lemonway ?)</strong>
+                  {diag.onboardingStatuses.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>—</div>
+                  ) : (
+                    diag.onboardingStatuses.map((s) => (
+                      <div key={s.value} style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                        « {s.value} » : <strong>{s.count}</strong>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div>
+                  <strong style={{ fontSize: 13 }}>wallet_status (portefeuille)</strong>
+                  {diag.walletStatuses.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>—</div>
+                  ) : (
+                    diag.walletStatuses.map((s) => (
+                      <div key={s.value} style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                        « {s.value} » : <strong>{s.count}</strong>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}

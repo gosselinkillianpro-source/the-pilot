@@ -58,6 +58,8 @@ export type SahDiagnostics = {
   profileStatuses: { value: string; count: number }[];
   kycValidatedCount: number;
   suitabilityStates: { value: string; count: number }[];
+  onboardingStatuses: { value: string; count: number }[];
+  walletStatuses: { value: string; count: number }[];
 };
 
 /**
@@ -100,6 +102,16 @@ export async function getSahDiagnostics(): Promise<SahDiagnostics> {
     group by state order by n desc
   `.catch(() => []);
 
+  const onboarding = await sql<{ s: string | null; n: number }[]>`
+    select lw_onboarding_status as s, count(*)::int as n
+    from users_profiles group by lw_onboarding_status order by n desc
+  `.catch(() => []);
+
+  const wallet = await sql<{ s: string | null; n: number }[]>`
+    select wallet_status as s, count(*)::int as n
+    from users_profiles group by wallet_status order by n desc
+  `.catch(() => []);
+
   return {
     counts: [
       { table: 'users (inscrits)', rows: usersN },
@@ -112,5 +124,7 @@ export async function getSahDiagnostics(): Promise<SahDiagnostics> {
     profileStatuses: profileStatuses.map((r) => ({ value: r.status ?? '(vide)', count: r.n })),
     kycValidatedCount: kyc[0]?.n ?? -1,
     suitabilityStates: suitability.map((r) => ({ value: r.state ?? '(vide)', count: r.n })),
+    onboardingStatuses: onboarding.map((r) => ({ value: r.s ?? '(vide)', count: r.n })),
+    walletStatuses: wallet.map((r) => ({ value: r.s ?? '(vide)', count: r.n })),
   };
 }
