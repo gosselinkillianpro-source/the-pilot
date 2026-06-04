@@ -63,10 +63,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <LayoutGrid />
             Vue d'ensemble
           </SidebarLink>
-          <SidebarLink href="/closing/pipeline">
+          <SidebarLink href="/closing">
             <Users />
             Closing
-            <span className="view-sidebar-link-badge">14</span>
           </SidebarLink>
           <SidebarLink href="/email">
             <Mail />

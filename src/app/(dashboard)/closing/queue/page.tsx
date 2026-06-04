@@ -1,0 +1,192 @@
+import { Clock, Flame, Phone, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
+import { getCallQueue, groupByBucket, type QueueRow } from '@/lib/db/queries/call-queue';
+
+export const dynamic = 'force-dynamic';
+
+const PER_BUCKET = 40; // on affiche les plus prioritaires de chaque file
+
+function nb(n: number): string {
+  return n.toLocaleString('fr-FR');
+}
+
+function tempClass(t: QueueRow['scored']['temperature']): string {
+  if (t === 'hot') return 'badge badge-danger';
+  if (t === 'warm') return 'badge badge-warning';
+  return 'badge badge-neutral';
+}
+
+function statusClass(s: QueueRow['scored']['status']): string {
+  if (s === 'E') return 'badge badge-success';
+  if (s === 'B' || s === 'A') return 'badge badge-brand';
+  return 'badge badge-neutral';
+}
+
+export default async function CallQueuePage() {
+  const queue = await getCallQueue({ excludeWon: true });
+  const groups = groupByBucket(queue);
+
+  const total = queue.length;
+  const in48h = queue.filter((q) => q.scored.within48h).length;
+  const echeance = queue.filter((q) => q.scored.queueBucket === 2).length;
+  const hot = queue.filter((q) => q.scored.temperature === 'hot').length;
+
+  return (
+    <>
+      <div>
+        <h1 className="page-title">File d'appels</h1>
+        <div className="page-desc">
+          Qui appeler maintenant, dans l'ordre. {nb(total)} personnes en file · triées par priorité.
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <Kpi
+          icon={<Clock size={15} />}
+          label="Nouveaux (48h)"
+          value={nb(in48h)}
+          accent="var(--brand)"
+        />
+        <Kpi
+          icon={<TrendingUp size={15} />}
+          label="Échéance proche"
+          value={nb(echeance)}
+          accent="var(--success)"
+        />
+        <Kpi icon={<Flame size={15} />} label="Chauds" value={nb(hot)} accent="var(--danger)" />
+        <Kpi icon={<Phone size={15} />} label="En file" value={nb(total)} accent="var(--text-3)" />
+      </div>
+
+      {total === 0 ? (
+        <div className="view-card">
+          <div className="view-card-body" style={{ padding: 24, color: 'var(--text-3)' }}>
+            Aucun investisseur en file. Lance une synchronisation SAH si la base est vide.
+          </div>
+        </div>
+      ) : (
+        groups.map((g) => (
+          <div key={g.bucket} className="view-card">
+            <div className="view-card-header">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div className="view-card-title">{g.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{g.goal}</div>
+              </div>
+              <span className="badge badge-neutral">{nb(g.rows.length)}</span>
+            </div>
+            <div className="view-card-body" style={{ padding: 0 }}>
+              {g.rows.slice(0, PER_BUCKET).map((row, idx) => (
+                <QueueRowItem
+                  key={row.id}
+                  row={row}
+                  last={idx === Math.min(g.rows.length, PER_BUCKET) - 1}
+                />
+              ))}
+              {g.rows.length > PER_BUCKET && (
+                <div style={{ padding: '10px 20px', fontSize: 12, color: 'var(--text-4)' }}>
+                  + {nb(g.rows.length - PER_BUCKET)} autres dans cette file (priorité plus basse).
+                </div>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </>
+  );
+}
+
+function Kpi({
+  icon,
+  label,
+  value,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className="view-card">
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span
+          style={{ display: 'flex', alignItems: 'center', gap: 6, color: accent, fontSize: 12 }}
+        >
+          {icon}
+          {label}
+        </span>
+        <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-1)' }}>{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function QueueRowItem({ row, last }: { row: QueueRow; last: boolean }) {
+  const s = row.scored;
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1.4fr 1.6fr 70px 150px',
+        gap: 12,
+        alignItems: 'center',
+        padding: '12px 20px',
+        borderBottom: last ? 'none' : '1px solid var(--border)',
+      }}
+    >
+      {/* Identité + statut */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <Link
+          href={`/closing/investor/${row.id}`}
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--text-1)',
+            textDecoration: 'none',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {row.fullName ?? row.email}
+        </Link>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span className={statusClass(s.status)} style={{ fontSize: 10 }}>
+            {s.statusLabel}
+          </span>
+          {row.city ? (
+            <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Facteurs (transparence) */}
+      <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+        {s.factors.join(' · ')}
+      </div>
+
+      {/* Priorité + température */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+        <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>{s.priority}</span>
+        <span className={tempClass(s.temperature)} style={{ fontSize: 10 }}>
+          {s.temperatureLabel}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        {row.phone ? (
+          <a href={`tel:${row.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
+            <Phone size={13} />
+            Appeler
+          </a>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>pas de tél.</span>
+        )}
+        <Link href={`/closing/investor/${row.id}`} className="btn btn-secondary btn-sm">
+          Fiche
+        </Link>
+      </div>
+    </div>
+  );
+}
