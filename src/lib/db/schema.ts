@@ -116,6 +116,16 @@ export const emailFlowRunStatusEnum = pgEnum('email_flow_run_status', [
 
 export const llmStatusEnum = pgEnum('llm_status', ['success', 'error', 'timeout']);
 
+export const callOutcomeEnum = pgEnum('call_outcome', [
+  'reached', // joint
+  'no_answer', // pas de réponse
+  'voicemail', // répondeur
+  'wrong_number', // mauvais numéro
+  'callback_scheduled', // rappel programmé
+]);
+
+export const closerTaskStatusEnum = pgEnum('closer_task_status', ['pending', 'done', 'cancelled']);
+
 /* --- Social Hub --- */
 export const socialIdeaStatusEnum = pgEnum('social_idea_status', [
   'pending',
@@ -266,11 +276,31 @@ export const interactions = pgTable('interactions', {
     .notNull()
     .references(() => investors.id),
   type: interactionTypeEnum('type').notNull(),
+  outcome: callOutcomeEnum('outcome'), // résultat d'appel (null pour les autres types)
+  note: text('note'), // notes libres du closer (résumé d'appel)
   metadata: jsonb('metadata'),
   valueNumeric: numeric('value_numeric', { precision: 10, scale: 2 }),
   projectRef: uuid('project_ref').references(() => projects.id),
   userId: uuid('user_id').references(() => users.id), // qui a déclenché (null si auto)
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ============================================================
+   CLOSER TASKS — rappels & tâches du closer (callbacks programmés)
+   ============================================================ */
+export const closerTasks = pgTable('closer_tasks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  investorId: uuid('investor_id')
+    .notNull()
+    .references(() => investors.id),
+  closerId: uuid('closer_id').references(() => users.id), // à qui c'est assigné
+  type: text('type').notNull().default('callback'), // callback | todo
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+  note: text('note'),
+  status: closerTaskStatusEnum('status').notNull().default('pending'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
 });
 
 /* ============================================================

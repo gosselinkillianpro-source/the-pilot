@@ -1,5 +1,8 @@
 'use server';
 
+import { eq } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { estimateCostEur } from '@/lib/ai/anthropic';
 import {
@@ -11,7 +14,9 @@ import {
 import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
+import { closerTasks, interactions, investors } from '@/lib/db/schema';
 
 export type DraftProposalResult =
   | {
@@ -117,5 +122,130 @@ export async function draftProposalEmailAction(investorId: string): Promise<Draf
       inputSummary: `proposal for ${investor.id}`,
     });
     return { ok: false, reason: 'error', message };
+  }
+}
+
+/* ============================================================
+   Enregistrement d'appel + rappels (boucle de travail closer)
+   ============================================================ */
+
+const PIPELINE_STAGES = [
+  'new',
+  'contacted',
+  'meeting_booked',
+  'meeting_done',
+  'proposal_sent',
+  'closed_won',
+  'closed_lost',
+  'dormant',
+] as const;
+
+const logCallSchema = z.object({
+  investorId: z.string().uuid(),
+  outcome: z.enum(['reached', 'no_answer', 'voicemail', 'wrong_number', 'callback_scheduled']),
+  note: z.string().trim().max(4000).optional(),
+  nextStage: z.enum(PIPELINE_STAGES).optional(),
+  callbackAt: z.string().datetime({ offset: true }).optional(),
+});
+
+export type LogCallInput = z.infer<typeof logCallSchema>;
+export type CallActionResult = { ok: true } | { ok: false; message: string };
+
+/** Enregistre un appel : interaction + (option) rappel programmé + (option) étape pipeline. */
+export async function logCallAction(input: LogCallInput): Promise<CallActionResult> {
+  let parsed: LogCallInput;
+  try {
+    parsed = logCallSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+
+  try {
+    // 1. L'appel lui-même (alimente timeline + attribution)
+    await db.insert(interactions).values({
+      investorId: parsed.investorId,
+      type: 'call_outbound',
+      outcome: parsed.outcome,
+      note: parsed.note ?? null,
+      userId: user.id,
+    });
+
+    // 2. Rappel programmé (optionnel)
+    if (parsed.callbackAt) {
+      await db.insert(closerTasks).values({
+        investorId: parsed.investorId,
+        closerId: user.id,
+        type: 'callback',
+        dueAt: new Date(parsed.callbackAt),
+        note: parsed.note ?? null,
+        createdBy: user.id,
+      });
+    }
+
+    // 3. Avancement pipeline (optionnel)
+    if (parsed.nextStage) {
+      await db
+        .update(investors)
+        .set({ pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() })
+        .where(eq(investors.id, parsed.investorId));
+    }
+
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.call_logged',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: {
+        outcome: parsed.outcome,
+        callbackAt: parsed.callbackAt ?? null,
+        nextStage: parsed.nextStage ?? null,
+      },
+    });
+
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    revalidatePath('/closing/queue');
+    revalidatePath('/closing/today');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
+  }
+}
+
+const completeTaskSchema = z.object({ taskId: z.string().uuid() });
+
+/** Marque un rappel/tâche comme fait. */
+export async function completeTaskAction(input: { taskId: string }): Promise<CallActionResult> {
+  let parsed: { taskId: string };
+  try {
+    parsed = completeTaskSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+
+  try {
+    await db
+      .update(closerTasks)
+      .set({ status: 'done', completedAt: new Date() })
+      .where(eq(closerTasks.id, parsed.taskId));
+    revalidatePath('/closing/today');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
   }
 }

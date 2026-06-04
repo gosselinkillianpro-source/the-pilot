@@ -89,6 +89,21 @@ create policy interactions_closer_rw on public.interactions for all
   with check (public.auth_role() in ('closer', 'closer_junior') and public.is_my_investor(investor_id));
 
 -- ============================================================
+-- CLOSER_TASKS (rappels/tâches : admin RW, executive lecture, closer sur ses leads)
+-- ============================================================
+alter table public.closer_tasks enable row level security;
+drop policy if exists closer_tasks_admin_all on public.closer_tasks;
+create policy closer_tasks_admin_all on public.closer_tasks for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists closer_tasks_exec_read on public.closer_tasks;
+create policy closer_tasks_exec_read on public.closer_tasks for select
+  using (public.auth_role() = 'executive');
+drop policy if exists closer_tasks_closer_rw on public.closer_tasks;
+create policy closer_tasks_closer_rw on public.closer_tasks for all
+  using (public.auth_role() in ('closer', 'closer_junior') and public.is_my_investor(investor_id))
+  with check (public.auth_role() in ('closer', 'closer_junior') and public.is_my_investor(investor_id));
+
+-- ============================================================
 -- EMAIL_FLOWS (admin RW, executive lecture)
 -- ============================================================
 alter table public.email_flows enable row level security;

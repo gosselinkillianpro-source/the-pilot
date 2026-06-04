@@ -1,15 +1,44 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getInvestorScored } from '@/lib/db/queries/call-queue';
+import { getInvestorTimeline, type TimelineItem } from '@/lib/db/queries/closing';
 import {
   getInvestorById,
   getInvestorSubscriptions,
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
 import { getInvestorStage } from '@/lib/investor-stage';
+import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel } from './investor-email-panel';
 
 type Props = { params: Promise<{ id: string }> };
+
+const TIMELINE_LABEL: Record<string, string> = {
+  call_outbound: 'Appel sortant',
+  call_inbound: 'Appel entrant',
+  email_sent: 'Email envoyé',
+  email_opened: 'Email ouvert',
+  email_clicked: 'Email cliqué',
+  note_added: 'Note',
+  meeting_booked: 'RDV pris',
+  meeting_done: 'RDV fait',
+  proposal_sent: 'Proposition envoyée',
+};
+
+const OUTCOME_LABEL: Record<string, string> = {
+  reached: 'Joint',
+  no_answer: 'Pas de réponse',
+  voicemail: 'Répondeur',
+  wrong_number: 'Mauvais numéro',
+  callback_scheduled: 'Rappel programmé',
+};
+
+function tempClass(t: string): string {
+  if (t === 'hot') return 'badge badge-danger';
+  if (t === 'warm') return 'badge badge-warning';
+  return 'badge badge-neutral';
+}
 
 function initials(first: string | null, last: string | null, fallback: string): string {
   const a = first?.[0] ?? fallback[0] ?? '?';
@@ -82,7 +111,11 @@ export default async function InvestorPage({ params }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const subs = await getInvestorSubscriptions(investor.id);
+  const [subs, scored, timeline] = await Promise.all([
+    getInvestorSubscriptions(investor.id),
+    getInvestorScored(investor.id),
+    getInvestorTimeline(investor.id),
+  ]);
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
   const displayName = [civ, investor.fullName].filter(Boolean).join(' ') || investor.email;
@@ -148,11 +181,118 @@ export default async function InvestorPage({ params }: Props) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Priorité d'appel (score transparent) */}
+          {scored && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">Priorité d'appel</div>
+                <span className={tempClass(scored.scored.temperature)}>
+                  {scored.scored.temperatureLabel}
+                </span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', alignItems: 'center', gap: 20 }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div
+                    style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1 }}
+                  >
+                    {scored.scored.priority}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-4)' }}>/ 100</div>
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+                    {scored.scored.queueLabel}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                    {scored.scored.callGoal}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                    {scored.scored.factors.map((f) => (
+                      <span key={f} className="badge badge-neutral" style={{ fontSize: 10 }}>
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {investor.phone ? (
+                  <a href={`tel:${investor.phone}`} className="btn btn-primary btn-sm">
+                    <Phone size={13} />
+                    Appeler
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Enregistrer un appel */}
+          <CallLogPanel investorId={investor.id} />
+
           <InvestorEmailPanel
             investorId={investor.id}
             firstName={firstName}
             email={investor.email}
           />
+
+          {/* Historique / timeline */}
+          <div className="view-card">
+            <div className="view-card-header">
+              <div className="view-card-title">Historique</div>
+              <span className="badge badge-neutral">{timeline.length}</span>
+            </div>
+            <div className="view-card-body" style={{ padding: 0 }}>
+              {timeline.length === 0 ? (
+                <div style={{ padding: 20, fontSize: 13, color: 'var(--text-3)' }}>
+                  Aucune interaction enregistrée pour l'instant.
+                </div>
+              ) : (
+                timeline.map((t: TimelineItem, idx) => (
+                  <div
+                    key={t.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '10px 20px',
+                      borderBottom: idx < timeline.length - 1 ? '1px solid var(--border)' : 'none',
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>
+                        {TIMELINE_LABEL[t.type] ?? t.type}
+                        {t.outcome ? (
+                          <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>
+                            {' '}
+                            — {OUTCOME_LABEL[t.outcome] ?? t.outcome}
+                          </span>
+                        ) : null}
+                      </span>
+                      {t.note ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                          {t.note}
+                        </div>
+                      ) : null}
+                      {t.byName ? (
+                        <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 2 }}>
+                          par {t.byName}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-4)', whiteSpace: 'nowrap' }}>
+                      {new Date(t.createdAt).toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 
           {/* Souscriptions */}
           <div className="view-card">

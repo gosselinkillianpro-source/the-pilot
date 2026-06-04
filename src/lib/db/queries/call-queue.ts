@@ -44,11 +44,13 @@ const DAY_MS = 86_400_000;
 export async function getCallQueue(opts?: {
   assignedCloserId?: string;
   excludeWon?: boolean;
+  investorId?: string;
 }): Promise<QueueRow[]> {
   const now = new Date();
   const closerFilter = opts?.assignedCloserId
     ? sql`and i.assigned_closer_id = ${opts.assignedCloserId}`
     : sql``;
+  const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
   // On exclut les leads déjà clos (gagné/perdu) de la file d'appels.
   const stageFilter = opts?.excludeWon
     ? sql`and i.pipeline_stage not in ('closed_won', 'closed_lost')`
@@ -86,6 +88,7 @@ export async function getCallQueue(opts?: {
     left join projects p on p.id = s.project_id
     where i.deleted_at is null
     ${closerFilter}
+    ${oneFilter}
     ${stageFilter}
     group by i.id
   `);
@@ -124,6 +127,12 @@ export async function getCallQueue(opts?: {
 
   queue.sort((a, b) => compareForQueue(a.scored, b.scored));
   return queue;
+}
+
+/** Score d'un seul investisseur (pour la fiche). */
+export async function getInvestorScored(investorId: string): Promise<QueueRow | null> {
+  const rows = await getCallQueue({ investorId });
+  return rows[0] ?? null;
 }
 
 export type QueueBucketGroup = {
