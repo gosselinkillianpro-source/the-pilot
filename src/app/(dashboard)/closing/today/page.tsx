@@ -26,7 +26,7 @@ export default async function TodayPage() {
         <div className="page-desc">Tes rappels à passer et ton activité du jour.</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Rappels à passer" value={String(tasks.length)} accent="var(--brand)" />
         <Kpi label="En retard" value={String(overdue)} accent="var(--danger)" />
         <Kpi label="Appels passés aujourd'hui" value={String(callsToday)} accent="var(--success)" />

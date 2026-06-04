@@ -182,7 +182,7 @@ export default async function InvestorPage({ params }: Props) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
+      <div className="split-2col">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Priorité d'appel (score transparent) */}
           {scored && (

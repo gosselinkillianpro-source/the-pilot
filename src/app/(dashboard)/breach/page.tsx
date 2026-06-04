@@ -37,14 +37,14 @@ export default async function BreachPage() {
       </div>
 
       {/* KPIs principaux */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Leads BREACH" value={String(f.total)} />
         <Kpi label="Onboardés" value={`${f.onboarded} · ${pct(f.onboarded, f.total)}`} />
         <Kpi label="Investisseurs" value={String(f.investors)} />
         <Kpi label="Collecte BREACH" value={money(stats.totalInvested)} accent="var(--success)" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Ticket moyen / investisseur" value={money(stats.avgTicketPerInvestor)} />
         <Kpi label="Montant moyen / souscription" value={money(stats.avgPerSub)} />
         <Kpi
@@ -54,7 +54,7 @@ export default async function BreachPage() {
         <Kpi label="Solde portefeuilles (cumul)" value={money(stats.walletTotal)} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Nouveaux (7 jours)" value={String(f.new7d)} accent="var(--brand)" />
         <Kpi label="Nouveaux (30 jours)" value={String(f.new30d)} accent="var(--brand)" />
         <Kpi label="Souscriptions" value={String(stats.subCount)} />
@@ -142,7 +142,7 @@ export default async function BreachPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="grid-2">
         {/* Par code bonus */}
         <Card title="Par code bonus">
           <Table

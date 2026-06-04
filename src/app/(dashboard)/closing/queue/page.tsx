@@ -87,7 +87,7 @@ export default async function CallQueuePage({
       </div>
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi
           icon={<Clock size={15} />}
           label="Nouveaux (48h)"

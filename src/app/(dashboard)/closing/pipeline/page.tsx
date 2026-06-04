@@ -52,7 +52,7 @@ export default async function PipelinePage({
       </div>
 
       {/* KPIs réels */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Investisseurs" value={nb(stats.total)} sub="inscrits" />
         <Kpi label="Profil complété" value={nb(stats.registered)} sub="profil rempli" />
         <Kpi label="Onboardés (KYC)" value={nb(stats.onboarded)} sub="identité validée" />

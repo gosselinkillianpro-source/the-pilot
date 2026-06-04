@@ -22,6 +22,8 @@ export function ClosingNav() {
         gap: 4,
         borderBottom: '1px solid var(--border)',
         marginBottom: 4,
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
       }}
     >
       {TABS.map((t) => {
@@ -41,6 +43,8 @@ export function ClosingNav() {
               borderBottom: active ? '2px solid var(--brand)' : '2px solid transparent',
               marginBottom: -1,
               textDecoration: 'none',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
             }}
           >
             {t.icon}

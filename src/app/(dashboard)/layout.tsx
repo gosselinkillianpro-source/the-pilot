@@ -32,15 +32,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const user = await getAuthenticatedUser();
   const { name, initials } = deriveDisplay(user.email);
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '220px 1fr',
-        minHeight: '100vh',
-        position: 'relative',
-        zIndex: 1,
-      }}
-    >
+    <div className="app-shell">
       <aside className="view-sidebar">
         <Link href="/" className="view-sidebar-brand">
           <Image
@@ -169,20 +161,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
         </div>
 
-        <main
-          style={{
-            flex: 1,
-            padding: 24,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 24,
-            overflowY: 'auto',
-            position: 'relative',
-            zIndex: 1,
-          }}
-        >
-          {children}
-        </main>
+        <main className="app-main">{children}</main>
       </div>
     </div>
   );

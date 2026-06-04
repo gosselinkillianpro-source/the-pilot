@@ -80,7 +80,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </div>
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Collecté" value={money(project.collected)} accent="var(--success)" />
         <Kpi label="Objectif" value={project.targetAmount ? money(project.targetAmount) : '—'} />
         <Kpi label="Investisseurs" value={String(project.investors)} />
@@ -113,7 +113,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
+      <div className="split-2col">
         {/* Liste des investisseurs */}
         <div className="view-card">
           <div className="view-card-header">

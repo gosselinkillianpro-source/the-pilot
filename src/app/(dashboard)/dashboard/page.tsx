@@ -54,13 +54,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 12,
-        }}
-      >
+      <div className="kpi-grid">
         <KpiCard label="Collecte M" value="142,4K€" trend="+34%" direction="up" vs="vs M-1" />
         <KpiCard label="Hot leads" value="14" trend="+3" direction="up" vs="vs hier" />
         <KpiCard label="CPA blended" value="42€" trend="+6%" direction="down" vs="vs M-1" />

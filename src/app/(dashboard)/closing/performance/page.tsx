@@ -20,7 +20,7 @@ export default async function ClosingPerformancePage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div className="kpi-grid">
         <Kpi label="Souscriptions (total)" value={String(report.totalSubs)} />
         <Kpi label="Collecte attribuée" value={money(attributedAmount)} />
         <Kpi
