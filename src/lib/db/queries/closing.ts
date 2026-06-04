@@ -284,11 +284,26 @@ export type BreachStats = {
   byCity: { city: string; total: number }[];
   byMonth: { month: string; signups: number }[];
   topProjects: { name: string; investors: number; collected: number }[];
+  // Évolution mois courant vs mois précédent (annotations +X%)
+  monthly: {
+    leads: MoM;
+    collecte: MoM;
+    subs: MoM;
+    investors: MoM;
+  };
   // Référence pour comparer : hors BREACH
   otherTotal: number;
   otherOnboarded: number;
   otherAvgTicketPerInvestor: number;
 };
+
+/** Comparaison mois courant vs mois précédent. deltaPct null si pas de base (mois précédent = 0). */
+export type MoM = { current: number; previous: number; deltaPct: number | null };
+
+function mom(current: number, previous: number): MoM {
+  const deltaPct = previous > 0 ? Math.round(((current - previous) / previous) * 100) : null;
+  return { current, previous, deltaPct };
+}
 
 type FunnelRow = {
   total: number;
@@ -400,6 +415,58 @@ export async function getBreachStats(): Promise<BreachStats> {
     where i.deleted_at is null and (i.bonus_code is null or i.bonus_code not ilike '%breach%')
   `)) as unknown as OtherRow[];
 
+  // Mois courant vs mois précédent — nouveaux leads (date d'inscription)
+  const leadsMom = (await db.execute(sql`
+    select
+      count(*) filter (where sah_created_at >= date_trunc('month', now()))::int as cur,
+      count(*) filter (
+        where sah_created_at >= date_trunc('month', now()) - interval '1 month'
+          and sah_created_at < date_trunc('month', now())
+      )::int as prev
+    from investors
+    where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
+  `)) as unknown as { cur: number; prev: number }[];
+
+  // Mois courant vs mois précédent — collecte / souscriptions / investisseurs (date de signature)
+  const subsMom = (await db.execute(sql`
+    select
+      coalesce(sum(s.amount) filter (where s.signed_at >= date_trunc('month', now())), 0) as cur_collecte,
+      coalesce(sum(s.amount) filter (
+        where s.signed_at >= date_trunc('month', now()) - interval '1 month'
+          and s.signed_at < date_trunc('month', now())
+      ), 0) as prev_collecte,
+      count(*) filter (where s.signed_at >= date_trunc('month', now()))::int as cur_subs,
+      count(*) filter (
+        where s.signed_at >= date_trunc('month', now()) - interval '1 month'
+          and s.signed_at < date_trunc('month', now())
+      )::int as prev_subs,
+      count(distinct s.investor_id) filter (where s.signed_at >= date_trunc('month', now()))::int as cur_inv,
+      count(distinct s.investor_id) filter (
+        where s.signed_at >= date_trunc('month', now()) - interval '1 month'
+          and s.signed_at < date_trunc('month', now())
+      )::int as prev_inv
+    from subscriptions s
+    join investors i on i.id = s.investor_id
+    where i.bonus_code ilike '%breach%' and s.status <> 'cancelled' and s.signed_at is not null
+  `)) as unknown as {
+    cur_collecte: string | number;
+    prev_collecte: string | number;
+    cur_subs: number;
+    prev_subs: number;
+    cur_inv: number;
+    prev_inv: number;
+  }[];
+
+  const lm = leadsMom[0] ?? { cur: 0, prev: 0 };
+  const sm = subsMom[0] ?? {
+    cur_collecte: 0,
+    prev_collecte: 0,
+    cur_subs: 0,
+    prev_subs: 0,
+    cur_inv: 0,
+    prev_inv: 0,
+  };
+
   const f = funnel[0] ?? {
     total: 0,
     registered: 0,
@@ -446,6 +513,15 @@ export async function getBreachStats(): Promise<BreachStats> {
       investors: Number(p.investors),
       collected: Number(p.collected) || 0,
     })),
+    monthly: {
+      leads: mom(Number(lm.cur), Number(lm.prev)),
+      collecte: mom(
+        Math.round(Number(sm.cur_collecte) || 0),
+        Math.round(Number(sm.prev_collecte) || 0),
+      ),
+      subs: mom(Number(sm.cur_subs), Number(sm.prev_subs)),
+      investors: mom(Number(sm.cur_inv), Number(sm.prev_inv)),
+    },
     otherTotal: Number(o.total),
     otherOnboarded: Number(o.onboarded),
     otherAvgTicketPerInvestor: otherInvestors > 0 ? Math.round(otherInvested / otherInvestors) : 0,

@@ -1,5 +1,5 @@
-import { Target } from 'lucide-react';
-import { getBreachStats } from '@/lib/db/queries/closing';
+import { Target, TrendingDown, TrendingUp } from 'lucide-react';
+import { getBreachStats, type MoM } from '@/lib/db/queries/closing';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +57,38 @@ export default async function BreachPage() {
       <div className="kpi-grid">
         <Kpi label="Nouveaux (7 jours)" value={String(f.new7d)} accent="var(--brand)" />
         <Kpi label="Nouveaux (30 jours)" value={String(f.new30d)} accent="var(--brand)" />
-        <Kpi label="Souscriptions" value={String(stats.subCount)} />
+        <Kpi label="Souscriptions (total)" value={String(stats.subCount)} />
+      </div>
+
+      {/* Évolution : ce mois-ci vs mois dernier */}
+      <div className="view-card">
+        <div className="view-card-header">
+          <div className="view-card-title">Ce mois-ci · évolution vs mois dernier</div>
+        </div>
+        <div className="view-card-body">
+          <div className="kpi-grid">
+            <KpiTrend
+              label="Nouveaux leads"
+              value={String(stats.monthly.leads.current)}
+              mom={stats.monthly.leads}
+            />
+            <KpiTrend
+              label="Collecte"
+              value={money(stats.monthly.collecte.current)}
+              mom={stats.monthly.collecte}
+            />
+            <KpiTrend
+              label="Souscriptions"
+              value={String(stats.monthly.subs.current)}
+              mom={stats.monthly.subs}
+            />
+            <KpiTrend
+              label="Investisseurs"
+              value={String(stats.monthly.investors.current)}
+              mom={stats.monthly.investors}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Funnel + comparaison */}
@@ -190,6 +221,31 @@ function Kpi({ label, value, accent }: { label: string; value: string; accent?: 
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, color: accent ?? 'var(--text-3)' }}>{label}</span>
         <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>{value}</span>
+      </div>
+    </div>
+  );
+}
+
+/** KPI avec annotation d'évolution mois courant vs mois précédent. */
+function KpiTrend({ label, value, mom }: { label: string; value: string; mom: MoM }) {
+  const d = mom.deltaPct;
+  const up = d != null && d >= 0;
+  const color = d == null ? 'var(--text-4)' : up ? 'var(--success)' : 'var(--danger)';
+  const text =
+    d == null
+      ? mom.previous === 0 && mom.current > 0
+        ? 'nouveau'
+        : '—'
+      : `${up ? '+' : ''}${d}% vs mois dernier`;
+  return (
+    <div className="view-card">
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{label}</span>
+        <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>{value}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color }}>
+          {d != null ? up ? <TrendingUp size={12} /> : <TrendingDown size={12} /> : null}
+          {text}
+        </span>
       </div>
     </div>
   );
