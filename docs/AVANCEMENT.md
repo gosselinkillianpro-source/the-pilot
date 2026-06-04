@@ -11,6 +11,15 @@
 > - **Pipeline + fiche investisseur = vraies données** (`/closing/pipeline` liste cherchable/paginée, `/closing/investor/[id]`). L'email IA tourne sur les vrais projets.
 > - **Restant** : sync souscriptions + dates de remboursement (`lending_investor_terms.due_on`) → débloque total investi, attribution, scoring. Puis scoring IA + sync auto (cron). Cloudflare Access. Rotation des clés exposées en chat.
 
+> ## 🔴 VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER
+> Contrôle du CSV `users-profiles` exporté par SAH (2855 profils, 2783 personnes) contre notre base.
+> - **Grain** : le CSV est par PROFIL (2855), notre base par PERSONNE (2783, agrégée `bool_or`). 62 personnes ont >1 profil. **Total OK** (2783 = 2783).
+> - **`onboarding_complete` = JUSTE** : 1795 (fichier) ≈ 1797 (SAH live). Règle `wallet_status='6' OR lw_onboarding_status='accepted'` validée.
+> - **`registration_complete` = FAUX** : on utilise `status='validate'` → 1779 personnes, mais le fichier dit **2111** « profil complet ». Conséquence : le badge « Profil complété » n'apparaît jamais (0 personne dans cette catégorie) + 16 « onboardés sans profil complet » (logiquement impossible).
+> - **Cause** : `status='validate'` ≠ « Profil complet ». L'exploration (`/settings/sah`, échelle des `status`) montre que la cible 2111 ne correspond à AUCUNE combinaison de status (validate=1779, +invite=2346). Croisement CSV : « profil complet » ⟹ **nom+prénom remplis (2168/2168, 0 exception)** MAIS pas suffisant (274 ont un nom sans être « complet »). Donc règle = **nom rempli ET un 2ᵉ critère** non identifié dans la réplique.
+> - **EN ATTENTE** : règle exacte de « Profil complet ? » côté SAH (question posée). À réception → corriger `syncInvestors()` dans `src/lib/integrations/sah/sync.ts`, re-synchroniser, vérifier qu'on retombe sur **672 inscrits / 316 profil complété / 1795 onboardés**.
+> - Outils en place : explorateur enrichi (`/settings/sah` : scan colonnes + échelle status) ; script `scripts/verify-investors-count.mjs` (compte les 3 catégories en base) ; libellés des 3 niveaux centralisés dans `src/lib/investor-stage.ts` (Inscrit / Profil complété / Onboardé).
+
 > ## ⚠️ AVANT LA MISE EN LIGNE — réactiver l'authentification
 > L'auth est **désactivée en dev local** (`DISABLE_AUTH=true` dans `.env.local`). Un bandeau rouge le rappelle dans l'app.
 > **Avant tout déploiement** : retirer `DISABLE_AUTH` de `.env.local`. (En prod elle se rallume seule via le check `NODE_ENV`, mais à vérifier.) Le système login + 2FA est intact, rien n'a été supprimé.
