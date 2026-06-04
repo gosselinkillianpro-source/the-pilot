@@ -58,7 +58,7 @@ services:
       - key: CRON_SECRET
         sync: false
 
-  # --- Cron : déclenche la synchro SAH toutes les 5 minutes ---
+  # --- Cron : déclenche la synchro SAH toutes les 15 minutes ---
   # Le cron NE touche PAS SAH : il appelle l'app web (qui a les IP whitelistées).
   # Renseigner SYNC_URL dans le dashboard Render (web service déjà déployé) :
   #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>
@@ -67,7 +67,7 @@ services:
     runtime: node
     region: frankfurt
     plan: starter
-    schedule: '*/5 * * * *'
+    schedule: '*/15 * * * *'
     buildCommand: 'echo no-build'
     startCommand: >-
       node -e "fetch(process.env.SYNC_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"

@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { runSahSync } from '@/lib/integrations/sah/sync';
 
 /**
- * Déclencheur de synchronisation SAH (appelé par le cron Render toutes les 5 min).
+ * Déclencheur de synchronisation SAH (appelé par le cron Render toutes les 15 min).
  *
  * Endpoint PUBLIC (appelé par un planificateur externe) MAIS protégé par un secret
  * partagé : l'URL doit contenir ?token=<CRON_SECRET> (ou header x-cron-token).
