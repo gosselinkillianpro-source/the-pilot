@@ -2,7 +2,14 @@
 
 > Journal de bord pour reprendre le dev d'une session à l'autre.
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
-> Dernière mise à jour : 2026-06-01 (centre email Brevo + auth désactivée en local).
+> Dernière mise à jour : 2026-06-02 (EN LIGNE sur Render + intégration SAH live + données réelles).
+
+> ## 🟢 ÉTAT AU 2026-06-02 — en ligne + vraies données SAH
+> - **Hébergé sur Render** (région Frankfurt EU). Dépôt GitHub privé `gosselinkillianpro-source/the-pilot`, push `main` → autodeploy. Config : `render.yaml`, guide : `docs/DEPLOIEMENT-RENDER.md`. Build pnpm : voir `pnpm-workspace.yaml` (`allowBuilds: true` — sinon ERR_PNPM_IGNORED_BUILDS).
+> - **IP dédiées Render** : `74.220.51.220/221/222` (whitelistées par SAH).
+> - **Intégration SAH (Option C, réplique PostgreSQL lecture seule)** : `SAH_DATABASE_URL` (env Render), client `src/lib/integrations/sah/`. Plateforme Capsens/Rails. Sync `runSahSync()` (investisseurs + projets), déclenchable sur `/settings/sah` (admin). **2783 investisseurs + 81 projets synchronisés**. Mapping : `registration_complete` = users_profiles.status='validate' ; `onboarding_complete` = wallet_status='6' OU lw_onboarding_status='accepted'. On ne lit JAMAIS : bank_accounts, kyc_documents, encrypted_password.
+> - **Pipeline + fiche investisseur = vraies données** (`/closing/pipeline` liste cherchable/paginée, `/closing/investor/[id]`). L'email IA tourne sur les vrais projets.
+> - **Restant** : sync souscriptions + dates de remboursement (`lending_investor_terms.due_on`) → débloque total investi, attribution, scoring. Puis scoring IA + sync auto (cron). Cloudflare Access. Rotation des clés exposées en chat.
 
 > ## ⚠️ AVANT LA MISE EN LIGNE — réactiver l'authentification
 > L'auth est **désactivée en dev local** (`DISABLE_AUTH=true` dans `.env.local`). Un bandeau rouge le rappelle dans l'app.
