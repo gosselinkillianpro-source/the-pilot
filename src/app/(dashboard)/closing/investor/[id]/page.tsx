@@ -19,9 +19,10 @@ function initials(first: string | null, last: string | null, fallback: string): 
 
 function civilityLabel(c: string | null): string {
   if (!c) return '';
-  const v = c.toLowerCase();
-  if (v === 'mr' || v === 'm' || v.startsWith('mons')) return 'Monsieur';
-  if (v === 'mrs' || v === 'ms' || v === 'mme' || v.startsWith('mad')) return 'Madame';
+  const v = c.toLowerCase().trim();
+  if (v === 'mrs' || v === 'ms' || v === 'mme' || v.startsWith('mad') || v.startsWith('miss'))
+    return 'Madame';
+  if (v === 'mr' || v === 'm' || v.startsWith('mons') || v.startsWith('mist')) return 'Monsieur';
   return c;
 }
 
