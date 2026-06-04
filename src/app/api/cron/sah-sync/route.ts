@@ -1,8 +1,13 @@
 import type { NextRequest } from 'next/server';
-import { runSahSync } from '@/lib/integrations/sah/sync';
+import { runSahSync, type SyncScope } from '@/lib/integrations/sah/sync';
+
+const SCOPES: SyncScope[] = ['light', 'subscriptions', 'full'];
 
 /**
- * Déclencheur de synchronisation SAH (appelé par le cron Render toutes les 15 min).
+ * Déclencheur de synchronisation SAH (appelé par les crons Render).
+ * ?scope=light (défaut) : projets + investisseurs (toutes les 15 min).
+ * ?scope=subscriptions : nouvelles souscriptions seulement (toutes les 4 h).
+ * ?scope=full : tout, upsert complet (bouton manuel).
  *
  * Endpoint PUBLIC (appelé par un planificateur externe) MAIS protégé par un secret
  * partagé : l'URL doit contenir ?token=<CRON_SECRET> (ou header x-cron-token).
@@ -32,11 +37,16 @@ async function handle(req: NextRequest): Promise<Response> {
     return Response.json({ ok: true, skipped: 'déjà en cours' }, { status: 200 });
   }
 
+  const scopeParam = req.nextUrl.searchParams.get('scope');
+  const scope: SyncScope = SCOPES.includes(scopeParam as SyncScope)
+    ? (scopeParam as SyncScope)
+    : 'light';
+
   running = true;
   const startedAt = Date.now();
   try {
-    const result = await runSahSync();
-    return Response.json({ ok: true, durationMs: Date.now() - startedAt, ...result });
+    const result = await runSahSync(scope);
+    return Response.json({ ok: true, scope, durationMs: Date.now() - startedAt, ...result });
   } catch (e) {
     return Response.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },

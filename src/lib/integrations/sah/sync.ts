@@ -276,7 +276,11 @@ function mapSubscriptionStatus(s: SahSubscription): 'signed' | 'paid' | 'cancell
   return 'signed';
 }
 
-async function syncSubscriptions(): Promise<number> {
+/**
+ * @param onlyNew true = insère uniquement les nouvelles souscriptions (les existantes
+ *   ne sont jamais retouchées : elles sont figées côté SAH). false = upsert complet.
+ */
+async function syncSubscriptions(onlyNew = false): Promise<number> {
   const sahDb = getSahClient();
   // La souscription se relie à l'investisseur via users_profiles.user_id, et au projet
   // via project_id. On ne garde que les souscriptions dont l'investisseur ET le projet
@@ -327,51 +331,71 @@ async function syncSubscriptions(): Promise<number> {
   if (values.length === 0) return 0;
 
   const CHUNK = 500;
+  let written = 0;
   for (let i = 0; i < values.length; i += CHUNK) {
     const batch = values.slice(i, i + CHUNK);
-    await db
-      .insert(subscriptions)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: subscriptions.sahId,
-        set: {
-          investorId: sql`excluded.investor_id`,
-          projectId: sql`excluded.project_id`,
-          amount: sql`excluded.amount`,
-          sharesCount: sql`excluded.shares_count`,
-          signedAt: sql`excluded.signed_at`,
-          paidAt: sql`excluded.paid_at`,
-          canceledAt: sql`excluded.canceled_at`,
-          status: sql`excluded.status`,
-        },
-      });
+    const base = db.insert(subscriptions).values(batch);
+    // Souscriptions figées : en mode "nouvelles seulement" on n'écrase jamais l'existant.
+    const inserted = onlyNew
+      ? await base.onConflictDoNothing({ target: subscriptions.sahId }).returning({
+          id: subscriptions.id,
+        })
+      : await base
+          .onConflictDoUpdate({
+            target: subscriptions.sahId,
+            set: {
+              investorId: sql`excluded.investor_id`,
+              projectId: sql`excluded.project_id`,
+              amount: sql`excluded.amount`,
+              sharesCount: sql`excluded.shares_count`,
+              signedAt: sql`excluded.signed_at`,
+              paidAt: sql`excluded.paid_at`,
+              canceledAt: sql`excluded.canceled_at`,
+              status: sql`excluded.status`,
+            },
+          })
+          .returning({ id: subscriptions.id });
+    written += inserted.length;
   }
 
-  return values.length;
+  return onlyNew ? written : values.length;
 }
 
-/** Lance la synchro complète (projets, puis investisseurs, puis souscriptions). */
-export async function runSahSync(): Promise<SyncResult> {
+/**
+ * Périmètre de synchro :
+ * - `light` (15 min) : projets + investisseurs (ce qui évolue : nouveaux inscrits, statuts).
+ * - `subscriptions` (4 h) : insère uniquement les NOUVELLES souscriptions (figées).
+ * - `full` (manuel) : tout, avec upsert complet des souscriptions.
+ */
+export type SyncScope = 'light' | 'subscriptions' | 'full';
+
+export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult> {
   const errors: string[] = [];
   let projectsCount = 0;
   let investorsCount = 0;
   let subscriptionsCount = 0;
 
-  try {
-    projectsCount = await syncProjects();
-  } catch (e) {
-    errors.push(`projets: ${e instanceof Error ? e.message : String(e)}`);
+  if (scope === 'light' || scope === 'full') {
+    try {
+      projectsCount = await syncProjects();
+    } catch (e) {
+      errors.push(`projets: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+      investorsCount = await syncInvestors();
+    } catch (e) {
+      errors.push(`investisseurs: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
-  try {
-    investorsCount = await syncInvestors();
-  } catch (e) {
-    errors.push(`investisseurs: ${e instanceof Error ? e.message : String(e)}`);
-  }
-  // Les souscriptions dépendent des investisseurs + projets déjà synchronisés.
-  try {
-    subscriptionsCount = await syncSubscriptions();
-  } catch (e) {
-    errors.push(`souscriptions: ${e instanceof Error ? e.message : String(e)}`);
+
+  if (scope === 'subscriptions' || scope === 'full') {
+    // Dépend des investisseurs + projets déjà synchronisés.
+    // En `subscriptions` (cron 4h) : nouvelles seulement. En `full` : upsert complet.
+    try {
+      subscriptionsCount = await syncSubscriptions(scope === 'subscriptions');
+    } catch (e) {
+      errors.push(`souscriptions: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   return {

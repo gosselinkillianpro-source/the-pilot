@@ -12,7 +12,7 @@ export async function triggerSahSyncAction(): Promise<SahSyncActionResult> {
   await requireRole(user, ['admin']);
 
   try {
-    const result = await runSahSync();
+    const result = await runSahSync('full');
     await logAudit({
       userId: user.id,
       userEmail: user.email,

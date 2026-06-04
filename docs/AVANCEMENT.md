@@ -15,8 +15,11 @@
 > - **Migration 0004** : nouvelles colonnes `investors` (civility, nationality, country_residence, address_street/complement, tax_residency_country, bonus_code, cgp_name, cgp_network, wallet_balance_cents, wallet_status, lw_onboarding_status/id, lemonway_account_id, kyc_validated_at, sah_created_at/updated_at) + `subscriptions` (shares_count, canceled_at). **Jamais** d'IBAN/BIC/password (interdits). Appliquée à Supabase.
 > - **Sync enrichie** (`src/lib/integrations/sah/sync.ts`) : users + users_profiles + `bonus_codes` (code + ambassador_name) + `distributor_legal_entities` (name). Nouvelle `syncSubscriptions()` (14795 souscriptions, lien `subscriptions.users_profile_id → users_profiles.user_id`, projet via `project_id`). Statut dérivé des dates (canceled/paid/signed).
 > - **Fiche `/closing/investor/[id]`** refondue : blocs Identité, Coordonnées, Apporteur (CGP), Lemonway/Onboarding, Dates + **liste des souscriptions** (total investi).
-> - **Auto-refresh 15 min** : route `/api/cron/sah-sync` (publique, fail-closed sur `CRON_SECRET`, garde anti-chevauchement) + service cron Render (`render.yaml`, `*/15 * * * *`) qui appelle l'app web (IP whitelistées).
-> - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » pour créer le service cron ; (2) régler `CRON_SECRET` (web) + `SYNC_URL=https://<app>/api/cron/sah-sync?token=<CRON_SECRET>` (cron) ; (3) **lancer une synchro manuelle** (bouton `/settings/sah`) pour peupler les nouveaux champs.
+> - **Auto-refresh en 3 vitesses** (route `/api/cron/sah-sync?scope=…`, publique, fail-closed sur `CRON_SECRET`, garde anti-chevauchement) :
+>   - `scope=light` (projets + investisseurs/statuts) — cron Render `*/15 * * * *`.
+>   - `scope=subscriptions` (NOUVELLES souscriptions seulement, `onConflictDoNothing` car figées) — cron Render `0 */4 * * *`.
+>   - `scope=full` (tout, upsert complet) — bouton manuel `/settings/sah`.
+> - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » → crée 2 services cron (`the-pilot-sync-sah`, `the-pilot-sync-subscriptions`) ; (2) régler `CRON_SECRET` (web), `SYNC_URL=…?token=<CRON_SECRET>&scope=light` (cron 1), `SYNC_URL_SUBS=…?token=<CRON_SECRET>&scope=subscriptions` (cron 2) ; (3) **synchro manuelle** une fois (bouton) pour peupler.
 > - ⚠️ **À VÉRIFIER** : (a) montant des souscriptions = euros ou cents ? (vérifier sur une fiche connue) ; (b) CGP/réseau = best-effort (`distributor_legal_entities` via `users.distributor_id`) — confirmer avec SAH si faux.
 
 > ## 🔴 VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER

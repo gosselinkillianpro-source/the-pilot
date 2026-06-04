@@ -58,10 +58,10 @@ services:
       - key: CRON_SECRET
         sync: false
 
-  # --- Cron : déclenche la synchro SAH toutes les 15 minutes ---
+  # --- Cron 1 : profils + statuts d'inscription, toutes les 15 minutes ---
   # Le cron NE touche PAS SAH : il appelle l'app web (qui a les IP whitelistées).
-  # Renseigner SYNC_URL dans le dashboard Render (web service déjà déployé) :
-  #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>
+  # SYNC_URL à renseigner dans le dashboard Render (scope=light = projets + investisseurs) :
+  #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>&scope=light
   - type: cron
     name: the-pilot-sync-sah
     runtime: node
@@ -73,4 +73,21 @@ services:
       node -e "fetch(process.env.SYNC_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
     envVars:
       - key: SYNC_URL
+        sync: false
+
+  # --- Cron 2 : NOUVELLES souscriptions seulement, toutes les 4 heures ---
+  # Les souscriptions sont figées : on n'insère que les nouvelles (scope=subscriptions).
+  # SYNC_URL_SUBS à renseigner dans le dashboard Render :
+  #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>&scope=subscriptions
+  - type: cron
+    name: the-pilot-sync-subscriptions
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: '0 */4 * * *'
+    buildCommand: 'echo no-build'
+    startCommand: >-
+      node -e "fetch(process.env.SYNC_URL_SUBS).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: SYNC_URL_SUBS
         sync: false
