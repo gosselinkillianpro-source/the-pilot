@@ -11,7 +11,7 @@ import {
 import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { mockInvestors, mockProjects } from '@/lib/mock-data';
+import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 
 export type DraftProposalResult =
   | {
@@ -34,31 +34,29 @@ export async function draftProposalEmailAction(investorId: string): Promise<Draf
   const user = await getAuthenticatedUser();
   await requireRole(user, ['admin', 'closer', 'closer_junior']);
 
-  // 2. Données investisseur (mock pour l'instant — remplacé par les vraies données SAH)
-  const investor = mockInvestors.find((i) => i.id === investorId);
+  // 2. Données investisseur réelles (synchronisées depuis SAH)
+  const investor = await getInvestorById(investorId);
   if (!investor) {
     return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
   }
 
   const investorContext: InvestorContext = {
-    firstName: investor.firstName,
-    segment: investor.segment,
-    score: investor.score,
-    stage: investor.stage,
-    totalInvested: investor.totalInvested,
-    amountMentioned: investor.amountMentioned,
+    firstName: investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur',
+    segment: investor.profileSegment ?? 'particulier',
+    score: investor.score ?? 0,
+    stage: investor.pipelineStage,
+    totalInvested: Number(investor.totalInvested ?? 0),
+    amountMentioned: undefined,
   };
 
-  // 3. Projets investissables (ouverts à la collecte)
-  const projects: ProjectContext[] = mockProjects
-    .filter((p) => p.status === 'open' || p.status === 'funding')
-    .map((p) => ({
-      name: p.name,
-      city: p.city,
-      targetYieldAnnual: p.targetYieldAnnual,
-      durationMonths: p.durationMonths,
-      status: p.status,
-    }));
+  // 3. Projets investissables (ouverts à la collecte), vrais projets SAH
+  const projects: ProjectContext[] = (await getInvestableProjects()).map((p) => ({
+    name: p.name,
+    city: p.city ?? '',
+    targetYieldAnnual: Number(p.targetYieldAnnual ?? 0),
+    durationMonths: p.durationMonths ?? 0,
+    status: p.status,
+  }));
 
   // 4. Génération IA (+ journalisation LLM dans tous les cas)
   try {
