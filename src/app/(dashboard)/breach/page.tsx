@@ -3,6 +3,15 @@ import { getBreachStats, type MoM } from '@/lib/db/queries/closing';
 
 export const dynamic = 'force-dynamic';
 
+const PERIODS: { key: string; label: string; days: number | null }[] = [
+  { key: '2w', label: '2 semaines', days: 14 },
+  { key: '1m', label: '1 mois', days: 30 },
+  { key: '3m', label: '3 mois', days: 90 },
+  { key: '6m', label: '6 mois', days: 180 },
+  { key: '12m', label: '12 mois', days: 365 },
+  { key: 'all', label: 'Tout', days: null },
+];
+
 function money(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} €`;
 }
@@ -11,8 +20,18 @@ function pct(n: number, d: number): string {
   return `${Math.round((n / d) * 100)} %`;
 }
 
-export default async function BreachPage() {
-  const stats = await getBreachStats();
+export default async function BreachPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const sp = await searchParams;
+  const selected = PERIODS.find((p) => p.key === sp.period) ?? {
+    key: '1m',
+    label: '1 mois',
+    days: 30 as number | null,
+  }; // défaut 1 mois
+  const stats = await getBreachStats(selected.days);
   const f = stats.funnel;
   const maxMonth = Math.max(1, ...stats.byMonth.map((m) => m.signups));
 
@@ -36,7 +55,20 @@ export default async function BreachPage() {
         </div>
       </div>
 
-      {/* KPIs principaux */}
+      {/* Sélecteur de période */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {PERIODS.map((p) => (
+          <a
+            key={p.key}
+            href={p.key === '1m' ? '/breach' : `/breach?period=${p.key}`}
+            className={`btn btn-sm ${selected.key === p.key ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            {p.label}
+          </a>
+        ))}
+      </div>
+
+      {/* KPIs principaux (tout temps) */}
       <div className="kpi-grid">
         <Kpi label="Leads BREACH" value={String(f.total)} />
         <Kpi label="Onboardés" value={`${f.onboarded} · ${pct(f.onboarded, f.total)}`} />
@@ -60,36 +92,58 @@ export default async function BreachPage() {
         <Kpi label="Souscriptions (total)" value={String(stats.subCount)} />
       </div>
 
-      {/* Évolution : ce mois-ci vs mois dernier */}
-      <div className="view-card">
-        <div className="view-card-header">
-          <div className="view-card-title">Ce mois-ci · évolution vs mois dernier</div>
-        </div>
-        <div className="view-card-body">
-          <div className="kpi-grid">
-            <KpiTrend
-              label="Nouveaux leads"
-              value={String(stats.monthly.leads.current)}
-              mom={stats.monthly.leads}
-            />
-            <KpiTrend
-              label="Collecte"
-              value={money(stats.monthly.collecte.current)}
-              mom={stats.monthly.collecte}
-            />
-            <KpiTrend
-              label="Souscriptions"
-              value={String(stats.monthly.subs.current)}
-              mom={stats.monthly.subs}
-            />
-            <KpiTrend
-              label="Investisseurs"
-              value={String(stats.monthly.investors.current)}
-              mom={stats.monthly.investors}
-            />
+      {/* Évolution sur la période choisie vs période précédente équivalente */}
+      {stats.period && (
+        <div className="view-card">
+          <div className="view-card-header">
+            <div className="view-card-title">
+              Sur {selected.label.toLowerCase()} · évolution vs période précédente
+            </div>
+          </div>
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div className="kpi-grid">
+              <KpiTrend
+                label="Nouveaux leads"
+                value={String(stats.period.leads.current)}
+                mom={stats.period.leads}
+              />
+              <KpiTrend
+                label="Collecte"
+                value={money(stats.period.collecte.current)}
+                mom={stats.period.collecte}
+              />
+              <KpiTrend
+                label="Souscriptions"
+                value={String(stats.period.subs.current)}
+                mom={stats.period.subs}
+              />
+              <KpiTrend
+                label="Investisseurs"
+                value={String(stats.period.investors.current)}
+                mom={stats.period.investors}
+              />
+              <KpiTrend
+                label="Ticket moyen / inv."
+                value={money(stats.period.avgTicket.current)}
+                mom={stats.period.avgTicket}
+              />
+              <KpiTrend
+                label="Montant moyen / souscr."
+                value={money(stats.period.avgPerSub.current)}
+                mom={stats.period.avgPerSub}
+              />
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+              Comparaison : {selected.label.toLowerCase()} écoulés vs les{' '}
+              {selected.label.toLowerCase()} précédents. Leads = date d'inscription ;
+              collecte/souscriptions = date de signature.
+            </p>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Funnel + comparaison */}
       <div className="view-card">
