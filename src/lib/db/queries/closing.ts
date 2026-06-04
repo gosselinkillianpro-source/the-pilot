@@ -265,6 +265,109 @@ export async function getCloserPerformance(): Promise<PerformanceReport> {
   };
 }
 
+export type BreachStats = {
+  funnel: {
+    total: number;
+    registered: number;
+    onboarded: number;
+    investors: number; // ont au moins une souscription
+    new7d: number;
+    new30d: number;
+  };
+  totalInvested: number;
+  subCount: number;
+  byCode: { code: string; total: number; onboarded: number; invested: number }[];
+  // Référence pour comparer : hors BREACH
+  otherTotal: number;
+  otherOnboarded: number;
+};
+
+type FunnelRow = {
+  total: number;
+  registered: number;
+  onboarded: number;
+  new7d: number;
+  new30d: number;
+};
+type InvestedRow = { investors: number; total_invested: string | number; sub_count: number };
+type CodeRow = {
+  bonus_code: string | null;
+  total: number;
+  onboarded: number;
+  invested: string | number;
+};
+type OtherRow = { total: number; onboarded: number };
+
+/** Toutes les stats des leads venant des pubs de Killian (code bonus contenant BREACH). */
+export async function getBreachStats(): Promise<BreachStats> {
+  const funnel = (await db.execute(sql`
+    select
+      count(*)::int as total,
+      count(*) filter (where registration_complete)::int as registered,
+      count(*) filter (where onboarding_complete)::int as onboarded,
+      count(*) filter (where sah_created_at >= now() - interval '7 days')::int as new7d,
+      count(*) filter (where sah_created_at >= now() - interval '30 days')::int as new30d
+    from investors
+    where deleted_at is null and bonus_code ilike '%breach%'
+  `)) as unknown as FunnelRow[];
+
+  const invested = (await db.execute(sql`
+    select
+      count(distinct s.investor_id)::int as investors,
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total_invested,
+      count(s.id) filter (where s.status <> 'cancelled')::int as sub_count
+    from subscriptions s
+    join investors i on i.id = s.investor_id
+    where i.bonus_code ilike '%breach%'
+  `)) as unknown as InvestedRow[];
+
+  const byCode = (await db.execute(sql`
+    select
+      i.bonus_code,
+      count(distinct i.id)::int as total,
+      count(distinct i.id) filter (where i.onboarding_complete)::int as onboarded,
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as invested
+    from investors i
+    left join subscriptions s on s.investor_id = i.id
+    where i.deleted_at is null and i.bonus_code ilike '%breach%'
+    group by i.bonus_code
+    order by total desc
+  `)) as unknown as CodeRow[];
+
+  const other = (await db.execute(sql`
+    select
+      count(*)::int as total,
+      count(*) filter (where onboarding_complete)::int as onboarded
+    from investors
+    where deleted_at is null and (bonus_code is null or bonus_code not ilike '%breach%')
+  `)) as unknown as OtherRow[];
+
+  const f = funnel[0] ?? { total: 0, registered: 0, onboarded: 0, new7d: 0, new30d: 0 };
+  const inv = invested[0] ?? { investors: 0, total_invested: 0, sub_count: 0 };
+  const o = other[0] ?? { total: 0, onboarded: 0 };
+
+  return {
+    funnel: {
+      total: Number(f.total),
+      registered: Number(f.registered),
+      onboarded: Number(f.onboarded),
+      investors: Number(inv.investors),
+      new7d: Number(f.new7d),
+      new30d: Number(f.new30d),
+    },
+    totalInvested: Number(inv.total_invested) || 0,
+    subCount: Number(inv.sub_count) || 0,
+    byCode: byCode.map((c) => ({
+      code: c.bonus_code ?? '(sans code)',
+      total: Number(c.total),
+      onboarded: Number(c.onboarded),
+      invested: Number(c.invested) || 0,
+    })),
+    otherTotal: Number(o.total),
+    otherOnboarded: Number(o.onboarded),
+  };
+}
+
 /** Compte des appels passés aujourd'hui (pour le suivi d'activité du closer). */
 export async function getTodayCallCount(opts?: { closerId?: string }): Promise<number> {
   const startOfDay = new Date();
