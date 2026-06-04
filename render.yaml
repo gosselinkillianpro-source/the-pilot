@@ -51,3 +51,6 @@ services:
         sync: false
       - key: OPENROUTER_IMAGE_MODEL
         sync: false
+      # Réplique lecture seule SAH (connexion seulement depuis les IP dédiées Render)
+      - key: SAH_DATABASE_URL
+        sync: false
