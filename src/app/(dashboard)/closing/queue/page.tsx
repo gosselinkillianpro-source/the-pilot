@@ -1,6 +1,7 @@
 import { ChevronDown, Clock, Flame, Phone, Target, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { ClaimControl } from '@/components/closing/claim-control';
+import { MarkCalledButton } from '@/components/closing/mark-called-button';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {
   getCallQueue,
@@ -18,8 +19,8 @@ const SOURCE_TABS: { value: QueueSource; label: string }[] = [
 ];
 
 const PER_BUCKET = 40; // on affiche les plus prioritaires de chaque file
-// Capacité indicative de 2 closers sur la règle des 48h (à ajuster).
-const CAPACITY_48H = 30;
+// Seuil d'alerte : beaucoup de nouveaux inscrits (7 j) à rappeler pour 2 closers.
+const NEW_LEADS_ALERT = 60;
 
 function nb(n: number): string {
   return n.toLocaleString('fr-FR');
@@ -55,7 +56,7 @@ export default async function CallQueuePage({
   const rankById = new Map(queue.map((q, i) => [q.id, i + 1]));
 
   const total = queue.length;
-  const in48h = queue.filter((q) => q.scored.within48h).length;
+  const newLeads = queue.filter((q) => q.scored.isNewLead).length;
   const echeance = queue.filter((q) => q.scored.queueBucket === 2).length;
   const hot = queue.filter((q) => q.scored.temperature === 'hot').length;
 
@@ -90,8 +91,8 @@ export default async function CallQueuePage({
       <div className="kpi-grid">
         <Kpi
           icon={<Clock size={15} />}
-          label="Nouveaux (48h)"
-          value={nb(in48h)}
+          label="Nouveaux (7 j)"
+          value={nb(newLeads)}
           accent="var(--brand)"
         />
         <Kpi
@@ -104,17 +105,17 @@ export default async function CallQueuePage({
         <Kpi icon={<Phone size={15} />} label="En file" value={nb(total)} accent="var(--text-3)" />
       </div>
 
-      {in48h > CAPACITY_48H && (
+      {newLeads > NEW_LEADS_ALERT && (
         <div className="alert alert-warning">
           <span className="alert-icon">
             <Clock size={16} />
           </span>
           <div className="alert-body">
-            <div className="alert-title">Capacité 48h dépassée</div>
+            <div className="alert-title">Beaucoup de nouveaux à rappeler</div>
             <div className="alert-description">
-              {nb(in48h)} nouveaux inscrits à rappeler sous 48h, au-delà de la capacité indicative
-              de {CAPACITY_48H} pour 2 closers. Priorise par score, ou bascule les profils froids
-              sur l'e-mail automatique.
+              {nb(newLeads)} nouveaux inscrits (7 derniers jours) en file. Objectif : un 1er appel
+              sous 48h. Priorise le haut de liste, ou bascule les profils froids sur l'e-mail
+              automatique.
             </div>
           </div>
         </div>
@@ -210,7 +211,7 @@ function QueueRowItem({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '34px 1.3fr 1.5fr 64px 180px',
+        gridTemplateColumns: '30px 1.3fr 1.4fr 56px 210px',
         gap: 12,
         alignItems: 'center',
         padding: '12px 20px',
@@ -286,7 +287,15 @@ function QueueRowItem({
       </div>
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
         {claimedByOther ? (
           <span style={{ fontSize: 11, color: 'var(--text-4)' }}>pris</span>
         ) : (
@@ -297,9 +306,7 @@ function QueueRowItem({
                 <Phone size={13} />
               </a>
             ) : null}
-            <Link href={`/closing/investor/${row.id}`} className="btn btn-secondary btn-sm">
-              Fiche
-            </Link>
+            <MarkCalledButton investorId={row.id} />
           </>
         )}
       </div>

@@ -468,6 +468,52 @@ export async function releaseLeadAction(input: { investorId: string }): Promise<
   }
 }
 
+/**
+ * Action rapide « Appelé » depuis la file : enregistre un appel (sans détail) et
+ * libère le verrou. La personne sort alors de la file d'appels (appelée récemment).
+ */
+export async function markCalledAction(input: { investorId: string }): Promise<CallActionResult> {
+  let parsed: { investorId: string };
+  try {
+    parsed = claimSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await ensureUserRecord(user);
+    await db.insert(interactions).values({
+      investorId: parsed.investorId,
+      type: 'call_outbound',
+      note: 'Appelé (depuis la file)',
+      userId: user.id,
+    });
+    await db
+      .update(investors)
+      .set({ claimedById: null, claimedAt: null })
+      .where(eq(investors.id, parsed.investorId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.call_logged',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { quick: true },
+    });
+    revalidatePath('/closing/queue');
+    revalidatePath('/closing/today');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
 const completeTaskSchema = z.object({ taskId: z.string().uuid() });
 
 /** Marque un rappel/tâche comme fait. */

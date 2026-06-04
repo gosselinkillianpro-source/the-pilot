@@ -44,7 +44,8 @@ export type ScoredInvestor = {
   priority: number; // 0-100
   temperature: 'hot' | 'warm' | 'cold';
   temperatureLabel: string;
-  within48h: boolean;
+  /** Nouvel inscrit dans la fenêtre de visibilité (7 j) → prime sur le score. */
+  isNewLead: boolean;
   daysSinceSignup: number | null;
   /** Jours avant le remboursement le plus proche (statut E), null sinon. */
   nearestRepaymentDays: number | null;
@@ -65,10 +66,13 @@ const STATUS_LABEL: Record<InvestorStatus, string> = {
   E: 'Investisseur',
 };
 
+/** Fenêtre de visibilité d'un nouvel inscrit dans la file (objectif d'appel : sous 48h). */
+const NEW_LEAD_WINDOW_DAYS = 7;
+
 const BUCKET: Record<number, { label: string; goal: string }> = {
   1: {
-    label: 'Nouveau (fenêtre 48h)',
-    goal: 'Appel rapide : finaliser inscription/KYC, ou booker un RDV, ou présenter un projet.',
+    label: 'Nouveau (7 jours)',
+    goal: 'À rappeler vite (objectif sous 48h) : finaliser inscription/KYC, booker un RDV, ou présenter un projet.',
   },
   2: {
     label: 'Réinvestissement — échéance proche',
@@ -183,15 +187,15 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
   const temperatureLabel =
     temperature === 'hot' ? 'Chaud' : temperature === 'warm' ? 'Tiède' : 'Froid';
 
-  // --- Fenêtre 48h (section 4) : prime sur le score ---
-  const within48h =
+  // --- Nouvel inscrit : visible 7 j dans la file (objectif d'appel sous 48h) ---
+  const isNewLead =
     daysSinceSignup != null &&
-    daysSinceSignup <= 2 &&
+    daysSinceSignup <= NEW_LEAD_WINDOW_DAYS &&
     (status === 'A' || status === 'B' || status === 'C');
 
   // --- File / bucket (ordre de traitement, section 9) ---
   let queueBucket: number;
-  if (within48h) queueBucket = 1;
+  if (isNewLead) queueBucket = 1;
   else if (status === 'E' && repay != null && repay <= 30) queueBucket = 2;
   else if (status === 'B') queueBucket = 3;
   else if (status === 'A') queueBucket = 4;
@@ -227,7 +231,7 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
     priority,
     temperature,
     temperatureLabel,
-    within48h,
+    isNewLead,
     daysSinceSignup,
     nearestRepaymentDays: repay,
     queueBucket,

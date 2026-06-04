@@ -72,6 +72,16 @@ export async function getCallQueue(opts?: {
     ? sql`and i.assigned_closer_id = ${opts.assignedCloserId}`
     : sql``;
   const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
+  // Sort de la file les personnes appelées récemment (≤3 j) → "Appelé" les retire.
+  // Non appliqué à la fiche individuelle (on veut toujours son score).
+  const recentCallFilter = opts?.investorId
+    ? sql``
+    : sql`and not exists (
+        select 1 from interactions ix
+        where ix.investor_id = i.id
+          and ix.type in ('call_outbound', 'call_inbound')
+          and ix.created_at >= now() - interval '3 days'
+      )`;
   const sourceFilter =
     opts?.source === 'breach'
       ? sql`and i.bonus_code ilike '%breach%'`
@@ -123,6 +133,7 @@ export async function getCallQueue(opts?: {
     ${oneFilter}
     ${stageFilter}
     ${sourceFilter}
+    ${recentCallFilter}
     group by i.id, cu.full_name
   `);
 
