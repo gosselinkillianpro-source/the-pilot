@@ -1,7 +1,8 @@
 import 'server-only';
-import { and, count, desc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
-import { closerTasks, interactions, investors, users } from '@/lib/db/schema';
+import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
 
 export const PIPELINE_STAGES = [
   { value: 'new', label: 'Nouveau' },
@@ -134,6 +135,134 @@ export async function getClosers(): Promise<CloserOption[]> {
     .from(users)
     .where(inArray(users.role, ['admin', 'closer', 'closer_junior']));
   return rows;
+}
+
+export type CloserPerf = {
+  closerId: string;
+  name: string | null;
+  role: string;
+  calls: number;
+  reached: number;
+  assigned: number;
+  attributedSubs: number;
+  attributedAmount: number;
+};
+export type PerformanceReport = {
+  closers: CloserPerf[];
+  unattributed: { count: number; amount: number };
+  totalSubs: number;
+  totalAmount: number;
+};
+
+const EMAIL_KIND: Record<string, ContactKind> = {
+  email_clicked: 'click',
+  email_opened: 'open',
+};
+
+/**
+ * Performance par closer + attribution des souscriptions (appel prime / last-touch / 30j).
+ * Se remplit au fur et à mesure que les closers enregistrent des appels.
+ */
+export async function getCloserPerformance(): Promise<PerformanceReport> {
+  const closers = await getClosers();
+
+  // Activité d'appel par closer
+  const callAgg = await db
+    .select({
+      userId: interactions.userId,
+      calls: count(),
+      reached: sql<number>`count(*) filter (where ${interactions.outcome} = 'reached')::int`,
+    })
+    .from(interactions)
+    .where(inArray(interactions.type, ['call_outbound', 'call_inbound']))
+    .groupBy(interactions.userId);
+  const callByUser = new Map(callAgg.map((r) => [r.userId, r]));
+
+  // Leads assignés par closer
+  const assignAgg = await db
+    .select({ closerId: investors.assignedCloserId, n: count() })
+    .from(investors)
+    .where(isNull(investors.deletedAt))
+    .groupBy(investors.assignedCloserId);
+  const assignByUser = new Map(assignAgg.map((r) => [r.closerId, Number(r.n)]));
+
+  // Données d'attribution : souscriptions + contacts (appels + events email)
+  const subs = await db
+    .select({
+      investorId: subscriptions.investorId,
+      amount: subscriptions.amount,
+      signedAt: subscriptions.signedAt,
+    })
+    .from(subscriptions)
+    .where(sql`${subscriptions.status} <> 'cancelled' and ${subscriptions.signedAt} is not null`);
+
+  const contactsRows = await db
+    .select({
+      investorId: interactions.investorId,
+      type: interactions.type,
+      userId: interactions.userId,
+      at: interactions.createdAt,
+    })
+    .from(interactions)
+    .where(
+      inArray(interactions.type, [
+        'call_outbound',
+        'call_inbound',
+        'email_clicked',
+        'email_opened',
+      ]),
+    );
+
+  const contactsByInvestor = new Map<string, Contact[]>();
+  for (const c of contactsRows) {
+    const kind: ContactKind = c.type.startsWith('call') ? 'call' : (EMAIL_KIND[c.type] ?? 'open');
+    const list = contactsByInvestor.get(c.investorId) ?? [];
+    list.push({ kind, at: c.at, userId: c.userId });
+    contactsByInvestor.set(c.investorId, list);
+  }
+
+  const attributedByUser = new Map<string, { subs: number; amount: number }>();
+  let unattrCount = 0;
+  let unattrAmount = 0;
+  let totalAmount = 0;
+
+  for (const s of subs) {
+    if (!s.signedAt) continue;
+    const amount = Number(s.amount) || 0;
+    totalAmount += amount;
+    const res = attributeAction(s.signedAt, contactsByInvestor.get(s.investorId) ?? []);
+    if (res.attributed && res.via === 'call' && res.userId) {
+      const cur = attributedByUser.get(res.userId) ?? { subs: 0, amount: 0 };
+      cur.subs += 1;
+      cur.amount += amount;
+      attributedByUser.set(res.userId, cur);
+    } else {
+      unattrCount += 1;
+      unattrAmount += amount;
+    }
+  }
+
+  const closerPerf: CloserPerf[] = closers.map((c) => {
+    const call = callByUser.get(c.id);
+    const attr = attributedByUser.get(c.id);
+    return {
+      closerId: c.id,
+      name: c.name,
+      role: c.role,
+      calls: call ? Number(call.calls) : 0,
+      reached: call ? Number(call.reached) : 0,
+      assigned: assignByUser.get(c.id) ?? 0,
+      attributedSubs: attr?.subs ?? 0,
+      attributedAmount: attr?.amount ?? 0,
+    };
+  });
+
+  return {
+    closers: closerPerf,
+    unattributed: { count: unattrCount, amount: unattrAmount },
+    totalSubs: subs.length,
+    totalAmount,
+  };
 }
 
 /** Compte des appels passés aujourd'hui (pour le suivi d'activité du closer). */

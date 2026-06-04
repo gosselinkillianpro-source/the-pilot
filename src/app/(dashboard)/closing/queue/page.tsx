@@ -5,6 +5,8 @@ import { getCallQueue, groupByBucket, type QueueRow } from '@/lib/db/queries/cal
 export const dynamic = 'force-dynamic';
 
 const PER_BUCKET = 40; // on affiche les plus prioritaires de chaque file
+// Capacité indicative de 2 closers sur la règle des 48h (à ajuster).
+const CAPACITY_48H = 30;
 
 function nb(n: number): string {
   return n.toLocaleString('fr-FR');
@@ -57,6 +59,22 @@ export default async function CallQueuePage() {
         <Kpi icon={<Flame size={15} />} label="Chauds" value={nb(hot)} accent="var(--danger)" />
         <Kpi icon={<Phone size={15} />} label="En file" value={nb(total)} accent="var(--text-3)" />
       </div>
+
+      {in48h > CAPACITY_48H && (
+        <div className="alert alert-warning">
+          <span className="alert-icon">
+            <Clock size={16} />
+          </span>
+          <div className="alert-body">
+            <div className="alert-title">Capacité 48h dépassée</div>
+            <div className="alert-description">
+              {nb(in48h)} nouveaux inscrits à rappeler sous 48h, au-delà de la capacité indicative
+              de {CAPACITY_48H} pour 2 closers. Priorise par score, ou bascule les profils froids
+              sur l'e-mail automatique.
+            </div>
+          </div>
+        </div>
+      )}
 
       {total === 0 ? (
         <div className="view-card">
