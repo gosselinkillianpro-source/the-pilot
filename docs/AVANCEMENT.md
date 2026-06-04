@@ -18,7 +18,9 @@
 > - **Fiche** enrichie : bloc Priorité d'appel (score transparent), **Brief d'appel IA** (`src/lib/ai/call-brief.ts`), panneau **Enregistrer un appel** (résultat + notes + rappel + avancement pipeline), **Historique** (timeline).
 > - **Aujourd'hui** `/closing/today` : rappels du jour/en retard + appels passés + bouton Fait.
 > - **Migration 0005** : table `closer_tasks` (RLS posée : admin/exec/closer-ses-leads) + `interactions.outcome` + `interactions.note`. Actions : `logCallAction`, `completeTaskAction`, `draftCallBriefAction`.
-> - **RESTE À FAIRE** (lots suivants) : pipeline Kanban (la liste existe), assignation des leads aux closers, moteur d'attribution (last-touch/appel-prime/30j), perf par closer, alerte capacité 48h. Le scoring s'affinera quand l'engagement e-mail (webhook Brevo) et la règle « profil complété » (SAH) seront branchés.
+> - **Pipeline Kanban** `/closing/board` (cartes déplaçables, `updateStageAction`). **Assignation** leads→closers (`assignCloserAction`, admin) sur la fiche. **Attribution** `src/lib/closing/attribution.ts` (appel prime/last-touch/30j) + **Perf par closer** `/closing/performance` (appels, joints, leads, souscriptions/€ attribués). **Alerte capacité 48h** sur la file.
+> - Onglets closing : File d'appels · Aujourd'hui · Pipeline · Investisseurs · Performance.
+> - **Le scoring + l'attribution s'affineront** quand l'engagement e-mail (webhook Brevo → `interactions`) et la règle « profil complété » (SAH) seront branchés. L'attribution/perf se remplissent à mesure que les closers enregistrent des appels.
 
 > ## 🟢 FICHE INVESTISSEUR ENRICHIE + AUTO-REFRESH (2026-06-04)
 > - **Migration 0004** : nouvelles colonnes `investors` (civility, nationality, country_residence, address_street/complement, tax_residency_country, bonus_code, cgp_name, cgp_network, wallet_balance_cents, wallet_status, lw_onboarding_status/id, lemonway_account_id, kyc_validated_at, sah_created_at/updated_at) + `subscriptions` (shares_count, canceled_at). **Jamais** d'IBAN/BIC/password (interdits). Appliquée à Supabase.
