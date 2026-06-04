@@ -1,4 +1,4 @@
-import { Clock, Flame, Phone, TrendingUp } from 'lucide-react';
+import { ChevronDown, Clock, Flame, Phone, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -45,7 +45,8 @@ export default async function CallQueuePage() {
       <div>
         <h1 className="page-title">File d'appels</h1>
         <div className="page-desc">
-          Qui appeler maintenant, dans l'ordre. {nb(total)} personnes en file · triées par priorité.
+          Qui appeler maintenant. {nb(total)} personnes en file · chaque liste est rangée dans
+          l'ordre (inscrit le plus récent en haut · échéance la plus proche en haut).
         </div>
       </div>
 
@@ -90,15 +91,21 @@ export default async function CallQueuePage() {
           </div>
         </div>
       ) : (
-        groups.map((g) => (
-          <div key={g.bucket} className="view-card">
-            <div className="view-card-header">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div className="view-card-title">{g.label}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{g.goal}</div>
+        groups.map((g, gi) => (
+          <details key={g.bucket} className="view-card" open={gi < 2}>
+            <summary
+              className="view-card-header"
+              style={{ cursor: 'pointer', listStyle: 'none', alignItems: 'center' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <ChevronDown size={16} style={{ color: 'var(--text-4)', flexShrink: 0 }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                  <div className="view-card-title">{g.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{g.goal}</div>
+                </div>
               </div>
               <span className="badge badge-neutral">{nb(g.rows.length)}</span>
-            </div>
+            </summary>
             <div className="view-card-body" style={{ padding: 0 }}>
               {g.rows.slice(0, PER_BUCKET).map((row, idx) => (
                 <QueueRowItem
@@ -111,11 +118,11 @@ export default async function CallQueuePage() {
               ))}
               {g.rows.length > PER_BUCKET && (
                 <div style={{ padding: '10px 20px', fontSize: 12, color: 'var(--text-4)' }}>
-                  + {nb(g.rows.length - PER_BUCKET)} autres dans cette file (priorité plus basse).
+                  + {nb(g.rows.length - PER_BUCKET)} autres dans cette file (plus bas dans l'ordre).
                 </div>
               )}
             </div>
-          </div>
+          </details>
         ))
       )}
     </>

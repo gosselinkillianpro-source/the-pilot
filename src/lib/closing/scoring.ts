@@ -46,6 +46,8 @@ export type ScoredInvestor = {
   temperatureLabel: string;
   within48h: boolean;
   daysSinceSignup: number | null;
+  /** Jours avant le remboursement le plus proche (statut E), null sinon. */
+  nearestRepaymentDays: number | null;
   queueBucket: number; // 1-7, ordre de traitement de la journée
   queueLabel: string;
   callGoal: string;
@@ -227,6 +229,7 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
     temperatureLabel,
     within48h,
     daysSinceSignup,
+    nearestRepaymentDays: repay,
     queueBucket,
     queueLabel: bucketInfo.label,
     callGoal: bucketInfo.goal,
@@ -234,8 +237,32 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
   };
 }
 
-/** Ordre de tri global de la file d'appels : bucket croissant, puis priorité décroissante. */
+/** Compare deux valeurs nullables en ordre CROISSANT, les null en dernier. */
+function ascNullsLast(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a - b;
+}
+
+/**
+ * Ordre de tri de la file d'appels : d'abord la file (bucket), puis un ordre
+ * TEMPOREL logique à l'intérieur :
+ * - file Réinvestissement (échéance) : échéance la plus proche d'abord (2j avant +2j).
+ * - autres files (inscrits, KYC…) : inscrit le plus récent d'abord (contact frais = chaud).
+ * La priorité (score) départage à égalité.
+ */
 export function compareForQueue(a: ScoredInvestor, b: ScoredInvestor): number {
   if (a.queueBucket !== b.queueBucket) return a.queueBucket - b.queueBucket;
+
+  if (a.queueBucket === 2) {
+    // Échéance la plus proche en premier.
+    const byRepay = ascNullsLast(a.nearestRepaymentDays, b.nearestRepaymentDays);
+    if (byRepay !== 0) return byRepay;
+  } else {
+    // Inscrit le plus récent en premier (plus petit nombre de jours depuis l'inscription).
+    const byRecency = ascNullsLast(a.daysSinceSignup, b.daysSinceSignup);
+    if (byRecency !== 0) return byRecency;
+  }
   return b.priority - a.priority;
 }
