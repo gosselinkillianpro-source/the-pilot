@@ -2,13 +2,19 @@ import { AlertTriangle, Database } from 'lucide-react';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import {
   getProfilCompletDiagnostic,
+  getSahBreachSubDiag,
   getSahDiagnostics,
   getSahSchema,
   type ProfilCompletDiagnostic,
+  type SahBreachSubDiag,
   type SahColumn,
   type SahDiagnostics,
 } from '@/lib/integrations/sah/client';
 import { SyncButton } from './sync-button';
+
+function money(n: number): string {
+  return `${n.toLocaleString('fr-FR')} €`;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -34,12 +40,14 @@ export default async function SahExplorerPage() {
   let schema: SahColumn[] = [];
   let diag: SahDiagnostics | null = null;
   let profilDiag: ProfilCompletDiagnostic | null = null;
+  let subDiag: SahBreachSubDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag] = await Promise.all([
+    [schema, diag, profilDiag, subDiag] = await Promise.all([
       getSahSchema(),
       getSahDiagnostics(),
       getProfilCompletDiagnostic(),
+      getSahBreachSubDiag(),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
@@ -110,6 +118,41 @@ export default async function SahExplorerPage() {
               <SyncButton />
             </div>
           </div>
+
+          {subDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">
+                  Collecte BREACH — souscriptions par wallet_status
+                </div>
+                <span className="badge badge-brand">cible : 156 / 63 788 €</span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}
+              >
+                {subDiag.byWalletStatus.map((r) => (
+                  <div key={r.value} style={{ color: 'var(--text-2)' }}>
+                    « {r.value} » : <strong>{r.count}</strong> souscriptions → {money(r.total)}
+                  </div>
+                ))}
+                <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                  <div style={{ color: 'var(--text-1)' }}>
+                    wallet_status = « completed » : <strong>{subDiag.completed.count}</strong> →{' '}
+                    <strong>{money(subDiag.completed.total)}</strong>
+                  </div>
+                  <div style={{ color: 'var(--text-3)' }}>
+                    réservations (reservation=true) : {subDiag.reservationsTrue.count} →{' '}
+                    {money(subDiag.reservationsTrue.total)}
+                  </div>
+                  <div style={{ color: 'var(--text-3)' }}>
+                    hors annulées (canceled_at null) : {subDiag.nonCancelled.count} →{' '}
+                    {money(subDiag.nonCancelled.total)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {diag && (
             <div className="view-card">
