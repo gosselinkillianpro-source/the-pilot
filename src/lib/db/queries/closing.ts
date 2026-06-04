@@ -1,8 +1,9 @@
 import 'server-only';
-import { and, count, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
 import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
+import { type Delta, delta, type ResolvedPeriod } from '@/lib/period';
 
 export const PIPELINE_STAGES = [
   { value: 'new', label: 'Nouveau' },
@@ -152,6 +153,8 @@ export type PerformanceReport = {
   unattributed: { count: number; amount: number };
   totalSubs: number;
   totalAmount: number;
+  periodLabel: string;
+  deltas: { calls: Delta; collecte: Delta };
 };
 
 const EMAIL_KIND: Record<string, ContactKind> = {
@@ -163,10 +166,12 @@ const EMAIL_KIND: Record<string, ContactKind> = {
  * Performance par closer + attribution des souscriptions (appel prime / last-touch / 30j).
  * Se remplit au fur et à mesure que les closers enregistrent des appels.
  */
-export async function getCloserPerformance(): Promise<PerformanceReport> {
+export async function getCloserPerformance(period: ResolvedPeriod): Promise<PerformanceReport> {
   const closers = await getClosers();
+  const from = new Date(period.fromISO);
+  const to = new Date(period.toISO);
 
-  // Activité d'appel par closer
+  // Activité d'appel par closer SUR LA PÉRIODE
   const callAgg = await db
     .select({
       userId: interactions.userId,
@@ -174,7 +179,13 @@ export async function getCloserPerformance(): Promise<PerformanceReport> {
       reached: sql<number>`count(*) filter (where ${interactions.outcome} = 'reached')::int`,
     })
     .from(interactions)
-    .where(inArray(interactions.type, ['call_outbound', 'call_inbound']))
+    .where(
+      and(
+        inArray(interactions.type, ['call_outbound', 'call_inbound']),
+        gte(interactions.createdAt, from),
+        lt(interactions.createdAt, to),
+      ),
+    )
     .groupBy(interactions.userId);
   const callByUser = new Map(callAgg.map((r) => [r.userId, r]));
 
@@ -194,7 +205,9 @@ export async function getCloserPerformance(): Promise<PerformanceReport> {
       signedAt: subscriptions.signedAt,
     })
     .from(subscriptions)
-    .where(sql`${subscriptions.status} <> 'cancelled' and ${subscriptions.signedAt} is not null`);
+    .where(
+      sql`${subscriptions.status} <> 'cancelled' and ${subscriptions.signedAt} >= ${period.fromISO}::timestamptz and ${subscriptions.signedAt} < ${period.toISO}::timestamptz`,
+    );
 
   const contactsRows = await db
     .select({
@@ -257,11 +270,33 @@ export async function getCloserPerformance(): Promise<PerformanceReport> {
     };
   });
 
+  // Deltas globaux : appels + collecte signée, période courante vs précédente.
+  const { fromISO, toISO, prevFromISO, prevToISO } = period;
+  const callsDelta = (await db.execute(sql`
+    select
+      count(*) filter (where created_at >= ${fromISO}::timestamptz and created_at < ${toISO}::timestamptz)::int as cur,
+      count(*) filter (where created_at >= ${prevFromISO}::timestamptz and created_at < ${prevToISO}::timestamptz)::int as prev
+    from interactions where type in ('call_outbound', 'call_inbound')
+  `)) as unknown as { cur: number; prev: number }[];
+  const colDelta = (await db.execute(sql`
+    select
+      coalesce(sum(amount) filter (where signed_at >= ${fromISO}::timestamptz and signed_at < ${toISO}::timestamptz), 0) as cur,
+      coalesce(sum(amount) filter (where signed_at >= ${prevFromISO}::timestamptz and signed_at < ${prevToISO}::timestamptz), 0) as prev
+    from subscriptions where status <> 'cancelled' and signed_at is not null
+  `)) as unknown as { cur: string | number; prev: string | number }[];
+  const cd = callsDelta[0] ?? { cur: 0, prev: 0 };
+  const md = colDelta[0] ?? { cur: 0, prev: 0 };
+
   return {
     closers: closerPerf,
     unattributed: { count: unattrCount, amount: unattrAmount },
     totalSubs: subs.length,
     totalAmount,
+    periodLabel: period.label,
+    deltas: {
+      calls: delta(Number(cd.cur) || 0, Number(cd.prev) || 0),
+      collecte: delta(Math.round(Number(md.cur) || 0), Math.round(Number(md.prev) || 0)),
+    },
   };
 }
 
@@ -284,29 +319,21 @@ export type BreachStats = {
   byCity: { city: string; total: number }[];
   byMonth: { month: string; signups: number }[];
   topProjects: { name: string; investors: number; collected: number }[];
-  // Évolution sur la période choisie vs période précédente équivalente (annotations +X%)
+  // Évolution sur la période choisie vs période précédente équivalente (gain/perte € et %)
   period: {
-    days: number;
-    leads: MoM;
-    collecte: MoM;
-    subs: MoM;
-    investors: MoM;
-    avgTicket: MoM;
-    avgPerSub: MoM;
-  } | null;
+    label: string;
+    leads: Delta;
+    collecte: Delta;
+    subs: Delta;
+    investors: Delta;
+    avgTicket: Delta;
+    avgPerSub: Delta;
+  };
   // Référence pour comparer : hors BREACH
   otherTotal: number;
   otherOnboarded: number;
   otherAvgTicketPerInvestor: number;
 };
-
-/** Comparaison mois courant vs mois précédent. deltaPct null si pas de base (mois précédent = 0). */
-export type MoM = { current: number; previous: number; deltaPct: number | null };
-
-function mom(current: number, previous: number): MoM {
-  const deltaPct = previous > 0 ? Math.round(((current - previous) / previous) * 100) : null;
-  return { current, previous, deltaPct };
-}
 
 type FunnelRow = {
   total: number;
@@ -336,9 +363,9 @@ type TimingRow = { avg_days: string | number | null };
 
 /**
  * Toutes les stats des leads venant des pubs de Killian (code bonus contenant BREACH).
- * @param periodDays fenêtre d'analyse en jours (null = tout temps, pas de comparaison).
+ * @param period fenêtre d'analyse + période précédente (pour le gain/perte).
  */
-export async function getBreachStats(periodDays: number | null = 30): Promise<BreachStats> {
+export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStats> {
   const funnel = (await db.execute(sql`
     select
       count(*)::int as total,
@@ -421,81 +448,66 @@ export async function getBreachStats(periodDays: number | null = 30): Promise<Br
     where i.deleted_at is null and (i.bonus_code is null or i.bonus_code not ilike '%breach%')
   `)) as unknown as OtherRow[];
 
-  // Évolution sur la période choisie (N jours) vs période précédente équivalente.
-  let period: BreachStats['period'] = null;
-  if (periodDays != null) {
-    const dbl = periodDays * 2;
-    const leadsP = (await db.execute(sql`
-      select
-        count(*) filter (where sah_created_at >= now() - make_interval(days => ${periodDays}))::int as cur,
-        count(*) filter (
-          where sah_created_at >= now() - make_interval(days => ${dbl})
-            and sah_created_at < now() - make_interval(days => ${periodDays})
-        )::int as prev
-      from investors
-      where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
-    `)) as unknown as { cur: number; prev: number }[];
+  // Évolution sur la période choisie vs période précédente (bornes explicites).
+  const { fromISO, toISO, prevFromISO, prevToISO } = period;
+  const leadsP = (await db.execute(sql`
+    select
+      count(*) filter (where sah_created_at >= ${fromISO}::timestamptz and sah_created_at < ${toISO}::timestamptz)::int as cur,
+      count(*) filter (where sah_created_at >= ${prevFromISO}::timestamptz and sah_created_at < ${prevToISO}::timestamptz)::int as prev
+    from investors
+    where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
+  `)) as unknown as { cur: number; prev: number }[];
 
-    const subsP = (await db.execute(sql`
-      select
-        coalesce(sum(s.amount) filter (where s.signed_at >= now() - make_interval(days => ${periodDays})), 0) as cur_collecte,
-        coalesce(sum(s.amount) filter (
-          where s.signed_at >= now() - make_interval(days => ${dbl})
-            and s.signed_at < now() - make_interval(days => ${periodDays})
-        ), 0) as prev_collecte,
-        count(*) filter (where s.signed_at >= now() - make_interval(days => ${periodDays}))::int as cur_subs,
-        count(*) filter (
-          where s.signed_at >= now() - make_interval(days => ${dbl})
-            and s.signed_at < now() - make_interval(days => ${periodDays})
-        )::int as prev_subs,
-        count(distinct s.investor_id) filter (where s.signed_at >= now() - make_interval(days => ${periodDays}))::int as cur_inv,
-        count(distinct s.investor_id) filter (
-          where s.signed_at >= now() - make_interval(days => ${dbl})
-            and s.signed_at < now() - make_interval(days => ${periodDays})
-        )::int as prev_inv
-      from subscriptions s
-      join investors i on i.id = s.investor_id
-      where i.bonus_code ilike '%breach%' and s.status <> 'cancelled' and s.signed_at is not null
-    `)) as unknown as {
-      cur_collecte: string | number;
-      prev_collecte: string | number;
-      cur_subs: number;
-      prev_subs: number;
-      cur_inv: number;
-      prev_inv: number;
-    }[];
+  const subsP = (await db.execute(sql`
+    select
+      coalesce(sum(s.amount) filter (where s.signed_at >= ${fromISO}::timestamptz and s.signed_at < ${toISO}::timestamptz), 0) as cur_collecte,
+      coalesce(sum(s.amount) filter (where s.signed_at >= ${prevFromISO}::timestamptz and s.signed_at < ${prevToISO}::timestamptz), 0) as prev_collecte,
+      count(*) filter (where s.signed_at >= ${fromISO}::timestamptz and s.signed_at < ${toISO}::timestamptz)::int as cur_subs,
+      count(*) filter (where s.signed_at >= ${prevFromISO}::timestamptz and s.signed_at < ${prevToISO}::timestamptz)::int as prev_subs,
+      count(distinct s.investor_id) filter (where s.signed_at >= ${fromISO}::timestamptz and s.signed_at < ${toISO}::timestamptz)::int as cur_inv,
+      count(distinct s.investor_id) filter (where s.signed_at >= ${prevFromISO}::timestamptz and s.signed_at < ${prevToISO}::timestamptz)::int as prev_inv
+    from subscriptions s
+    join investors i on i.id = s.investor_id
+    where i.bonus_code ilike '%breach%' and s.status <> 'cancelled' and s.signed_at is not null
+  `)) as unknown as {
+    cur_collecte: string | number;
+    prev_collecte: string | number;
+    cur_subs: number;
+    prev_subs: number;
+    cur_inv: number;
+    prev_inv: number;
+  }[];
 
-    const lp = leadsP[0] ?? { cur: 0, prev: 0 };
-    const sp = subsP[0] ?? {
-      cur_collecte: 0,
-      prev_collecte: 0,
-      cur_subs: 0,
-      prev_subs: 0,
-      cur_inv: 0,
-      prev_inv: 0,
-    };
-    const curCollecte = Math.round(Number(sp.cur_collecte) || 0);
-    const prevCollecte = Math.round(Number(sp.prev_collecte) || 0);
-    const curSubs = Number(sp.cur_subs) || 0;
-    const prevSubs = Number(sp.prev_subs) || 0;
-    const curInv = Number(sp.cur_inv) || 0;
-    const prevInv = Number(sp.prev_inv) || 0;
-    period = {
-      days: periodDays,
-      leads: mom(Number(lp.cur) || 0, Number(lp.prev) || 0),
-      collecte: mom(curCollecte, prevCollecte),
-      subs: mom(curSubs, prevSubs),
-      investors: mom(curInv, prevInv),
-      avgTicket: mom(
-        curInv > 0 ? Math.round(curCollecte / curInv) : 0,
-        prevInv > 0 ? Math.round(prevCollecte / prevInv) : 0,
-      ),
-      avgPerSub: mom(
-        curSubs > 0 ? Math.round(curCollecte / curSubs) : 0,
-        prevSubs > 0 ? Math.round(prevCollecte / prevSubs) : 0,
-      ),
-    };
-  }
+  const lp = leadsP[0] ?? { cur: 0, prev: 0 };
+  const sp = subsP[0] ?? {
+    cur_collecte: 0,
+    prev_collecte: 0,
+    cur_subs: 0,
+    prev_subs: 0,
+    cur_inv: 0,
+    prev_inv: 0,
+  };
+  const curCollecte = Math.round(Number(sp.cur_collecte) || 0);
+  const prevCollecte = Math.round(Number(sp.prev_collecte) || 0);
+  const curSubs = Number(sp.cur_subs) || 0;
+  const prevSubs = Number(sp.prev_subs) || 0;
+  const curInv = Number(sp.cur_inv) || 0;
+  const prevInv = Number(sp.prev_inv) || 0;
+  const periodBlock: BreachStats['period'] = {
+    label: period.label,
+    leads: delta(Number(lp.cur) || 0, Number(lp.prev) || 0),
+    collecte: delta(curCollecte, prevCollecte),
+    subs: delta(curSubs, prevSubs),
+    investors: delta(curInv, prevInv),
+    avgTicket: delta(
+      curInv > 0 ? Math.round(curCollecte / curInv) : 0,
+      prevInv > 0 ? Math.round(prevCollecte / prevInv) : 0,
+    ),
+    avgPerSub: delta(
+      curSubs > 0 ? Math.round(curCollecte / curSubs) : 0,
+      prevSubs > 0 ? Math.round(prevCollecte / prevSubs) : 0,
+    ),
+  };
 
   const f = funnel[0] ?? {
     total: 0,
@@ -543,7 +555,7 @@ export async function getBreachStats(periodDays: number | null = 30): Promise<Br
       investors: Number(p.investors),
       collected: Number(p.collected) || 0,
     })),
-    period,
+    period: periodBlock,
     otherTotal: Number(o.total),
     otherOnboarded: Number(o.onboarded),
     otherAvgTicketPerInvestor: otherInvestors > 0 ? Math.round(otherInvested / otherInvestors) : 0,

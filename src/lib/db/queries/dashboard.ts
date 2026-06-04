@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { type Delta, delta, type ResolvedPeriod } from '@/lib/period';
 
 /**
  * Statistiques globales Seven At Home pour le dashboard d'accueil.
@@ -20,12 +21,15 @@ export type GlobalStats = {
   projects: { total: number; open: number };
   topProjects: { id: string; name: string; collected: number; investors: number }[];
   byMonth: { month: string; collected: number }[];
+  // Sur la période choisie : flux + gain/perte vs période précédente.
+  period: { label: string; leads: Delta; collecte: Delta; subs: Delta; investors: Delta };
 };
 
 type Row = Record<string, string | number | null>;
 
-export async function getGlobalStats(): Promise<GlobalStats> {
-  const [invR, subR, breachR, projR, topR, monthR] = await Promise.all([
+export async function getGlobalStats(period: ResolvedPeriod): Promise<GlobalStats> {
+  const { fromISO, toISO, prevFromISO, prevToISO } = period;
+  const [invR, subR, breachR, projR, topR, monthR, leadsPR, subsPR] = await Promise.all([
     db.execute(sql`
       select
         count(*)::int as total,
@@ -68,6 +72,24 @@ export async function getGlobalStats(): Promise<GlobalStats> {
       where status <> 'cancelled' and signed_at is not null
       group by month order by month desc limit 12
     `),
+    // Nouveaux inscrits : période courante vs précédente
+    db.execute(sql`
+      select
+        count(*) filter (where sah_created_at >= ${fromISO}::timestamptz and sah_created_at < ${toISO}::timestamptz)::int as cur,
+        count(*) filter (where sah_created_at >= ${prevFromISO}::timestamptz and sah_created_at < ${prevToISO}::timestamptz)::int as prev
+      from investors where deleted_at is null and sah_created_at is not null
+    `),
+    // Collecte / souscriptions / investisseurs : période courante vs précédente (date de signature)
+    db.execute(sql`
+      select
+        coalesce(sum(amount) filter (where signed_at >= ${fromISO}::timestamptz and signed_at < ${toISO}::timestamptz), 0) as cur_collecte,
+        coalesce(sum(amount) filter (where signed_at >= ${prevFromISO}::timestamptz and signed_at < ${prevToISO}::timestamptz), 0) as prev_collecte,
+        count(*) filter (where signed_at >= ${fromISO}::timestamptz and signed_at < ${toISO}::timestamptz)::int as cur_subs,
+        count(*) filter (where signed_at >= ${prevFromISO}::timestamptz and signed_at < ${prevToISO}::timestamptz)::int as prev_subs,
+        count(distinct investor_id) filter (where signed_at >= ${fromISO}::timestamptz and signed_at < ${toISO}::timestamptz)::int as cur_inv,
+        count(distinct investor_id) filter (where signed_at >= ${prevFromISO}::timestamptz and signed_at < ${prevToISO}::timestamptz)::int as prev_inv
+      from subscriptions where status <> 'cancelled' and signed_at is not null
+    `),
   ]);
 
   const inv = (invR as unknown as Row[])[0] ?? {};
@@ -106,5 +128,16 @@ export async function getGlobalStats(): Promise<GlobalStats> {
     byMonth: (monthR as unknown as Row[])
       .map((r) => ({ month: String(r.month), collected: n(r.collected) }))
       .reverse(),
+    period: (() => {
+      const lp = (leadsPR as unknown as Row[])[0] ?? {};
+      const spv = (subsPR as unknown as Row[])[0] ?? {};
+      return {
+        label: period.label,
+        leads: delta(n(lp.cur), n(lp.prev)),
+        collecte: delta(Math.round(n(spv.cur_collecte)), Math.round(n(spv.prev_collecte))),
+        subs: delta(n(spv.cur_subs), n(spv.prev_subs)),
+        investors: delta(n(spv.cur_inv), n(spv.prev_inv)),
+      };
+    })(),
   };
 }

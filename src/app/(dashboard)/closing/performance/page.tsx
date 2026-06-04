@@ -1,4 +1,7 @@
+import { PeriodFilter } from '@/components/shared/period-filter';
+import { StatCard } from '@/components/shared/stat-card';
 import { getCloserPerformance } from '@/lib/db/queries/closing';
+import { resolvePeriod } from '@/lib/period';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,8 +9,13 @@ function money(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} €`;
 }
 
-export default async function ClosingPerformancePage() {
-  const report = await getCloserPerformance();
+export default async function ClosingPerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+}) {
+  const period = resolvePeriod(await searchParams);
+  const report = await getCloserPerformance(period);
   const attributedAmount = report.totalAmount - report.unattributed.amount;
 
   return (
@@ -15,18 +23,27 @@ export default async function ClosingPerformancePage() {
       <div>
         <h1 className="page-title">Performance closers</h1>
         <div className="page-desc">
-          Activité d'appel et souscriptions attribuées (appel prime · last-touch · fenêtre 30j). Se
-          remplit à mesure que les appels sont enregistrés.
+          Activité d'appel et souscriptions attribuées (appel prime · last-touch · fenêtre 30j) sur
+          la période {report.periodLabel}.
         </div>
       </div>
 
+      <PeriodFilter />
+
       <div className="kpi-grid">
-        <Kpi label="Souscriptions (total)" value={String(report.totalSubs)} />
-        <Kpi label="Collecte attribuée" value={money(attributedAmount)} />
-        <Kpi
-          label="Non attribué"
-          value={`${report.unattributed.count} · ${money(report.unattributed.amount)}`}
+        <StatCard
+          label="Appels (période)"
+          value={String(report.deltas.calls.current)}
+          delta={report.deltas.calls}
         />
+        <StatCard
+          label="Collecte signée (période)"
+          value={money(report.deltas.collecte.current)}
+          delta={report.deltas.collecte}
+          unit="money"
+        />
+        <Kpi label="Souscriptions (période)" value={String(report.totalSubs)} />
+        <Kpi label="Collecte attribuée aux appels" value={money(attributedAmount)} />
       </div>
 
       <div className="view-card">

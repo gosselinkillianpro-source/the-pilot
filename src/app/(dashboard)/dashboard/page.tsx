@@ -1,6 +1,9 @@
 import { Building2, Target, TrendingUp, Users } from 'lucide-react';
 import Link from 'next/link';
+import { PeriodFilter } from '@/components/shared/period-filter';
+import { StatCard } from '@/components/shared/stat-card';
 import { getGlobalStats } from '@/lib/db/queries/dashboard';
+import { resolvePeriod } from '@/lib/period';
 import { CollecteChart } from './collecte-chart';
 
 export const dynamic = 'force-dynamic';
@@ -12,8 +15,13 @@ function pct(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 100) : 0;
 }
 
-export default async function DashboardPage() {
-  const stats = await getGlobalStats();
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+}) {
+  const period = resolvePeriod(await searchParams);
+  const stats = await getGlobalStats(period);
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
@@ -77,6 +85,45 @@ export default async function DashboardPage() {
           value={stats.breachLeads.toLocaleString('fr-FR')}
           sub={`${money(stats.breachCollecte)} collectés`}
         />
+      </div>
+
+      {/* Filtre de date + évolution sur la période */}
+      <div className="view-card">
+        <div
+          className="view-card-header"
+          style={{ flexWrap: 'wrap', gap: 10, alignItems: 'center' }}
+        >
+          <div className="view-card-title">Sur la période · gain/perte vs période précédente</div>
+          <PeriodFilter />
+        </div>
+        <div className="view-card-body">
+          <div className="kpi-grid">
+            <StatCard
+              label="Nouveaux inscrits"
+              value={stats.period.leads.current.toLocaleString('fr-FR')}
+              delta={stats.period.leads}
+            />
+            <StatCard
+              label="Collecte"
+              value={money(stats.period.collecte.current)}
+              delta={stats.period.collecte}
+              unit="money"
+            />
+            <StatCard
+              label="Souscriptions"
+              value={stats.period.subs.current.toLocaleString('fr-FR')}
+              delta={stats.period.subs}
+            />
+            <StatCard
+              label="Investisseurs"
+              value={stats.period.investors.current.toLocaleString('fr-FR')}
+              delta={stats.period.investors}
+            />
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text-4)', margin: '10px 0 0' }}>
+            Période : {stats.period.label} · comparée à la période précédente équivalente.
+          </p>
+        </div>
       </div>
 
       {/* Graphique interactif + funnel */}
