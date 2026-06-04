@@ -20,7 +20,7 @@
 >   - `scope=subscriptions` (NOUVELLES souscriptions seulement, `onConflictDoNothing` car figées) — cron Render `0 * * * *` (toutes les heures).
 >   - `scope=full` (tout, upsert complet) — bouton manuel `/settings/sah`.
 > - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » → crée 2 services cron (`the-pilot-sync-sah`, `the-pilot-sync-subscriptions`) ; (2) régler `CRON_SECRET` (web), `SYNC_URL=…?token=<CRON_SECRET>&scope=light` (cron 1), `SYNC_URL_SUBS=…?token=<CRON_SECRET>&scope=subscriptions` (cron 2) ; (3) **synchro manuelle** une fois (bouton) pour peupler.
-> - ⚠️ **À VÉRIFIER** : (a) montant des souscriptions = euros ou cents ? (vérifier sur une fiche connue) ; (b) CGP/réseau = best-effort (`distributor_legal_entities` via `users.distributor_id`) — confirmer avec SAH si faux.
+> - ✅ **VÉRIFIÉ (06/04)** : montants des souscriptions = **euros** (corrects tels quels) ; CGP/réseau (`distributor_legal_entities` via `users.distributor_id`) = **correct**. Civilité « mister/miss » → Monsieur/Madame.
 
 > ## 🔴 VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER
 > Contrôle du CSV `users-profiles` exporté par SAH (2855 profils, 2783 personnes) contre notre base.
