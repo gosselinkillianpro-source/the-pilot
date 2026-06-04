@@ -128,3 +128,90 @@ export async function getSahDiagnostics(): Promise<SahDiagnostics> {
     walletStatuses: wallet.map((r) => ({ value: r.s ?? '(vide)', count: r.n })),
   };
 }
+
+export type ProfilCompletCandidate = {
+  column: string;
+  type: 'boolean' | 'date';
+  /** Nb de PROFILS (lignes users_profiles) où la condition est vraie. */
+  trueProfiles: number;
+  /** Nb de PERSONNES distinctes (user_id) où au moins un profil satisfait la condition. */
+  truePersons: number;
+};
+
+export type ProfilCompletDiagnostic = {
+  totalProfiles: number;
+  totalPersons: number;
+  /** Cibles tirées du fichier exporté le 2026-06-04 (pour repérer la bonne colonne). */
+  targets: { profilesComplete: number; personsComplete: number; personsOnboarded: number };
+  candidates: ProfilCompletCandidate[];
+};
+
+/**
+ * Cherche la colonne SAH qui correspond à « Profil complet ? » du fichier exporté.
+ * On scanne toutes les colonnes booléennes de users_profiles + les colonnes date
+ * dont le nom évoque une complétion/validation, et on compte combien de profils /
+ * personnes les satisfont. La bonne colonne est celle qui reproduit la cible.
+ *
+ * 100 % NON-SENSIBLE : uniquement des comptes agrégés, aucune donnée personnelle.
+ */
+export async function getProfilCompletDiagnostic(): Promise<ProfilCompletDiagnostic> {
+  const sql = getSahClient();
+
+  const totals = await sql<{ profiles: number; persons: number }[]>`
+    select count(*)::int as profiles, count(distinct user_id)::int as persons
+    from users_profiles
+  `;
+
+  // Colonnes booléennes + colonnes date "parlantes" (complétion / onboarding / validation / soumission).
+  const cols = await sql<{ column_name: string; data_type: string }[]>`
+    select column_name, data_type
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'users_profiles'
+      and (
+        data_type = 'boolean'
+        or (
+          data_type in ('timestamp without time zone', 'timestamp with time zone', 'date')
+          and (
+            column_name ilike '%complet%' or column_name ilike '%onboard%'
+            or column_name ilike '%validat%' or column_name ilike '%submit%'
+            or column_name ilike '%finish%' or column_name ilike '%accept%'
+          )
+        )
+      )
+    order by data_type, column_name
+  `;
+
+  const candidates: ProfilCompletCandidate[] = [];
+  for (const c of cols) {
+    const isBool = c.data_type === 'boolean';
+    // Condition de "vrai" : booléen = true ; date = NOT NULL (étape franchie).
+    const cond = isBool
+      ? sql`${sql(c.column_name)} is true`
+      : sql`${sql(c.column_name)} is not null`;
+    const r = await sql<{ tp: number; tpe: number }[]>`
+      select count(*) filter (where ${cond})::int as tp,
+             count(distinct user_id) filter (where ${cond})::int as tpe
+      from users_profiles
+    `.catch(() => [{ tp: -1, tpe: -1 }]);
+    candidates.push({
+      column: c.column_name,
+      type: isBool ? 'boolean' : 'date',
+      trueProfiles: r[0]?.tp ?? -1,
+      truePersons: r[0]?.tpe ?? -1,
+    });
+  }
+
+  // On remonte en tête les candidats les plus proches de la cible "profil complet".
+  const TARGET_PROFILES = 2168;
+  candidates.sort(
+    (a, b) =>
+      Math.abs(a.trueProfiles - TARGET_PROFILES) - Math.abs(b.trueProfiles - TARGET_PROFILES),
+  );
+
+  return {
+    totalProfiles: totals[0]?.profiles ?? -1,
+    totalPersons: totals[0]?.persons ?? -1,
+    targets: { profilesComplete: 2168, personsComplete: 2111, personsOnboarded: 1795 },
+    candidates,
+  };
+}

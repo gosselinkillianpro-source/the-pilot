@@ -2,6 +2,7 @@ import { ArrowLeft, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInvestorById } from '@/lib/db/queries/investors';
+import { getInvestorStage } from '@/lib/investor-stage';
 import { InvestorEmailPanel } from './investor-email-panel';
 
 type Props = { params: Promise<{ id: string }> };
@@ -70,13 +71,10 @@ export default async function InvestorPage({ params }: Props) {
             SAH #{investor.sahId} · {investor.email}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {investor.onboardingComplete ? (
-              <span className="badge badge-success badge-dot">Onboardé (KYC validé)</span>
-            ) : investor.registrationComplete ? (
-              <span className="badge badge-brand">Profil complet</span>
-            ) : (
-              <span className="badge badge-neutral">Inscrit</span>
-            )}
+            {(() => {
+              const stage = getInvestorStage(investor);
+              return <span className={stage.badgeClass}>{stage.label}</span>;
+            })()}
           </div>
         </div>
       </div>
@@ -136,7 +134,7 @@ export default async function InvestorPage({ params }: Props) {
               style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
             >
               <Row
-                label="Profil complet"
+                label="Profil complété"
                 value={investor.registrationComplete ? '✅ oui' : '❌ non'}
               />
               <Row

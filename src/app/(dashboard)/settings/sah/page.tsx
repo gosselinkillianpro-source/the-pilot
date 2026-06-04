@@ -1,8 +1,10 @@
 import { AlertTriangle, Database } from 'lucide-react';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import {
+  getProfilCompletDiagnostic,
   getSahDiagnostics,
   getSahSchema,
+  type ProfilCompletDiagnostic,
   type SahColumn,
   type SahDiagnostics,
 } from '@/lib/integrations/sah/client';
@@ -31,9 +33,14 @@ export default async function SahExplorerPage() {
 
   let schema: SahColumn[] = [];
   let diag: SahDiagnostics | null = null;
+  let profilDiag: ProfilCompletDiagnostic | null = null;
   let error: string | null = null;
   try {
-    [schema, diag] = await Promise.all([getSahSchema(), getSahDiagnostics()]);
+    [schema, diag, profilDiag] = await Promise.all([
+      getSahSchema(),
+      getSahDiagnostics(),
+      getProfilCompletDiagnostic(),
+    ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
   }
@@ -175,6 +182,76 @@ export default async function SahExplorerPage() {
                     ))
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {profilDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">Recherche de la colonne « Profil complet »</div>
+                <span className="badge badge-brand">non sensible</span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+              >
+                <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
+                  Cible (fichier exporté le 04/06) :{' '}
+                  <strong>{profilDiag.targets.profilesComplete}</strong> profils complets ·{' '}
+                  <strong>{profilDiag.targets.personsComplete}</strong> personnes ·{' '}
+                  <strong>{profilDiag.targets.personsOnboarded}</strong> onboardées. Base SAH :{' '}
+                  <strong>{profilDiag.totalProfiles}</strong> profils ·{' '}
+                  <strong>{profilDiag.totalPersons}</strong> personnes. La bonne colonne est celle
+                  dont le nombre de profils colle à la cible.
+                </p>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 90px 110px 110px',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--text-3)',
+                    padding: '0 4px',
+                  }}
+                >
+                  <span>colonne</span>
+                  <span>type</span>
+                  <span style={{ textAlign: 'right' }}>profils</span>
+                  <span style={{ textAlign: 'right' }}>personnes</span>
+                </div>
+                {profilDiag.candidates.map((c) => {
+                  const match =
+                    Math.abs(c.trueProfiles - profilDiag.targets.profilesComplete) <= 30;
+                  return (
+                    <div
+                      key={c.column}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 90px 110px 110px',
+                        gap: 8,
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '4px',
+                        borderRadius: 6,
+                        background: match ? 'var(--success-bg, #e6f6ec)' : 'transparent',
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-1)' }}>
+                        {match ? '✅ ' : ''}
+                        {c.column}
+                      </span>
+                      <span style={{ color: 'var(--text-3)' }}>{c.type}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-1)' }}>
+                        {c.trueProfiles}
+                      </span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>
+                        {c.truePersons}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

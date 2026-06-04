@@ -1,6 +1,7 @@
 import { Search, Users } from 'lucide-react';
 import Link from 'next/link';
 import { getInvestorStats, type InvestorListItem, listInvestors } from '@/lib/db/queries/investors';
+import { getInvestorStage } from '@/lib/investor-stage';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ export default async function PipelinePage({
       {/* KPIs réels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <Kpi label="Investisseurs" value={nb(stats.total)} sub="inscrits" />
-        <Kpi label="Profil complet" value={nb(stats.registered)} sub="profil validé" />
+        <Kpi label="Profil complété" value={nb(stats.registered)} sub="profil rempli" />
         <Kpi label="Onboardés (KYC)" value={nb(stats.onboarded)} sub="identité validée" />
       </div>
 
@@ -154,13 +155,10 @@ export default async function PipelinePage({
                 <span
                   style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}
                 >
-                  {inv.onboardingComplete ? (
-                    <span className="badge badge-success badge-dot">Onboardé</span>
-                  ) : inv.registrationComplete ? (
-                    <span className="badge badge-brand">Profil complet</span>
-                  ) : (
-                    <span className="badge badge-neutral">Inscrit</span>
-                  )}
+                  {(() => {
+                    const stage = getInvestorStage(inv);
+                    return <span className={stage.badgeClass}>{stage.label}</span>;
+                  })()}
                 </span>
               </Link>
             ))
