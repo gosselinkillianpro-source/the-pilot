@@ -54,3 +54,23 @@ services:
       # Réplique lecture seule SAH (connexion seulement depuis les IP dédiées Render)
       - key: SAH_DATABASE_URL
         sync: false
+      # Secret partagé avec le cron de synchro (protège /api/cron/sah-sync)
+      - key: CRON_SECRET
+        sync: false
+
+  # --- Cron : déclenche la synchro SAH toutes les 5 minutes ---
+  # Le cron NE touche PAS SAH : il appelle l'app web (qui a les IP whitelistées).
+  # Renseigner SYNC_URL dans le dashboard Render (web service déjà déployé) :
+  #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>
+  - type: cron
+    name: the-pilot-sync-sah
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: '*/5 * * * *'
+    buildCommand: 'echo no-build'
+    startCommand: >-
+      node -e "fetch(process.env.SYNC_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: SYNC_URL
+        sync: false

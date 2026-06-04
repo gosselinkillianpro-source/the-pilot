@@ -29,6 +29,13 @@
       "when": 1780317121191,
       "tag": "0003_tidy_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780560430280,
+      "tag": "0004_opposite_madripoor",
+      "breakpoints": true
     }
   ]
 }

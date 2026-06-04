@@ -31,7 +31,8 @@ export function SyncButton() {
       {res?.ok && (
         <p style={{ fontSize: 13, color: 'var(--success)', margin: 0 }}>
           ✓ Synchro terminée : <strong>{res.result.investors}</strong> investisseurs ·{' '}
-          <strong>{res.result.projects}</strong> projets.
+          <strong>{res.result.projects}</strong> projets ·{' '}
+          <strong>{res.result.subscriptions}</strong> souscriptions.
           {res.result.errors.length > 0 && (
             <span style={{ color: 'var(--danger)' }}>
               {' '}

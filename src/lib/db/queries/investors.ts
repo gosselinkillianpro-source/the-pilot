@@ -1,7 +1,7 @@
 import 'server-only';
 import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { investors, projects } from '@/lib/db/schema';
+import { investors, projects, subscriptions } from '@/lib/db/schema';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -74,6 +74,52 @@ export async function getInvestorById(id: string): Promise<InvestorRow | null> {
   if (!UUID_RE.test(id)) return null; // évite une erreur SQL sur un id non-uuid
   const r = await db.select().from(investors).where(eq(investors.id, id)).limit(1);
   return r[0] ?? null;
+}
+
+export type InvestorSubscription = {
+  id: string;
+  projectName: string;
+  projectCity: string | null;
+  amount: string;
+  sharesCount: number | null;
+  status: string;
+  signedAt: Date | null;
+  paidAt: Date | null;
+};
+
+/** Souscriptions d'un investisseur (avec le projet), les plus récentes d'abord. */
+export async function getInvestorSubscriptions(investorId: string): Promise<{
+  rows: InvestorSubscription[];
+  totalAmount: number;
+  activeCount: number;
+}> {
+  if (!UUID_RE.test(investorId)) return { rows: [], totalAmount: 0, activeCount: 0 };
+  const rows = await db
+    .select({
+      id: subscriptions.id,
+      projectName: projects.name,
+      projectCity: projects.locationCity,
+      amount: subscriptions.amount,
+      sharesCount: subscriptions.sharesCount,
+      status: subscriptions.status,
+      signedAt: subscriptions.signedAt,
+      paidAt: subscriptions.paidAt,
+    })
+    .from(subscriptions)
+    .innerJoin(projects, eq(subscriptions.projectId, projects.id))
+    .where(eq(subscriptions.investorId, investorId))
+    .orderBy(desc(subscriptions.signedAt), desc(subscriptions.paidAt));
+
+  // Total investi = souscriptions non annulées.
+  let totalAmount = 0;
+  let activeCount = 0;
+  for (const r of rows) {
+    if (r.status !== 'cancelled') {
+      totalAmount += Number(r.amount) || 0;
+      activeCount += 1;
+    }
+  }
+  return { rows, totalAmount, activeCount };
 }
 
 export type InvestableProject = {

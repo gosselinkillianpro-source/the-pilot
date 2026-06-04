@@ -1,7 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { investors, projects } from '@/lib/db/schema';
+import { investors, projects, subscriptions } from '@/lib/db/schema';
 import { getSahClient } from './client';
 
 /**
@@ -11,7 +11,12 @@ import { getSahClient } from './client';
  * champs internes (score, pipeline, closer assigné…).
  */
 
-export type SyncResult = { projects: number; investors: number; errors: string[] };
+export type SyncResult = {
+  projects: number;
+  investors: number;
+  subscriptions: number;
+  errors: string[];
+};
 
 const PROJECT_STATUS = new Set(['draft', 'open', 'funding', 'funded', 'in_operation', 'completed']);
 
@@ -97,12 +102,29 @@ async function syncProjects(): Promise<number> {
 type SahInvestor = {
   id: string;
   email: string;
+  civility: string | null;
   first_name: string | null;
   last_name: string | null;
   phone_number: string | null;
   birthdate: string | null;
+  nationality: string | null;
+  country: string | null;
+  street_address_and_number: string | null;
+  additional_address: string | null;
   city: string | null;
   zip_code: string | null;
+  tax_residency_country: string | null;
+  wallet_balance_cents: number | null;
+  bonus_code: string | null;
+  cgp_name: string | null;
+  cgp_network: string | null;
+  sah_created_at: Date | null;
+  sah_updated_at: Date | null;
+  kyc_validated_at: Date | null;
+  wallet_status: string | null;
+  lw_onboarding_status: string | null;
+  lw_onboarding_id: string | null;
+  lemonway_account_id: string | null;
   profil_complet: boolean | null;
   onboarding_complet: boolean | null;
 };
@@ -111,22 +133,47 @@ async function syncInvestors(): Promise<number> {
   const sahDb = getSahClient();
   // Un investisseur = une personne (users). Le statut profil/KYC vit sur users_profiles
   // (une personne peut avoir plusieurs profils) → on agrège au "plus avancé".
+  // On ne lit JAMAIS encrypted_password, virtual_iban/bic (KYC bancaire interdit).
+  // CGP : best effort (bonus_codes.ambassador_name + distributor_legal_entities.name).
   const rows = await sahDb<SahInvestor[]>`
     select
       u.id::text,
       u.email,
+      u.civility,
       u.first_name,
       u.last_name,
       u.phone_number,
       u.birthdate::text,
+      u.nationality,
+      u.country,
+      u.street_address_and_number,
+      u.additional_address,
       u.city,
       u.zip_code,
+      u.tax_residency_country,
+      u.cached_wallet_balance_in_cents as wallet_balance_cents,
+      bc.code as bonus_code,
+      bc.ambassador_name as cgp_name,
+      dle.name as cgp_network,
+      u.created_at as sah_created_at,
+      u.updated_at as sah_updated_at,
+      max(p.kyc_validated_at) as kyc_validated_at,
+      max(p.wallet_status) as wallet_status,
+      max(p.lw_onboarding_status) as lw_onboarding_status,
+      max(p.lw_onboarding_id) as lw_onboarding_id,
+      max(p.account_id) as lemonway_account_id,
       bool_or(p.status = 'validate') as profil_complet,
       bool_or(p.wallet_status = '6' or p.lw_onboarding_status = 'accepted') as onboarding_complet
     from users u
     left join users_profiles p on p.user_id = u.id
+    left join bonus_codes bc on bc.id = u.bonus_code_id
+    left join distributor_legal_entities dle on dle.id = u.distributor_id
     where u.email is not null
-    group by u.id, u.email, u.first_name, u.last_name, u.phone_number, u.birthdate, u.city, u.zip_code
+    group by u.id, u.email, u.civility, u.first_name, u.last_name, u.phone_number,
+             u.birthdate, u.nationality, u.country, u.street_address_and_number,
+             u.additional_address, u.city, u.zip_code, u.tax_residency_country,
+             u.cached_wallet_balance_in_cents, u.created_at, u.updated_at,
+             bc.code, bc.ambassador_name, dle.name
   `;
   if (rows.length === 0) return 0;
 
@@ -135,13 +182,30 @@ async function syncInvestors(): Promise<number> {
     return {
       sahId: u.id,
       email: u.email,
+      civility: u.civility ?? null,
       firstName: u.first_name ?? null,
       lastName: u.last_name ?? null,
       fullName,
       phone: u.phone_number ?? null,
       dateOfBirth: u.birthdate ?? null,
+      nationality: u.nationality ?? null,
+      countryResidence: u.country ?? null,
+      addressStreet: u.street_address_and_number ?? null,
+      addressComplement: u.additional_address ?? null,
       addressCity: u.city ?? null,
       addressPostalCode: u.zip_code ?? null,
+      taxResidencyCountry: u.tax_residency_country ?? null,
+      bonusCode: u.bonus_code ?? null,
+      cgpName: u.cgp_name ?? null,
+      cgpNetwork: u.cgp_network ?? null,
+      walletBalanceCents: u.wallet_balance_cents ?? null,
+      walletStatus: u.wallet_status ?? null,
+      lwOnboardingStatus: u.lw_onboarding_status ?? null,
+      lwOnboardingId: u.lw_onboarding_id ?? null,
+      lemonwayAccountId: u.lemonway_account_id ?? null,
+      kycValidatedAt: u.kyc_validated_at ?? null,
+      sahCreatedAt: u.sah_created_at ?? null,
+      sahUpdatedAt: u.sah_updated_at ?? null,
       registrationComplete: u.profil_complet ?? false,
       onboardingComplete: u.onboarding_complet ?? false,
       updatedAt: new Date(),
@@ -159,13 +223,30 @@ async function syncInvestors(): Promise<number> {
         target: investors.sahId,
         set: {
           email: sql`excluded.email`,
+          civility: sql`excluded.civility`,
           firstName: sql`excluded.first_name`,
           lastName: sql`excluded.last_name`,
           fullName: sql`excluded.full_name`,
           phone: sql`excluded.phone`,
           dateOfBirth: sql`excluded.date_of_birth`,
+          nationality: sql`excluded.nationality`,
+          countryResidence: sql`excluded.country_residence`,
+          addressStreet: sql`excluded.address_street`,
+          addressComplement: sql`excluded.address_complement`,
           addressCity: sql`excluded.address_city`,
           addressPostalCode: sql`excluded.address_postal_code`,
+          taxResidencyCountry: sql`excluded.tax_residency_country`,
+          bonusCode: sql`excluded.bonus_code`,
+          cgpName: sql`excluded.cgp_name`,
+          cgpNetwork: sql`excluded.cgp_network`,
+          walletBalanceCents: sql`excluded.wallet_balance_cents`,
+          walletStatus: sql`excluded.wallet_status`,
+          lwOnboardingStatus: sql`excluded.lw_onboarding_status`,
+          lwOnboardingId: sql`excluded.lw_onboarding_id`,
+          lemonwayAccountId: sql`excluded.lemonway_account_id`,
+          kycValidatedAt: sql`excluded.kyc_validated_at`,
+          sahCreatedAt: sql`excluded.sah_created_at`,
+          sahUpdatedAt: sql`excluded.sah_updated_at`,
           registrationComplete: sql`excluded.registration_complete`,
           onboardingComplete: sql`excluded.onboarding_complete`,
           updatedAt: sql`excluded.updated_at`,
@@ -176,11 +257,105 @@ async function syncInvestors(): Promise<number> {
   return rows.length;
 }
 
-/** Lance la synchro complète (projets puis investisseurs). */
+type SahSubscription = {
+  id: string;
+  user_sah_id: string;
+  project_sah_id: string;
+  amount: number | null;
+  number_of_shares: number | null;
+  signed_at: Date | null;
+  paid_at: Date | null;
+  canceled_at: Date | null;
+  transfered_at: Date | null;
+};
+
+/** Statut souscription dérivé des dates SAH (pas de colonne status dédiée). */
+function mapSubscriptionStatus(s: SahSubscription): 'signed' | 'paid' | 'cancelled' {
+  if (s.canceled_at) return 'cancelled';
+  if (s.paid_at || s.transfered_at) return 'paid';
+  return 'signed';
+}
+
+async function syncSubscriptions(): Promise<number> {
+  const sahDb = getSahClient();
+  // La souscription se relie à l'investisseur via users_profiles.user_id, et au projet
+  // via project_id. On ne garde que les souscriptions dont l'investisseur ET le projet
+  // sont déjà synchronisés chez nous.
+  const rows = await sahDb<SahSubscription[]>`
+    select
+      s.id::text as id,
+      up.user_id::text as user_sah_id,
+      s.project_id::text as project_sah_id,
+      s.amount,
+      s.number_of_shares,
+      s.signed_at,
+      s.paid_at,
+      s.canceled_at,
+      s.transfered_at
+    from subscriptions s
+    join users_profiles up on up.id = s.users_profile_id
+    where s.users_profile_id is not null and s.project_id is not null
+  `;
+  if (rows.length === 0) return 0;
+
+  // Tables de correspondance sah_id → notre uuid (investisseurs + projets).
+  const [invRows, projRows] = await Promise.all([
+    db.select({ id: investors.id, sahId: investors.sahId }).from(investors),
+    db.select({ id: projects.id, sahId: projects.sahId }).from(projects),
+  ]);
+  const invBySah = new Map(invRows.map((r) => [r.sahId, r.id]));
+  const projBySah = new Map(projRows.map((r) => [r.sahId, r.id]));
+
+  const values = rows
+    .map((s) => {
+      const investorId = invBySah.get(s.user_sah_id);
+      const projectId = projBySah.get(s.project_sah_id);
+      if (!investorId || !projectId) return null; // investisseur/projet non synchronisé
+      return {
+        sahId: s.id,
+        investorId,
+        projectId,
+        amount: s.amount != null ? String(s.amount) : '0',
+        sharesCount: s.number_of_shares ?? null,
+        signedAt: s.signed_at ?? null,
+        paidAt: s.paid_at ?? null,
+        canceledAt: s.canceled_at ?? null,
+        status: mapSubscriptionStatus(s),
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null);
+  if (values.length === 0) return 0;
+
+  const CHUNK = 500;
+  for (let i = 0; i < values.length; i += CHUNK) {
+    const batch = values.slice(i, i + CHUNK);
+    await db
+      .insert(subscriptions)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: subscriptions.sahId,
+        set: {
+          investorId: sql`excluded.investor_id`,
+          projectId: sql`excluded.project_id`,
+          amount: sql`excluded.amount`,
+          sharesCount: sql`excluded.shares_count`,
+          signedAt: sql`excluded.signed_at`,
+          paidAt: sql`excluded.paid_at`,
+          canceledAt: sql`excluded.canceled_at`,
+          status: sql`excluded.status`,
+        },
+      });
+  }
+
+  return values.length;
+}
+
+/** Lance la synchro complète (projets, puis investisseurs, puis souscriptions). */
 export async function runSahSync(): Promise<SyncResult> {
   const errors: string[] = [];
   let projectsCount = 0;
   let investorsCount = 0;
+  let subscriptionsCount = 0;
 
   try {
     projectsCount = await syncProjects();
@@ -192,6 +367,17 @@ export async function runSahSync(): Promise<SyncResult> {
   } catch (e) {
     errors.push(`investisseurs: ${e instanceof Error ? e.message : String(e)}`);
   }
+  // Les souscriptions dépendent des investisseurs + projets déjà synchronisés.
+  try {
+    subscriptionsCount = await syncSubscriptions();
+  } catch (e) {
+    errors.push(`souscriptions: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
-  return { projects: projectsCount, investors: investorsCount, errors };
+  return {
+    projects: projectsCount,
+    investors: investorsCount,
+    subscriptions: subscriptionsCount,
+    errors,
+  };
 }

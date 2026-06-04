@@ -161,9 +161,29 @@ export const investors = pgTable('investors', {
   firstName: text('first_name'),
   lastName: text('last_name'),
   phone: text('phone'),
+  civility: text('civility'), // Monsieur / Madame
   dateOfBirth: text('date_of_birth'), // date ISO ; usage marketing (anniversaire), pas de KYC sensible
+  nationality: text('nationality'),
+  countryResidence: text('country_residence'),
+  addressStreet: text('address_street'), // street_address_and_number
+  addressComplement: text('address_complement'), // additional_address
   addressCity: text('address_city'),
   addressPostalCode: text('address_postal_code'),
+  taxResidencyCountry: text('tax_residency_country'),
+  // Apporteur d'affaires (CGP) — best effort, voir sync
+  bonusCode: text('bonus_code'),
+  cgpName: text('cgp_name'),
+  cgpNetwork: text('cgp_network'),
+  // Lemonway / portefeuille (jamais d'IBAN/BIC : KYC bancaire interdit chez nous)
+  walletBalanceCents: integer('wallet_balance_cents'),
+  walletStatus: text('wallet_status'),
+  lwOnboardingStatus: text('lw_onboarding_status'),
+  lwOnboardingId: text('lw_onboarding_id'),
+  lemonwayAccountId: text('lemonway_account_id'),
+  kycValidatedAt: timestamp('kyc_validated_at', { withTimezone: true }),
+  // Dates côté SAH (création / dernière modif du compte)
+  sahCreatedAt: timestamp('sah_created_at', { withTimezone: true }),
+  sahUpdatedAt: timestamp('sah_updated_at', { withTimezone: true }),
   profileSegment: profileSegmentEnum('profile_segment'),
   totalInvested: numeric('total_invested', { precision: 12, scale: 2 }).default('0'),
   projectsCount: integer('projects_count').default(0),
@@ -225,8 +245,10 @@ export const subscriptions = pgTable('subscriptions', {
     .notNull()
     .references(() => projects.id),
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  sharesCount: integer('shares_count'),
   signedAt: timestamp('signed_at', { withTimezone: true }),
   paidAt: timestamp('paid_at', { withTimezone: true }),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
   status: subscriptionStatusEnum('status').notNull().default('signed'),
   expectedRepaymentAt: timestamp('expected_repayment_at', { withTimezone: true }),
   repaidAt: timestamp('repaid_at', { withTimezone: true }),
