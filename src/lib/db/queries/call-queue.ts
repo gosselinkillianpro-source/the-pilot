@@ -17,6 +17,9 @@ export type QueueRow = {
   assignedCloserId: string | null;
   pipelineStage: string;
   totalInvested: number;
+  /** Code bonus (apporteur). BREACH = vient des pubs de Killian. */
+  bonusCode: string | null;
+  isBreach: boolean;
   /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
   claimedById: string | null;
   claimerName: string | null;
@@ -38,10 +41,18 @@ type RawRow = {
   active_subscriptions: string | number | null;
   active_projects: string | number | null;
   nearest_repayment: string | Date | null;
+  bonus_code: string | null;
   claimed_by_id: string | null;
   claimed_at: string | Date | null;
   claimer_name: string | null;
 };
+
+/** Un code bonus "BREACH" (SEVEN-BREACH, BREACH-VIP…) = lead venant des pubs de Killian. */
+export function isBreachCode(code: string | null): boolean {
+  return code != null && /breach/i.test(code);
+}
+
+export type QueueSource = 'all' | 'breach' | 'other';
 
 const DAY_MS = 86_400_000;
 
@@ -54,12 +65,19 @@ export async function getCallQueue(opts?: {
   assignedCloserId?: string;
   excludeWon?: boolean;
   investorId?: string;
+  source?: QueueSource;
 }): Promise<QueueRow[]> {
   const now = new Date();
   const closerFilter = opts?.assignedCloserId
     ? sql`and i.assigned_closer_id = ${opts.assignedCloserId}`
     : sql``;
   const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
+  const sourceFilter =
+    opts?.source === 'breach'
+      ? sql`and i.bonus_code ilike '%breach%'`
+      : opts?.source === 'other'
+        ? sql`and (i.bonus_code is null or i.bonus_code not ilike '%breach%')`
+        : sql``;
   // On exclut les leads déjà clos (gagné/perdu) de la file d'appels.
   const stageFilter = opts?.excludeWon
     ? sql`and i.pipeline_stage not in ('closed_won', 'closed_lost')`
@@ -77,6 +95,7 @@ export async function getCallQueue(opts?: {
       i.assigned_closer_id::text as assigned_closer_id,
       i.pipeline_stage,
       i.sah_created_at,
+      i.bonus_code,
       i.claimed_by_id::text as claimed_by_id,
       i.claimed_at,
       cu.full_name as claimer_name,
@@ -103,6 +122,7 @@ export async function getCallQueue(opts?: {
     ${closerFilter}
     ${oneFilter}
     ${stageFilter}
+    ${sourceFilter}
     group by i.id, cu.full_name
   `);
 
@@ -140,6 +160,8 @@ export async function getCallQueue(opts?: {
       assignedCloserId: r.assigned_closer_id,
       pipelineStage: r.pipeline_stage,
       totalInvested,
+      bonusCode: r.bonus_code,
+      isBreach: isBreachCode(r.bonus_code),
       claimedById: claimActive ? r.claimed_by_id : null,
       claimerName: claimActive ? r.claimer_name : null,
       scored,

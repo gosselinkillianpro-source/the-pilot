@@ -1,10 +1,21 @@
-import { ChevronDown, Clock, Flame, Phone, TrendingUp } from 'lucide-react';
+import { ChevronDown, Clock, Flame, Phone, Target, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { getCallQueue, groupByBucket, type QueueRow } from '@/lib/db/queries/call-queue';
+import {
+  getCallQueue,
+  groupByBucket,
+  type QueueRow,
+  type QueueSource,
+} from '@/lib/db/queries/call-queue';
 
 export const dynamic = 'force-dynamic';
+
+const SOURCE_TABS: { value: QueueSource; label: string }[] = [
+  { value: 'all', label: 'Tous' },
+  { value: 'breach', label: 'BREACH (mes pubs)' },
+  { value: 'other', label: 'Hors BREACH' },
+];
 
 const PER_BUCKET = 40; // on affiche les plus prioritaires de chaque file
 // Capacité indicative de 2 closers sur la règle des 48h (à ajuster).
@@ -26,9 +37,17 @@ function statusClass(s: QueueRow['scored']['status']): string {
   return 'badge badge-neutral';
 }
 
-export default async function CallQueuePage() {
+export default async function CallQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string }>;
+}) {
+  const sp = await searchParams;
+  const source: QueueSource =
+    sp.source === 'breach' ? 'breach' : sp.source === 'other' ? 'other' : 'all';
+
   const [queue, user] = await Promise.all([
-    getCallQueue({ excludeWon: true }),
+    getCallQueue({ excludeWon: true, source }),
     getAuthenticatedUser(),
   ]);
   const groups = groupByBucket(queue);
@@ -48,6 +67,23 @@ export default async function CallQueuePage() {
           Qui appeler maintenant. {nb(total)} personnes en file · chaque liste est rangée dans
           l'ordre (inscrit le plus récent en haut · échéance la plus proche en haut).
         </div>
+      </div>
+
+      {/* Filtre source : BREACH (pubs de Killian) vs reste */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {SOURCE_TABS.map((t) => {
+          const active = source === t.value;
+          return (
+            <Link
+              key={t.value}
+              href={t.value === 'all' ? '/closing/queue' : `/closing/queue?source=${t.value}`}
+              className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {t.value === 'breach' ? <Target size={13} /> : null}
+              {t.label}
+            </Link>
+          );
+        })}
       </div>
 
       {/* KPIs */}
@@ -206,6 +242,20 @@ function QueueRowItem({
           <span className={statusClass(s.status)} style={{ fontSize: 10 }}>
             {s.statusLabel}
           </span>
+          {row.isBreach ? (
+            <span
+              className="badge"
+              style={{
+                fontSize: 10,
+                background: 'var(--ai-bg, #ede9fe)',
+                color: 'var(--ai, #7c3aed)',
+                fontWeight: 700,
+              }}
+              title={row.bonusCode ?? 'BREACH'}
+            >
+              BREACH
+            </span>
+          ) : null}
           {claimedByOther ? (
             <span className="badge badge-warning" style={{ fontSize: 10 }}>
               en cours — {row.claimerName ?? 'un closer'}
