@@ -273,35 +273,26 @@ export async function getProfilCompletDiagnostic(): Promise<ProfilCompletDiagnos
   };
 }
 
-export type SahSubStatusRow = { value: string; count: number; total: number };
+export type SahSubCount = { count: number; total: number };
 
 export type SahBreachSubDiag = {
-  byWalletStatus: SahSubStatusRow[];
-  completed: { count: number; total: number };
-  nonCancelled: { count: number; total: number };
-  reservationsTrue: { count: number; total: number };
+  nonCancelled: SahSubCount; // canceled_at null (annulé exclu)
+  nonCancelledNonFailed: SahSubCount; // + payment_failed_at null
+  reserved: SahSubCount; // réservé (reservation = true), non annulé
+  validatedNonReserved: SahSubCount; // validé (reservation = false), non annulé, non échoué
+  failed: SahSubCount; // paiement échoué (non annulé)
+  cancelled: SahSubCount; // annulé
 };
 
 /**
- * Diagnostic des souscriptions des leads BREACH (code bonus contenant "breach"),
- * ventilées par `wallet_status`, pour caler la définition de "collecte encaissée"
- * (cible : 156 souscriptions / 63 788 €). NON-SENSIBLE : comptes + sommes agrégés.
+ * Diagnostic des souscriptions des leads BREACH (code bonus contenant "breach").
+ * Teste plusieurs définitions de "collecte" pour retrouver la cible 156 / 63 788 €.
+ * Règle visée : garder validé OU réservé, exclure annulé. NON-SENSIBLE (agrégats).
  */
 export async function getSahBreachSubDiag(): Promise<SahBreachSubDiag> {
   const sql = getSahClient();
 
-  const byWalletStatus = await sql<{ value: string | null; count: number; total: number }[]>`
-    select s.wallet_status as value, count(*)::int as count, coalesce(sum(s.amount), 0)::bigint as total
-    from subscriptions s
-    join users_profiles up on up.id = s.users_profile_id
-    join users u on u.id = up.user_id
-    join bonus_codes bc on bc.id = u.bonus_code_id
-    where bc.code ilike '%breach%'
-    group by s.wallet_status
-    order by total desc
-  `.catch(() => []);
-
-  const one = async (cond: ReturnType<typeof sql>): Promise<{ count: number; total: number }> => {
+  const one = async (cond: ReturnType<typeof sql>): Promise<SahSubCount> => {
     const r = await sql<{ count: number; total: number }[]>`
       select count(*)::int as count, coalesce(sum(s.amount), 0)::bigint as total
       from subscriptions s
@@ -313,20 +304,15 @@ export async function getSahBreachSubDiag(): Promise<SahBreachSubDiag> {
     return { count: r[0]?.count ?? -1, total: Number(r[0]?.total ?? -1) };
   };
 
-  const [completed, nonCancelled, reservationsTrue] = await Promise.all([
-    one(sql`s.wallet_status = 'completed'`),
-    one(sql`s.canceled_at is null`),
-    one(sql`s.reservation = true`),
-  ]);
+  const [nonCancelled, nonCancelledNonFailed, reserved, validatedNonReserved, failed, cancelled] =
+    await Promise.all([
+      one(sql`s.canceled_at is null`),
+      one(sql`s.canceled_at is null and s.payment_failed_at is null`),
+      one(sql`s.canceled_at is null and s.reservation = true`),
+      one(sql`s.canceled_at is null and s.reservation = false and s.payment_failed_at is null`),
+      one(sql`s.canceled_at is null and s.payment_failed_at is not null`),
+      one(sql`s.canceled_at is not null`),
+    ]);
 
-  return {
-    byWalletStatus: byWalletStatus.map((r) => ({
-      value: r.value ?? '(vide)',
-      count: r.count,
-      total: Number(r.total),
-    })),
-    completed,
-    nonCancelled,
-    reservationsTrue,
-  };
+  return { nonCancelled, nonCancelledNonFailed, reserved, validatedNonReserved, failed, cancelled };
 }

@@ -123,7 +123,7 @@ export default async function SahExplorerPage() {
             <div className="view-card">
               <div className="view-card-header">
                 <div className="view-card-title">
-                  Collecte BREACH — souscriptions par wallet_status
+                  Collecte BREACH — quelle définition = 156 / 63 788 € ?
                 </div>
                 <span className="badge badge-brand">cible : 156 / 63 788 €</span>
               </div>
@@ -131,25 +131,23 @@ export default async function SahExplorerPage() {
                 className="view-card-body"
                 style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}
               >
-                {subDiag.byWalletStatus.map((r) => (
-                  <div key={r.value} style={{ color: 'var(--text-2)' }}>
-                    « {r.value} » : <strong>{r.count}</strong> souscriptions → {money(r.total)}
+                {(
+                  [
+                    ['Hors annulées (canceled_at null)', subDiag.nonCancelled],
+                    ['Hors annulées ET hors paiement échoué', subDiag.nonCancelledNonFailed],
+                    ['Réservées (reservation=true, non annulées)', subDiag.reserved],
+                    [
+                      'Validées (reservation=false, non échoué, non annulé)',
+                      subDiag.validatedNonReserved,
+                    ],
+                    ['Paiements échoués (non annulés)', subDiag.failed],
+                    ['Annulées', subDiag.cancelled],
+                  ] as const
+                ).map(([label, v]) => (
+                  <div key={label} style={{ color: 'var(--text-2)' }}>
+                    {label} : <strong>{v.count}</strong> → <strong>{money(v.total)}</strong>
                   </div>
                 ))}
-                <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                  <div style={{ color: 'var(--text-1)' }}>
-                    wallet_status = « completed » : <strong>{subDiag.completed.count}</strong> →{' '}
-                    <strong>{money(subDiag.completed.total)}</strong>
-                  </div>
-                  <div style={{ color: 'var(--text-3)' }}>
-                    réservations (reservation=true) : {subDiag.reservationsTrue.count} →{' '}
-                    {money(subDiag.reservationsTrue.total)}
-                  </div>
-                  <div style={{ color: 'var(--text-3)' }}>
-                    hors annulées (canceled_at null) : {subDiag.nonCancelled.count} →{' '}
-                    {money(subDiag.nonCancelled.total)}
-                  </div>
-                </div>
               </div>
             </div>
           )}
