@@ -8,7 +8,12 @@ import {
   TrendingUp,
   XCircle,
 } from 'lucide-react';
+import Link from 'next/link';
+import { getGlobalStats } from '@/lib/db/queries/dashboard';
 import { mockAlerts } from '@/lib/mock-data';
+import { HudDashboard } from './hud-dashboard';
+
+export const dynamic = 'force-dynamic';
 
 const TrendArrow = ({ direction }: { direction: 'up' | 'down' | 'flat' }) => {
   if (direction === 'up') return <TrendingUp size={10} />;
@@ -25,7 +30,46 @@ const AlertIcon = ({ type }: { type: 'ai' | 'success' | 'warning' | 'danger' | '
   return <Info size={size} />;
 };
 
-export default function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ style?: string }>;
+}) {
+  const sp = await searchParams;
+  const isHud = sp.style === 'hud';
+
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return (
+    <>
+      {/* Bascule de vue (réversible) */}
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', gap: 6 }}>
+        <Link href="/dashboard" className={`btn btn-sm ${isHud ? 'btn-secondary' : 'btn-primary'}`}>
+          Classique
+        </Link>
+        <Link
+          href="/dashboard?style=hud"
+          className={`btn btn-sm ${isHud ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          HUD (nouveau)
+        </Link>
+      </div>
+
+      {isHud ? (
+        <HudDashboard stats={await getGlobalStats()} dateLabel={dateLabel} />
+      ) : (
+        <ClassicDashboard />
+      )}
+    </>
+  );
+}
+
+function ClassicDashboard() {
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
@@ -165,7 +209,6 @@ function KpiCard({
   direction: 'up' | 'down' | 'flat';
   vs: string;
 }) {
-  // Sépare la valeur en partie principale et suffix monnaie (ex: "142,4K€" → "142,4K" + "€")
   const match = value.match(/^(.*?)(€|K€|M€)?$/);
   const main = match?.[1] ?? value;
   const currency = match?.[2] ?? '';
