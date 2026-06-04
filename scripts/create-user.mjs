@@ -57,6 +57,23 @@ if (error) {
   process.exit(1);
 }
 
+// Ligne applicative dans public.users (cible des clés étrangères : closer assigné,
+// auteur d'appel, etc.). L'id DOIT correspondre à l'uid Auth.
+const fullName =
+  email
+    .split('@')[0]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ') || email;
+const { error: dbError } = await admin
+  .from('users')
+  .upsert({ id: data.user.id, email, full_name: fullName, role: roleArg }, { onConflict: 'id' });
+if (dbError) {
+  console.error('⚠  Compte Auth créé mais insertion public.users échouée :', dbError.message);
+  console.error('   (l’app la recréera au 1er usage via ensureUserRecord.)');
+}
+
 console.log('✓ Compte créé');
 console.log(`  email : ${data.user.email}`);
 console.log(`  rôle  : ${roleArg}`);

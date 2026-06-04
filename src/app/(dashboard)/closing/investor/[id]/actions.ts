@@ -22,6 +22,7 @@ import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN, getInvestorScored } from '@/lib/db/queries/call-queue';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
+import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investors } from '@/lib/db/schema';
 
 export type DraftProposalResult =
@@ -44,6 +45,7 @@ export async function draftProposalEmailAction(investorId: string): Promise<Draf
   // 1. Auth + permission (closers et admin uniquement ; direction = lecture seule)
   const user = await getAuthenticatedUser();
   await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  await ensureUserRecord(user);
 
   // 2. Données investisseur réelles (synchronisées depuis SAH)
   const investor = await getInvestorById(investorId);
@@ -174,6 +176,7 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
   }
 
   try {
+    await ensureUserRecord(user);
     // 1. L'appel lui-même (alimente timeline + attribution)
     await db.insert(interactions).values({
       investorId: parsed.investorId,
@@ -238,6 +241,7 @@ export type CallBriefActionResult =
 export async function draftCallBriefAction(investorId: string): Promise<CallBriefActionResult> {
   const user = await getAuthenticatedUser();
   await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  await ensureUserRecord(user);
 
   const investor = await getInvestorById(investorId);
   if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
@@ -323,6 +327,7 @@ export async function updateStageAction(input: {
     return { ok: false, message: 'Action réservée aux closers.' };
   }
   try {
+    await ensureUserRecord(user);
     await db
       .update(investors)
       .set({ pipelineStage: parsed.stage, pipelineStageUpdatedAt: new Date() })
@@ -367,6 +372,7 @@ export async function assignCloserAction(input: {
     return { ok: false, message: 'Assignation réservée aux admins.' };
   }
   try {
+    await ensureUserRecord(user);
     await db
       .update(investors)
       .set({ assignedCloserId: parsed.closerId })
@@ -410,6 +416,7 @@ export async function claimLeadAction(input: { investorId: string }): Promise<Ca
 
   const cutoff = new Date(Date.now() - CLAIM_TTL_MIN * 60_000);
   try {
+    await ensureUserRecord(user);
     // On ne prend que si le lead est libre, expiré, ou déjà à nous.
     const updated = await db
       .update(investors)
