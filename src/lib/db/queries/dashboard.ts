@@ -18,7 +18,7 @@ export type GlobalStats = {
   collecte: { total: number; subs: number; investors: number; month: number; avgTicket: number };
   breachCollecte: number;
   projects: { total: number; open: number };
-  topProjects: { name: string; collected: number; investors: number }[];
+  topProjects: { id: string; name: string; collected: number; investors: number }[];
   byMonth: { month: string; collected: number }[];
 };
 
@@ -55,7 +55,7 @@ export async function getGlobalStats(): Promise<GlobalStats> {
       from projects
     `),
     db.execute(sql`
-      select p.name,
+      select p.id::text as id, p.name,
         coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as collected,
         count(distinct s.investor_id) filter (where s.status <> 'cancelled')::int as investors
       from projects p left join subscriptions s on s.project_id = p.id
@@ -66,7 +66,7 @@ export async function getGlobalStats(): Promise<GlobalStats> {
         coalesce(sum(amount), 0) as collected
       from subscriptions
       where status <> 'cancelled' and signed_at is not null
-      group by month order by month desc limit 6
+      group by month order by month desc limit 12
     `),
   ]);
 
@@ -98,6 +98,7 @@ export async function getGlobalStats(): Promise<GlobalStats> {
     breachCollecte: n(breach.breach_collecte),
     projects: { total: n(proj.total), open: n(proj.open) },
     topProjects: (topR as unknown as Row[]).map((r) => ({
+      id: String(r.id),
       name: String(r.name ?? '—'),
       collected: n(r.collected),
       investors: n(r.investors),
