@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
@@ -20,7 +20,7 @@ import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { getInvestorScored } from '@/lib/db/queries/call-queue';
+import { CLAIM_TTL_MIN, getInvestorScored } from '@/lib/db/queries/call-queue';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { closerTasks, interactions, investors } from '@/lib/db/schema';
 
@@ -195,13 +195,17 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
       });
     }
 
-    // 3. Avancement pipeline (optionnel)
-    if (parsed.nextStage) {
-      await db
-        .update(investors)
-        .set({ pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() })
-        .where(eq(investors.id, parsed.investorId));
-    }
+    // 3. Avancement pipeline (optionnel) + libération du verrou (l'appel est fait)
+    await db
+      .update(investors)
+      .set({
+        claimedById: null,
+        claimedAt: null,
+        ...(parsed.nextStage
+          ? { pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() }
+          : {}),
+      })
+      .where(eq(investors.id, parsed.investorId));
 
     await logAudit({
       userId: user.id,
@@ -377,6 +381,79 @@ export async function assignCloserAction(input: {
       metadata: { closerId: parsed.closerId },
     });
     revalidatePath(`/closing/investor/${parsed.investorId}`);
+    revalidatePath('/closing/queue');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+const claimSchema = z.object({ investorId: z.string().uuid() });
+
+/**
+ * « Je prends » : verrouille un lead pour ce closer (anti double-appel).
+ * Échoue si déjà pris par un autre closer (verrou encore actif).
+ */
+export async function claimLeadAction(input: { investorId: string }): Promise<CallActionResult> {
+  let parsed: { investorId: string };
+  try {
+    parsed = claimSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+
+  const cutoff = new Date(Date.now() - CLAIM_TTL_MIN * 60_000);
+  try {
+    // On ne prend que si le lead est libre, expiré, ou déjà à nous.
+    const updated = await db
+      .update(investors)
+      .set({ claimedById: user.id, claimedAt: new Date() })
+      .where(
+        and(
+          eq(investors.id, parsed.investorId),
+          or(
+            isNull(investors.claimedById),
+            lt(investors.claimedAt, cutoff),
+            eq(investors.claimedById, user.id),
+          ),
+        ),
+      )
+      .returning({ id: investors.id });
+    if (updated.length === 0) {
+      return { ok: false, message: 'Déjà pris par un autre closer.' };
+    }
+    revalidatePath('/closing/queue');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+/** Libère le verrou (si c'est le nôtre). */
+export async function releaseLeadAction(input: { investorId: string }): Promise<CallActionResult> {
+  let parsed: { investorId: string };
+  try {
+    parsed = claimSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await db
+      .update(investors)
+      .set({ claimedById: null, claimedAt: null })
+      .where(and(eq(investors.id, parsed.investorId), eq(investors.claimedById, user.id)));
     revalidatePath('/closing/queue');
     return { ok: true };
   } catch (e) {

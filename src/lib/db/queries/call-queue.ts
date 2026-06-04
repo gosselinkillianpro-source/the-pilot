@@ -3,6 +3,9 @@ import { sql } from 'drizzle-orm';
 import { compareForQueue, type ScoredInvestor, scoreInvestor } from '@/lib/closing/scoring';
 import { db } from '@/lib/db';
 
+/** Au-delà de ce délai (minutes), un verrou « en cours » est considéré expiré. */
+export const CLAIM_TTL_MIN = 30;
+
 export type QueueRow = {
   id: string;
   fullName: string | null;
@@ -14,6 +17,9 @@ export type QueueRow = {
   assignedCloserId: string | null;
   pipelineStage: string;
   totalInvested: number;
+  /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
+  claimedById: string | null;
+  claimerName: string | null;
   scored: ScoredInvestor;
 };
 
@@ -32,6 +38,9 @@ type RawRow = {
   active_subscriptions: string | number | null;
   active_projects: string | number | null;
   nearest_repayment: string | Date | null;
+  claimed_by_id: string | null;
+  claimed_at: string | Date | null;
+  claimer_name: string | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -68,6 +77,9 @@ export async function getCallQueue(opts?: {
       i.assigned_closer_id::text as assigned_closer_id,
       i.pipeline_stage,
       i.sah_created_at,
+      i.claimed_by_id::text as claimed_by_id,
+      i.claimed_at,
+      cu.full_name as claimer_name,
       coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total_invested,
       count(s.id) filter (where s.status <> 'cancelled') as active_subscriptions,
       count(distinct s.project_id) filter (
@@ -86,20 +98,27 @@ export async function getCallQueue(opts?: {
     from investors i
     left join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
+    left join users cu on cu.id = i.claimed_by_id
     where i.deleted_at is null
     ${closerFilter}
     ${oneFilter}
     ${stageFilter}
-    group by i.id
+    group by i.id, cu.full_name
   `);
 
   const rows = result as unknown as RawRow[];
 
+  const claimCutoff = now.getTime() - CLAIM_TTL_MIN * 60_000;
   const queue: QueueRow[] = rows.map((r) => {
     const totalInvested = Number(r.total_invested) || 0;
     const nearestRepaymentDays = r.nearest_repayment
       ? Math.ceil((new Date(r.nearest_repayment).getTime() - now.getTime()) / DAY_MS)
       : null;
+    // Verrou actif uniquement s'il est récent (sinon expiré → lead de nouveau libre).
+    const claimActive =
+      r.claimed_by_id != null &&
+      r.claimed_at != null &&
+      new Date(r.claimed_at).getTime() >= claimCutoff;
     const scored = scoreInvestor({
       registrationComplete: r.registration_complete,
       onboardingComplete: r.onboarding_complete,
@@ -121,6 +140,8 @@ export async function getCallQueue(opts?: {
       assignedCloserId: r.assigned_closer_id,
       pipelineStage: r.pipeline_stage,
       totalInvested,
+      claimedById: claimActive ? r.claimed_by_id : null,
+      claimerName: claimActive ? r.claimer_name : null,
       scored,
     };
   });

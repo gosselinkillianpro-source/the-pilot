@@ -1,5 +1,7 @@
 import { Clock, Flame, Phone, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
+import { ClaimControl } from '@/components/closing/claim-control';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { getCallQueue, groupByBucket, type QueueRow } from '@/lib/db/queries/call-queue';
 
 export const dynamic = 'force-dynamic';
@@ -25,8 +27,13 @@ function statusClass(s: QueueRow['scored']['status']): string {
 }
 
 export default async function CallQueuePage() {
-  const queue = await getCallQueue({ excludeWon: true });
+  const [queue, user] = await Promise.all([
+    getCallQueue({ excludeWon: true }),
+    getAuthenticatedUser(),
+  ]);
   const groups = groupByBucket(queue);
+  // Rang global (#1, #2, …) dans l'ordre de la file, pour descendre de haut en bas.
+  const rankById = new Map(queue.map((q, i) => [q.id, i + 1]));
 
   const total = queue.length;
   const in48h = queue.filter((q) => q.scored.within48h).length;
@@ -97,6 +104,8 @@ export default async function CallQueuePage() {
                 <QueueRowItem
                   key={row.id}
                   row={row}
+                  rank={rankById.get(row.id) ?? 0}
+                  myId={user.id}
                   last={idx === Math.min(g.rows.length, PER_BUCKET) - 1}
                 />
               ))}
@@ -139,19 +148,37 @@ function Kpi({
   );
 }
 
-function QueueRowItem({ row, last }: { row: QueueRow; last: boolean }) {
+function QueueRowItem({
+  row,
+  rank,
+  myId,
+  last,
+}: {
+  row: QueueRow;
+  rank: number;
+  myId: string;
+  last: boolean;
+}) {
   const s = row.scored;
+  const claimedByMe = row.claimedById === myId;
+  const claimedByOther = row.claimedById != null && row.claimedById !== myId;
+
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '1.4fr 1.6fr 70px 150px',
+        gridTemplateColumns: '34px 1.3fr 1.5fr 64px 180px',
         gap: 12,
         alignItems: 'center',
         padding: '12px 20px',
         borderBottom: last ? 'none' : '1px solid var(--border)',
+        opacity: claimedByOther ? 0.55 : 1,
+        background: claimedByMe ? 'var(--success-bg, #e6f6ec)' : 'transparent',
       }}
     >
+      {/* Rang global */}
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-4)' }}>#{rank}</span>
+
       {/* Identité + statut */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
         <Link
@@ -168,10 +195,20 @@ function QueueRowItem({ row, last }: { row: QueueRow; last: boolean }) {
         >
           {row.fullName ?? row.email}
         </Link>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <span className={statusClass(s.status)} style={{ fontSize: 10 }}>
             {s.statusLabel}
           </span>
+          {claimedByOther ? (
+            <span className="badge badge-warning" style={{ fontSize: 10 }}>
+              en cours — {row.claimerName ?? 'un closer'}
+            </span>
+          ) : null}
+          {claimedByMe ? (
+            <span className="badge badge-success" style={{ fontSize: 10 }}>
+              tu travailles dessus
+            </span>
+          ) : null}
           {row.city ? (
             <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
           ) : null}
@@ -192,18 +229,22 @@ function QueueRowItem({ row, last }: { row: QueueRow; last: boolean }) {
       </div>
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        {row.phone ? (
-          <a href={`tel:${row.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
-            <Phone size={13} />
-            Appeler
-          </a>
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+        {claimedByOther ? (
+          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>pris</span>
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>pas de tél.</span>
+          <>
+            <ClaimControl investorId={row.id} claimedByMe={claimedByMe} />
+            {row.phone ? (
+              <a href={`tel:${row.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
+                <Phone size={13} />
+              </a>
+            ) : null}
+            <Link href={`/closing/investor/${row.id}`} className="btn btn-secondary btn-sm">
+              Fiche
+            </Link>
+          </>
         )}
-        <Link href={`/closing/investor/${row.id}`} className="btn btn-secondary btn-sm">
-          Fiche
-        </Link>
       </div>
     </div>
   );

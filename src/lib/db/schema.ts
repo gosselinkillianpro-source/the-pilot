@@ -208,6 +208,10 @@ export const investors = pgTable('investors', {
   scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
   scoreReasoning: text('score_reasoning'),
   assignedCloserId: uuid('assigned_closer_id').references(() => users.id),
+  // Verrou de travail : un closer "prend" un lead pour éviter le double-appel.
+  // Auto-libéré après un délai (cf. CLAIM_TTL_MIN) ou après l'enregistrement de l'appel.
+  claimedById: uuid('claimed_by_id').references(() => users.id),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
   pipelineStage: pipelineStageEnum('pipeline_stage').notNull().default('new'),
   pipelineStageUpdatedAt: timestamp('pipeline_stage_updated_at', { withTimezone: true }),
   communicationConsent: boolean('communication_consent').notNull().default(false),

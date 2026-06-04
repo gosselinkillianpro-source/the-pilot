@@ -43,6 +43,13 @@
       "when": 1780563306829,
       "tag": "0005_white_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780564908653,
+      "tag": "0006_smiling_blade",
+      "breakpoints": true
     }
   ]
 }
