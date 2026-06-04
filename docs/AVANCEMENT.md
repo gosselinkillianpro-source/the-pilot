@@ -17,7 +17,7 @@
 > - **Fiche `/closing/investor/[id]`** refondue : blocs Identité, Coordonnées, Apporteur (CGP), Lemonway/Onboarding, Dates + **liste des souscriptions** (total investi).
 > - **Auto-refresh en 3 vitesses** (route `/api/cron/sah-sync?scope=…`, publique, fail-closed sur `CRON_SECRET`, garde anti-chevauchement) :
 >   - `scope=light` (projets + investisseurs/statuts) — cron Render `*/15 * * * *`.
->   - `scope=subscriptions` (NOUVELLES souscriptions seulement, `onConflictDoNothing` car figées) — cron Render `0 */4 * * *`.
+>   - `scope=subscriptions` (NOUVELLES souscriptions seulement, `onConflictDoNothing` car figées) — cron Render `0 * * * *` (toutes les heures).
 >   - `scope=full` (tout, upsert complet) — bouton manuel `/settings/sah`.
 > - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » → crée 2 services cron (`the-pilot-sync-sah`, `the-pilot-sync-subscriptions`) ; (2) régler `CRON_SECRET` (web), `SYNC_URL=…?token=<CRON_SECRET>&scope=light` (cron 1), `SYNC_URL_SUBS=…?token=<CRON_SECRET>&scope=subscriptions` (cron 2) ; (3) **synchro manuelle** une fois (bouton) pour peupler.
 > - ⚠️ **À VÉRIFIER** : (a) montant des souscriptions = euros ou cents ? (vérifier sur une fiche connue) ; (b) CGP/réseau = best-effort (`distributor_legal_entities` via `users.distributor_id`) — confirmer avec SAH si faux.

@@ -75,7 +75,7 @@ services:
       - key: SYNC_URL
         sync: false
 
-  # --- Cron 2 : NOUVELLES souscriptions seulement, toutes les 4 heures ---
+  # --- Cron 2 : NOUVELLES souscriptions seulement, toutes les heures ---
   # Les souscriptions sont figées : on n'insère que les nouvelles (scope=subscriptions).
   # SYNC_URL_SUBS à renseigner dans le dashboard Render :
   #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>&scope=subscriptions
@@ -84,7 +84,7 @@ services:
     runtime: node
     region: frankfurt
     plan: starter
-    schedule: '0 */4 * * *'
+    schedule: '0 * * * *'
     buildCommand: 'echo no-build'
     startCommand: >-
       node -e "fetch(process.env.SYNC_URL_SUBS).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"

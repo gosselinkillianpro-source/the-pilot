@@ -6,7 +6,7 @@ const SCOPES: SyncScope[] = ['light', 'subscriptions', 'full'];
 /**
  * Déclencheur de synchronisation SAH (appelé par les crons Render).
  * ?scope=light (défaut) : projets + investisseurs (toutes les 15 min).
- * ?scope=subscriptions : nouvelles souscriptions seulement (toutes les 4 h).
+ * ?scope=subscriptions : nouvelles souscriptions seulement (toutes les heures).
  * ?scope=full : tout, upsert complet (bouton manuel).
  *
  * Endpoint PUBLIC (appelé par un planificateur externe) MAIS protégé par un secret
