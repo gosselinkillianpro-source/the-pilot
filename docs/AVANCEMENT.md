@@ -11,6 +11,14 @@
 > - **Pipeline + fiche investisseur = vraies données** (`/closing/pipeline` liste cherchable/paginée, `/closing/investor/[id]`). L'email IA tourne sur les vrais projets.
 > - **Restant** : sync souscriptions + dates de remboursement (`lending_investor_terms.due_on`) → débloque total investi, attribution, scoring. Puis scoring IA + sync auto (cron). Cloudflare Access. Rotation des clés exposées en chat.
 
+> ## 🟢 FICHE INVESTISSEUR ENRICHIE + AUTO-REFRESH (2026-06-04)
+> - **Migration 0004** : nouvelles colonnes `investors` (civility, nationality, country_residence, address_street/complement, tax_residency_country, bonus_code, cgp_name, cgp_network, wallet_balance_cents, wallet_status, lw_onboarding_status/id, lemonway_account_id, kyc_validated_at, sah_created_at/updated_at) + `subscriptions` (shares_count, canceled_at). **Jamais** d'IBAN/BIC/password (interdits). Appliquée à Supabase.
+> - **Sync enrichie** (`src/lib/integrations/sah/sync.ts`) : users + users_profiles + `bonus_codes` (code + ambassador_name) + `distributor_legal_entities` (name). Nouvelle `syncSubscriptions()` (14795 souscriptions, lien `subscriptions.users_profile_id → users_profiles.user_id`, projet via `project_id`). Statut dérivé des dates (canceled/paid/signed).
+> - **Fiche `/closing/investor/[id]`** refondue : blocs Identité, Coordonnées, Apporteur (CGP), Lemonway/Onboarding, Dates + **liste des souscriptions** (total investi).
+> - **Auto-refresh 5 min** : route `/api/cron/sah-sync` (publique, fail-closed sur `CRON_SECRET`, garde anti-chevauchement) + service cron Render (`render.yaml`, `*/5 * * * *`) qui appelle l'app web (IP whitelistées).
+> - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » pour créer le service cron ; (2) régler `CRON_SECRET` (web) + `SYNC_URL=https://<app>/api/cron/sah-sync?token=<CRON_SECRET>` (cron) ; (3) **lancer une synchro manuelle** (bouton `/settings/sah`) pour peupler les nouveaux champs.
+> - ⚠️ **À VÉRIFIER** : (a) montant des souscriptions = euros ou cents ? (vérifier sur une fiche connue) ; (b) CGP/réseau = best-effort (`distributor_legal_entities` via `users.distributor_id`) — confirmer avec SAH si faux.
+
 > ## 🔴 VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER
 > Contrôle du CSV `users-profiles` exporté par SAH (2855 profils, 2783 personnes) contre notre base.
 > - **Grain** : le CSV est par PROFIL (2855), notre base par PERSONNE (2783, agrégée `bool_or`). 62 personnes ont >1 profil. **Total OK** (2783 = 2783).
