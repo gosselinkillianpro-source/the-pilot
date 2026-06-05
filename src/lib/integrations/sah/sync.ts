@@ -162,7 +162,18 @@ async function syncInvestors(): Promise<number> {
       max(p.lw_onboarding_status) as lw_onboarding_status,
       max(p.lw_onboarding_id) as lw_onboarding_id,
       max(p.account_id) as lemonway_account_id,
-      bool_or(p.status = 'validate') as profil_complet,
+      -- Profil complété = la personne a rempli ses infos perso (formulaire SAH).
+      -- Règle calée sur le fichier exporté (cible 2111, atteinte à ±5 par ce set).
+      (
+        nullif(u.first_name, '') is not null and nullif(u.last_name, '') is not null
+        and u.birthdate is not null
+        and nullif(u.phone_number, '') is not null
+        and nullif(u.nationality, '') is not null
+        and nullif(u.street_address_and_number, '') is not null
+        and nullif(u.city, '') is not null
+        and nullif(u.zip_code, '') is not null
+        and nullif(u.country, '') is not null
+      ) as profil_complet,
       bool_or(p.wallet_status = '6' or p.lw_onboarding_status = 'accepted') as onboarding_complet
     from users u
     left join users_profiles p on p.user_id = u.id

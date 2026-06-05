@@ -33,7 +33,10 @@
 > - ⚠️ **À FAIRE CÔTÉ RENDER** : (1) « Apply blueprint » → crée 2 services cron (`the-pilot-sync-sah`, `the-pilot-sync-subscriptions`) ; (2) régler `CRON_SECRET` (web), `SYNC_URL=…?token=<CRON_SECRET>&scope=light` (cron 1), `SYNC_URL_SUBS=…?token=<CRON_SECRET>&scope=subscriptions` (cron 2) ; (3) **synchro manuelle** une fois (bouton) pour peupler.
 > - ✅ **VÉRIFIÉ (06/04)** : montants des souscriptions = **euros** (corrects tels quels) ; CGP/réseau (`distributor_legal_entities` via `users.distributor_id`) = **correct**. Civilité « mister/miss » → Monsieur/Madame.
 
-> ## 🔴 VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER
+> ## ✅ MAPPING « PROFIL COMPLÉTÉ » RÉSOLU (2026-06-05)
+> `registration_complete` = la personne a rempli ses infos perso dans le formulaire SAH (table `users`) : `first_name, last_name, birthdate, phone_number, nationality, street_address_and_number, city, zip_code, country` tous renseignés. Vérifié via diagnostic `/settings/sah` (ce set = 2116 pers. ≈ cible fichier 2111). Implémenté dans `syncInvestors()` (remplace l'ancien `status='validate'` = 1779, faux). **Re-sync requis** pour appliquer. Funnel attendu ≈ 675 inscrits / 319 profil complété / 1797 onboardés.
+
+> ## 🔴 (historique, résolu ↑) VÉRIFICATION DONNÉES (2026-06-04) — mapping « profil complet » À CORRIGER
 > Contrôle du CSV `users-profiles` exporté par SAH (2855 profils, 2783 personnes) contre notre base.
 > - **Grain** : le CSV est par PROFIL (2855), notre base par PERSONNE (2783, agrégée `bool_or`). 62 personnes ont >1 profil. **Total OK** (2783 = 2783).
 > - **`onboarding_complete` = JUSTE** : 1795 (fichier) ≈ 1797 (SAH live). Règle `wallet_status='6' OR lw_onboarding_status='accepted'` validée.
