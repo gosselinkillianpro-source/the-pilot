@@ -1,4 +1,4 @@
-import { ChevronDown, Clock, Flame, Phone, Target, TrendingUp } from 'lucide-react';
+import { ChevronDown, Clock, Flame, Phone, Target, TrendingUp, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { MarkCalledButton } from '@/components/closing/mark-called-button';
@@ -57,7 +57,8 @@ export default async function CallQueuePage({
 
   const total = queue.length;
   const newLeads = queue.filter((q) => q.scored.isNewLead).length;
-  const echeance = queue.filter((q) => q.scored.queueBucket === 2).length;
+  const newInvestors = queue.filter((q) => q.scored.queueBucket === 2).length;
+  const echeance = queue.filter((q) => q.scored.queueBucket === 3).length;
   const hot = queue.filter((q) => q.scored.temperature === 'hot').length;
 
   return (
@@ -94,6 +95,12 @@ export default async function CallQueuePage({
           label="Nouveaux (7 j)"
           value={nb(newLeads)}
           accent="var(--brand)"
+        />
+        <Kpi
+          icon={<UserPlus size={15} />}
+          label="Nouv. investisseurs"
+          value={nb(newInvestors)}
+          accent="var(--ai)"
         />
         <Kpi
           icon={<TrendingUp size={15} />}

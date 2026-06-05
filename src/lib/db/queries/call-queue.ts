@@ -41,6 +41,7 @@ type RawRow = {
   active_subscriptions: string | number | null;
   active_projects: string | number | null;
   nearest_repayment: string | Date | null;
+  first_sub_at: string | Date | null;
   bonus_code: string | null;
   claimed_by_id: string | null;
   claimed_at: string | Date | null;
@@ -122,7 +123,8 @@ export async function getCallQueue(opts?: {
             and p.repayment_date > now()
           then p.repayment_date
         end
-      ) as nearest_repayment
+      ) as nearest_repayment,
+      min(s.signed_at) filter (where s.status <> 'cancelled') as first_sub_at
     from investors i
     left join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
@@ -144,6 +146,9 @@ export async function getCallQueue(opts?: {
     const nearestRepaymentDays = r.nearest_repayment
       ? Math.ceil((new Date(r.nearest_repayment).getTime() - now.getTime()) / DAY_MS)
       : null;
+    const firstInvestmentDays = r.first_sub_at
+      ? Math.floor((now.getTime() - new Date(r.first_sub_at).getTime()) / DAY_MS)
+      : null;
     // Verrou actif uniquement s'il est récent (sinon expiré → lead de nouveau libre).
     const claimActive =
       r.claimed_by_id != null &&
@@ -157,6 +162,7 @@ export async function getCallQueue(opts?: {
       activeSubscriptions: Number(r.active_subscriptions) || 0,
       activeProjectsCount: Number(r.active_projects) || 0,
       nearestRepaymentDays,
+      firstInvestmentDays,
       now,
     });
     return {

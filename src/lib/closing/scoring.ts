@@ -21,6 +21,8 @@ export type ScoringInput = {
   activeSubscriptions: number;
   /** Jours avant le remboursement le plus proche (statut E), null si aucun à venir. */
   nearestRepaymentDays: number | null;
+  /** Jours depuis le TOUT PREMIER investissement (statut E), null si jamais investi. */
+  firstInvestmentDays: number | null;
   /** Nb de projets en cours (pour signaler au closer). */
   activeProjectsCount: number;
   /** Engagement e-mail (pas encore branché → 0/false par défaut). */
@@ -49,7 +51,9 @@ export type ScoredInvestor = {
   daysSinceSignup: number | null;
   /** Jours avant le remboursement le plus proche (statut E), null sinon. */
   nearestRepaymentDays: number | null;
-  queueBucket: number; // 1-7, ordre de traitement de la journée
+  /** Jours depuis le 1er investissement (statut E), null sinon. */
+  firstInvestmentDays: number | null;
+  queueBucket: number; // ordre de traitement de la journée
   queueLabel: string;
   callGoal: string;
   /** 3 facteurs principaux à afficher (transparence). */
@@ -68,6 +72,8 @@ const STATUS_LABEL: Record<InvestorStatus, string> = {
 
 /** Fenêtre de visibilité d'un nouvel inscrit dans la file (objectif d'appel : sous 48h). */
 const NEW_LEAD_WINDOW_DAYS = 7;
+/** Fenêtre d'appel "nouvel investisseur" après le tout premier investissement. */
+const NEW_INVESTOR_WINDOW_DAYS = 15;
 
 const BUCKET: Record<number, { label: string; goal: string }> = {
   1: {
@@ -75,26 +81,30 @@ const BUCKET: Record<number, { label: string; goal: string }> = {
     goal: 'À rappeler vite (objectif sous 48h) : finaliser inscription/KYC, booker un RDV, ou présenter un projet.',
   },
   2: {
+    label: 'Nouvel investisseur (1er invest. < 15 j)',
+    goal: 'Appel de bienvenue : créer le lien, vérifier que tout s’est bien passé, répondre aux questions, recueillir un retour.',
+  },
+  3: {
     label: 'Réinvestissement — échéance proche',
     goal: 'Proposer le réinvestissement avant le remboursement (le moment roi).',
   },
-  3: {
+  4: {
     label: 'Déblocage KYC',
     goal: 'Faire valider la pièce d’identité pour débloquer la capacité à investir.',
   },
-  4: {
+  5: {
     label: 'Déblocage inscription',
     goal: 'Comprendre le blocage et accompagner la finalisation. Pas de vente.',
   },
-  5: {
-    label: 'Bienvenue / 1er investissement',
-    goal: 'Créer le lien, répondre aux questions, présenter un projet.',
-  },
   6: {
+    label: 'Bienvenue / 1er investissement',
+    goal: 'Créer le lien, répondre aux questions, présenter un projet (jamais investi).',
+  },
+  7: {
     label: 'Réactivation',
     goal: 'Réengager — surtout s’il y a un signal d’intérêt récent.',
   },
-  7: {
+  8: {
     label: 'Relationnel',
     goal: 'Entretenir la relation / rétention. Créneau dédié, jamais au détriment de la conversion.',
   },
@@ -193,18 +203,26 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
     daysSinceSignup <= NEW_LEAD_WINDOW_DAYS &&
     (status === 'A' || status === 'B' || status === 'C');
 
+  // Nouvel investisseur : tout premier investissement il y a < 15 j (appel de bienvenue).
+  const first = input.firstInvestmentDays;
+  const isNewInvestor = status === 'E' && first != null && first <= NEW_INVESTOR_WINDOW_DAYS;
+
   // --- File / bucket (ordre de traitement, section 9) ---
   let queueBucket: number;
   if (isNewLead) queueBucket = 1;
-  else if (status === 'E' && repay != null && repay <= 30) queueBucket = 2;
-  else if (status === 'B') queueBucket = 3;
-  else if (status === 'A') queueBucket = 4;
-  else if (status === 'C') queueBucket = 5;
-  else if (status === 'D') queueBucket = 6;
-  else queueBucket = 7;
+  else if (isNewInvestor) queueBucket = 2;
+  else if (status === 'E' && repay != null && repay <= 30) queueBucket = 3;
+  else if (status === 'B') queueBucket = 4;
+  else if (status === 'A') queueBucket = 5;
+  else if (status === 'C') queueBucket = 6;
+  else if (status === 'D') queueBucket = 7;
+  else queueBucket = 8;
 
   // --- Facteurs explicatifs (top 3) ---
   const factors: string[] = [];
+  if (isNewInvestor && first != null) {
+    factors.push(first === 0 ? '1er invest. aujourd’hui' : `1er invest. il y a ${first}j`);
+  }
   if (status === 'E' && repay != null) {
     factors.push(`échéance dans ${repay}j`);
     if (input.activeProjectsCount > 1)
@@ -234,6 +252,7 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
     isNewLead,
     daysSinceSignup,
     nearestRepaymentDays: repay,
+    firstInvestmentDays: first,
     queueBucket,
     queueLabel: bucketInfo.label,
     callGoal: bucketInfo.goal,
@@ -260,11 +279,15 @@ export function compareForQueue(a: ScoredInvestor, b: ScoredInvestor): number {
   if (a.queueBucket !== b.queueBucket) return a.queueBucket - b.queueBucket;
 
   if (a.queueBucket === 2) {
-    // Échéance la plus proche en premier.
+    // Nouvel investisseur : 1er investissement le plus récent d'abord.
+    const byFirst = ascNullsLast(a.firstInvestmentDays, b.firstInvestmentDays);
+    if (byFirst !== 0) return byFirst;
+  } else if (a.queueBucket === 3) {
+    // Réinvestissement : échéance la plus proche d'abord (2j avant +2j).
     const byRepay = ascNullsLast(a.nearestRepaymentDays, b.nearestRepaymentDays);
     if (byRepay !== 0) return byRepay;
   } else {
-    // Inscrit le plus récent en premier (plus petit nombre de jours depuis l'inscription).
+    // Autres : inscrit le plus récent d'abord.
     const byRecency = ascNullsLast(a.daysSinceSignup, b.daysSinceSignup);
     if (byRecency !== 0) return byRecency;
   }
