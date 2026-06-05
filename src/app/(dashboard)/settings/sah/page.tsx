@@ -2,10 +2,12 @@ import { AlertTriangle, Database } from 'lucide-react';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import {
   getProfilCompletDiagnostic,
+  getRegFieldDiagnostic,
   getSahBreachSubDiag,
   getSahDiagnostics,
   getSahSchema,
   type ProfilCompletDiagnostic,
+  type RegFieldDiagnostic,
   type SahBreachSubDiag,
   type SahColumn,
   type SahDiagnostics,
@@ -41,13 +43,15 @@ export default async function SahExplorerPage() {
   let diag: SahDiagnostics | null = null;
   let profilDiag: ProfilCompletDiagnostic | null = null;
   let subDiag: SahBreachSubDiag | null = null;
+  let regDiag: RegFieldDiagnostic | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag] = await Promise.all([
+    [schema, diag, profilDiag, subDiag, regDiag] = await Promise.all([
       getSahSchema(),
       getSahDiagnostics(),
       getProfilCompletDiagnostic(),
       getSahBreachSubDiag(),
+      getRegFieldDiagnostic(),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
@@ -223,6 +227,50 @@ export default async function SahExplorerPage() {
                     ))
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {regDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">
+                  « Profil complété » = champs perso renseignés (table users)
+                </div>
+                <span className="badge badge-brand">non sensible</span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+              >
+                <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
+                  Cible (fichier) : <strong>{regDiag.targetPersons}</strong> personnes · base :{' '}
+                  <strong>{regDiag.totalPersons}</strong>. La ligne ✅ (cumul de champs requis) est
+                  la définition à retenir pour « profil complété ».
+                </p>
+                {regDiag.candidates.map((c) => {
+                  const match = Math.abs(c.persons - regDiag.targetPersons) <= 30;
+                  return (
+                    <div
+                      key={c.label}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '4px 6px',
+                        borderRadius: 6,
+                        background: match ? 'var(--success-bg, #e6f6ec)' : 'transparent',
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-1)' }}>
+                        {match ? '✅ ' : ''}
+                        {c.label}
+                      </span>
+                      <strong>{c.persons}</strong>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

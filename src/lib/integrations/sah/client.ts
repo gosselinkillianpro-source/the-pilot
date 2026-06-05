@@ -273,6 +273,73 @@ export async function getProfilCompletDiagnostic(): Promise<ProfilCompletDiagnos
   };
 }
 
+export type RegFieldDiagnostic = {
+  totalPersons: number;
+  targetPersons: number; // cible "profil complet" du fichier (grain personne)
+  candidates: { label: string; persons: number }[];
+};
+
+/**
+ * Cherche la définition de "profil complété" = champs perso renseignés (table users).
+ * Teste des ensembles cumulatifs de champs et compte les personnes qui les ont tous.
+ * La bonne définition est celle qui reproduit la cible (2111 personnes). NON-SENSIBLE.
+ */
+export async function getRegFieldDiagnostic(): Promise<RegFieldDiagnostic> {
+  const sql = getSahClient();
+  // nz(col) = champ varchar non vide ; les dates → is not null.
+  const r = await sql<
+    {
+      total: number;
+      c1: number;
+      c2: number;
+      c3: number;
+      c4: number;
+      c5: number;
+      c6: number;
+      c7: number;
+    }[]
+  >`
+    with u as (
+      select
+        (nullif(first_name, '') is not null and nullif(last_name, '') is not null) as has_name,
+        (birthdate is not null) as has_bd,
+        (nullif(phone_number, '') is not null) as has_phone,
+        (nullif(nationality, '') is not null) as has_nat,
+        (nullif(street_address_and_number, '') is not null and nullif(city, '') is not null
+          and nullif(zip_code, '') is not null and nullif(country, '') is not null) as has_addr,
+        (nullif(tax_residency_country, '') is not null) as has_fisc,
+        (nullif(native_country, '') is not null and nullif(native_city, '') is not null
+          and nullif(native_zip_code, '') is not null) as has_birthplace
+      from users
+      where email is not null
+    )
+    select
+      count(*)::int as total,
+      count(*) filter (where has_name)::int as c1,
+      count(*) filter (where has_name and has_bd)::int as c2,
+      count(*) filter (where has_name and has_bd and has_phone)::int as c3,
+      count(*) filter (where has_name and has_bd and has_phone and has_nat)::int as c4,
+      count(*) filter (where has_name and has_bd and has_phone and has_nat and has_addr)::int as c5,
+      count(*) filter (where has_name and has_bd and has_phone and has_nat and has_addr and has_fisc)::int as c6,
+      count(*) filter (where has_name and has_bd and has_phone and has_nat and has_addr and has_fisc and has_birthplace)::int as c7
+    from u
+  `.catch(() => [{ total: -1, c1: -1, c2: -1, c3: -1, c4: -1, c5: -1, c6: -1, c7: -1 }]);
+  const row = r[0] ?? { total: -1, c1: -1, c2: -1, c3: -1, c4: -1, c5: -1, c6: -1, c7: -1 };
+  return {
+    totalPersons: row.total,
+    targetPersons: 2111,
+    candidates: [
+      { label: 'nom + prénom', persons: row.c1 },
+      { label: '+ date de naissance', persons: row.c2 },
+      { label: '+ téléphone', persons: row.c3 },
+      { label: '+ nationalité', persons: row.c4 },
+      { label: '+ adresse (rue/ville/CP/pays)', persons: row.c5 },
+      { label: '+ résidence fiscale', persons: row.c6 },
+      { label: '+ lieu de naissance', persons: row.c7 },
+    ],
+  };
+}
+
 export type SahSubCount = { count: number; total: number };
 
 export type SahBreachSubDiag = {
