@@ -9,6 +9,7 @@ import {
   getInvestorTimeline,
   type TimelineItem,
 } from '@/lib/db/queries/closing';
+import { getLatestAsset } from '@/lib/db/queries/investor-assets';
 import {
   getInvestorById,
   getInvestorSubscriptions,
@@ -17,9 +18,9 @@ import {
 import { getInvestorStage } from '@/lib/investor-stage';
 import { ActionRowButtons, PlanActionPanel } from './actions-panel';
 import { AssignCloser } from './assign-closer';
-import { CallBriefPanel } from './call-brief-panel';
+import { CallBriefPanel, type SavedScript, type ScriptBrief } from './call-brief-panel';
 import { CallLogPanel } from './call-log-panel';
-import { InvestorEmailPanel } from './investor-email-panel';
+import { InvestorEmailPanel, type SavedEmail } from './investor-email-panel';
 import { InvestorNotes } from './investor-notes';
 
 type Props = { params: Promise<{ id: string }> };
@@ -139,17 +140,44 @@ export default async function InvestorPage({ params }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const [subs, scored, timeline, closers, openTasks, callImpact] = await Promise.all([
-    getInvestorSubscriptions(investor.id),
-    getInvestorScored(investor.id),
-    getInvestorTimeline(investor.id),
-    getClosers(),
-    getInvestorOpenTasks(investor.id),
-    getCallImpact(investor.id),
-  ]);
+  const [subs, scored, timeline, closers, openTasks, callImpact, emailAsset, scriptAsset] =
+    await Promise.all([
+      getInvestorSubscriptions(investor.id),
+      getInvestorScored(investor.id),
+      getInvestorTimeline(investor.id),
+      getClosers(),
+      getInvestorOpenTasks(investor.id),
+      getCallImpact(investor.id),
+      getLatestAsset(investor.id, 'email_proposal'),
+      getLatestAsset(investor.id, 'call_script'),
+    ]);
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
   const displayName = [civ, investor.fullName].filter(Boolean).join(' ') || investor.email;
+
+  const savedEmail: SavedEmail | null = emailAsset
+    ? {
+        id: emailAsset.id,
+        status: emailAsset.status,
+        subject: emailAsset.subject,
+        preheader: emailAsset.preheader,
+        body: emailAsset.body,
+        costEur: emailAsset.costEur,
+        amfWarnings:
+          (emailAsset.data as { amfWarnings?: { match: string; suggestedFix: string }[] } | null)
+            ?.amfWarnings ?? [],
+        error: emailAsset.error,
+      }
+    : null;
+  const savedScript: SavedScript | null = scriptAsset
+    ? {
+        id: scriptAsset.id,
+        status: scriptAsset.status,
+        brief: (scriptAsset.data as ScriptBrief | null) ?? null,
+        costEur: scriptAsset.costEur,
+        error: scriptAsset.error,
+      }
+    : null;
 
   return (
     <>
@@ -303,8 +331,12 @@ export default async function InvestorPage({ params }: Props) {
             </div>
           )}
 
-          {/* Brief d'appel IA */}
-          <CallBriefPanel investorId={investor.id} />
+          {/* Brief d'appel IA (sauvegardé) */}
+          <CallBriefPanel
+            key={`script-${savedScript?.id ?? 'none'}-${savedScript?.status ?? 'none'}`}
+            investorId={investor.id}
+            saved={savedScript}
+          />
 
           {/* Enregistrer un appel */}
           <CallLogPanel investorId={investor.id} />
@@ -367,9 +399,11 @@ export default async function InvestorPage({ params }: Props) {
           </div>
 
           <InvestorEmailPanel
+            key={`email-${savedEmail?.id ?? 'none'}-${savedEmail?.status ?? 'none'}`}
             investorId={investor.id}
             firstName={firstName}
             email={investor.email}
+            saved={savedEmail}
           />
 
           {/* Historique / timeline */}

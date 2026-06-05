@@ -23,7 +23,7 @@ import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN, getInvestorScored } from '@/lib/db/queries/call-queue';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { ensureUserRecord } from '@/lib/db/queries/users';
-import { closerTasks, interactions, investors } from '@/lib/db/schema';
+import { closerTasks, interactions, investorAssets, investors } from '@/lib/db/schema';
 
 /**
  * Propriété « collante » : dès qu'un closer traite une personne (appel, action planifiée),
@@ -909,6 +909,293 @@ export async function saveInternalNoteAction(input: {
       resourceId: parsed.investorId,
     });
     revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+/* ============================================================
+   Documents IA sauvegardés (email de proposition, script d'appel)
+   Génération persistée : on insère une ligne 'generating', l'IA tourne, puis on passe
+   la ligne en 'ready' (ou 'error'). Le travail se fait côté serveur jusqu'au bout, même
+   si le closer quitte la page. Régénérer remplace l'actuel ; supprimer efface.
+   ============================================================ */
+
+export type AssetGenResult =
+  | { ok: true; assetId: string }
+  | { ok: false; reason: 'no_key' | 'not_found' | 'error'; message: string };
+
+const assetTargetSchema = z.object({ investorId: z.string().uuid() });
+
+/** Génère + sauvegarde un email de proposition (remplace l'actuel). */
+export async function generateProposalAssetAction(input: {
+  investorId: string;
+}): Promise<AssetGenResult> {
+  let parsed: { investorId: string };
+  try {
+    parsed = assetTargetSchema.parse(input);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  await ensureUserRecord(user);
+
+  const investor = await getInvestorById(parsed.investorId);
+  if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
+
+  // Remplace l'email actuel : efface les précédents puis insère une ligne « en cours ».
+  await db
+    .delete(investorAssets)
+    .where(
+      and(
+        eq(investorAssets.investorId, parsed.investorId),
+        eq(investorAssets.kind, 'email_proposal'),
+      ),
+    );
+  const created = await db
+    .insert(investorAssets)
+    .values({
+      investorId: parsed.investorId,
+      kind: 'email_proposal',
+      status: 'generating',
+      createdBy: user.id,
+    })
+    .returning({ id: investorAssets.id });
+  const assetId = created[0]?.id ?? '';
+  revalidatePath(`/closing/investor/${parsed.investorId}`);
+
+  const investorContext: InvestorContext = {
+    firstName: investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur',
+    segment: investor.profileSegment ?? 'particulier',
+    score: investor.score ?? 0,
+    stage: investor.pipelineStage,
+    totalInvested: Number(investor.totalInvested ?? 0),
+    amountMentioned: undefined,
+  };
+  const projects: ProjectContext[] = (await getInvestableProjects()).map((p) => ({
+    name: p.name,
+    city: p.city ?? '',
+    targetYieldAnnual: Number(p.targetYieldAnnual ?? 0),
+    durationMonths: p.durationMonths ?? 0,
+    status: p.status,
+  }));
+
+  try {
+    const result = await draftProposalEmail(investorContext, projects);
+    const costEur = estimateCostEur(result.model, result.promptTokens, result.completionTokens);
+    const scan = scanAmfCompliance(
+      `${result.draft.subject}\n${result.draft.preheader}\n${result.draft.bodyText}`,
+    );
+    const amfWarnings = scan.issues.map((i) => ({ match: i.match, suggestedFix: i.suggestedFix }));
+
+    await logLlmCall({
+      userId: user.id,
+      model: result.model,
+      purpose: 'investor_proposal_email',
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      latencyMs: result.latencyMs,
+      status: 'success',
+      inputSummary: `proposal asset for ${investor.id}`,
+      outputSummary: result.draft.subject,
+    });
+    await db
+      .update(investorAssets)
+      .set({
+        status: 'ready',
+        subject: result.draft.subject,
+        preheader: result.draft.preheader,
+        body: result.draft.bodyText,
+        data: { amfWarnings },
+        costEur: String(costEur),
+        updatedAt: new Date(),
+      })
+      .where(eq(investorAssets.id, assetId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'ai.asset_email_generated',
+      resourceType: 'investor',
+      resourceId: investor.id,
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: true, assetId };
+  } catch (e) {
+    const isNoKey = e instanceof MissingAnthropicKeyError;
+    const message = isNoKey
+      ? 'Clé IA absente : ajoute ANTHROPIC_API_KEY puis relance le serveur.'
+      : e instanceof Error
+        ? e.message
+        : 'Erreur de génération.';
+    await db
+      .update(investorAssets)
+      .set({ status: 'error', error: message, updatedAt: new Date() })
+      .where(eq(investorAssets.id, assetId));
+    await logLlmCall({
+      userId: user.id,
+      model: 'claude-opus-4-7',
+      purpose: 'investor_proposal_email',
+      status: 'error',
+      errorMessage: message,
+      inputSummary: `proposal asset for ${investor.id}`,
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: false, reason: isNoKey ? 'no_key' : 'error', message };
+  }
+}
+
+/** Génère + sauvegarde un script d'appel (remplace l'actuel). */
+export async function generateCallScriptAssetAction(input: {
+  investorId: string;
+}): Promise<AssetGenResult> {
+  let parsed: { investorId: string };
+  try {
+    parsed = assetTargetSchema.parse(input);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  await ensureUserRecord(user);
+
+  const investor = await getInvestorById(parsed.investorId);
+  if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
+
+  await db
+    .delete(investorAssets)
+    .where(
+      and(eq(investorAssets.investorId, parsed.investorId), eq(investorAssets.kind, 'call_script')),
+    );
+  const created = await db
+    .insert(investorAssets)
+    .values({
+      investorId: parsed.investorId,
+      kind: 'call_script',
+      status: 'generating',
+      createdBy: user.id,
+    })
+    .returning({ id: investorAssets.id });
+  const assetId = created[0]?.id ?? '';
+  revalidatePath(`/closing/investor/${parsed.investorId}`);
+
+  const scored = await getInvestorScored(parsed.investorId);
+  const projects = (await getInvestableProjects()).map((p) => ({
+    name: p.name,
+    city: p.city ?? '',
+    targetYieldAnnual: Number(p.targetYieldAnnual ?? 0),
+    durationMonths: p.durationMonths ?? 0,
+  }));
+
+  try {
+    const result = await draftCallBrief(
+      {
+        firstName: investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur',
+        statusLabel: scored?.scored.statusLabel ?? 'Inscrit',
+        queueLabel: scored?.scored.queueLabel ?? 'File d’appel',
+        callGoal: scored?.scored.callGoal ?? 'Faire le point.',
+        factors: scored?.scored.factors ?? [],
+        totalInvested: scored?.totalInvested ?? 0,
+      },
+      projects,
+    );
+    const b = result.brief;
+    const costEur = estimateCostEur(result.model, result.promptTokens, result.completionTokens);
+    const bodyText = [
+      `Accroche : ${b.accroche}`,
+      `Objectif : ${b.objectif}`,
+      b.points.length ? `Points à aborder :\n- ${b.points.join('\n- ')}` : '',
+      b.objections.length
+        ? `Objections :\n${b.objections.map((o) => `• ${o.objection} → ${o.reponse}`).join('\n')}`
+        : '',
+      b.projets.length ? `Projets à évoquer : ${b.projets.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    await logLlmCall({
+      userId: user.id,
+      model: result.model,
+      purpose: 'call_brief',
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      latencyMs: result.latencyMs,
+      status: 'success',
+      inputSummary: `script asset for ${investor.id}`,
+      outputSummary: b.objectif,
+    });
+    await db
+      .update(investorAssets)
+      .set({
+        status: 'ready',
+        body: bodyText,
+        data: b,
+        costEur: String(costEur),
+        updatedAt: new Date(),
+      })
+      .where(eq(investorAssets.id, assetId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'ai.asset_script_generated',
+      resourceType: 'investor',
+      resourceId: investor.id,
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: true, assetId };
+  } catch (e) {
+    const isNoKey = e instanceof MissingKeyBrief;
+    const message = isNoKey
+      ? 'Clé IA absente : ajoute ANTHROPIC_API_KEY puis relance le serveur.'
+      : e instanceof Error
+        ? e.message
+        : 'Erreur de génération.';
+    await db
+      .update(investorAssets)
+      .set({ status: 'error', error: message, updatedAt: new Date() })
+      .where(eq(investorAssets.id, assetId));
+    await logLlmCall({
+      userId: user.id,
+      model: 'claude-opus-4-7',
+      purpose: 'call_brief',
+      status: 'error',
+      errorMessage: message,
+      inputSummary: `script asset for ${investor.id}`,
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: false, reason: isNoKey ? 'no_key' : 'error', message };
+  }
+}
+
+const assetIdSchema = z.object({ assetId: z.string().uuid() });
+
+/** Supprime un document IA sauvegardé (email ou script). */
+export async function deleteInvestorAssetAction(input: {
+  assetId: string;
+}): Promise<CallActionResult> {
+  let parsed: { assetId: string };
+  try {
+    parsed = assetIdSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    const rows = await db
+      .select({ investorId: investorAssets.investorId })
+      .from(investorAssets)
+      .where(eq(investorAssets.id, parsed.assetId))
+      .limit(1);
+    await db.delete(investorAssets).where(eq(investorAssets.id, parsed.assetId));
+    if (rows[0]?.investorId) revalidatePath(`/closing/investor/${rows[0].investorId}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };

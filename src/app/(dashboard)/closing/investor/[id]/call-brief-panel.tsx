@@ -1,19 +1,66 @@
 'use client';
 
-import { Sparkles } from 'lucide-react';
-import { useState, useTransition } from 'react';
-import { type CallBriefActionResult, draftCallBriefAction } from './actions';
+import { Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useTransition } from 'react';
+import { useToast } from '@/components/shared/toast';
+import { deleteInvestorAssetAction, generateCallScriptAssetAction } from './actions';
 
-export function CallBriefPanel({ investorId }: { investorId: string }) {
+export type ScriptBrief = {
+  accroche: string;
+  objectif: string;
+  points: string[];
+  objections: { objection: string; reponse: string }[];
+  projets: string[];
+};
+
+export type SavedScript = {
+  id: string;
+  status: 'generating' | 'ready' | 'error';
+  brief: ScriptBrief | null;
+  costEur: string | null;
+  error: string | null;
+};
+
+export function CallBriefPanel({
+  investorId,
+  saved,
+}: {
+  investorId: string;
+  saved: SavedScript | null;
+}) {
+  const router = useRouter();
+  const { toast, runWithActivity } = useToast();
   const [pending, startTransition] = useTransition();
-  const [res, setRes] = useState<CallBriefActionResult | null>(null);
 
   function generate() {
-    setRes(null);
     startTransition(async () => {
-      setRes(await draftCallBriefAction(investorId));
+      const res = await runWithActivity('Génération du script d’appel', () =>
+        generateCallScriptAssetAction({ investorId }),
+      );
+      if (res.ok) {
+        toast('Script généré et sauvegardé.', { variant: 'success' });
+        router.refresh();
+      } else {
+        toast(res.message, { variant: 'error' });
+      }
     });
   }
+
+  function remove() {
+    if (!saved) return;
+    startTransition(async () => {
+      const res = await deleteInvestorAssetAction({ assetId: saved.id });
+      if (res.ok) {
+        toast('Script supprimé.', { variant: 'info' });
+        router.refresh();
+      } else {
+        toast(res.message, { variant: 'error' });
+      }
+    });
+  }
+
+  const brief = saved?.brief ?? null;
 
   return (
     <div className="view-card">
@@ -25,30 +72,58 @@ export function CallBriefPanel({ investorId }: { investorId: string }) {
           <Sparkles size={15} />
           Brief d'appel IA
         </div>
-        <button
-          type="button"
-          className="btn btn-sm btn-secondary"
-          onClick={generate}
-          disabled={pending}
-        >
-          {pending ? 'Génération…' : 'Générer'}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {saved?.status === 'ready' && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={remove}
+              disabled={pending}
+              style={{ color: 'var(--danger)' }}
+            >
+              <Trash2 size={13} />
+              Supprimer
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={generate}
+            disabled={pending}
+          >
+            {pending ? 'Génération…' : saved ? 'Régénérer' : 'Générer'}
+          </button>
+        </div>
       </div>
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {!res && (
+        {!saved && (
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
             Génère un script d'appel prêt-à-l'emploi (accroche, objectif, objections, projets), calé
-            sur le statut et les projets ouverts. Aide à la prépa — tu gardes la main.
+            sur le statut et les projets ouverts. <strong>Sauvegardé</strong> sur la fiche. Aide à
+            la prépa — tu gardes la main.
           </p>
         )}
-        {res && !res.ok && (
-          <p style={{ fontSize: 12, color: 'var(--danger)', margin: 0 }}>{res.message}</p>
+
+        {saved?.status === 'generating' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-2)' }}>
+            <Loader2 size={16} className="spin" style={{ color: 'var(--ai)' }} />
+            <span style={{ fontSize: 13 }}>
+              Génération du script en cours… (continue en fond, tu peux quitter la page)
+            </span>
+          </div>
         )}
-        {res?.ok && (
+
+        {saved?.status === 'error' && (
+          <p style={{ fontSize: 12, color: 'var(--danger)', margin: 0 }}>
+            {saved.error ?? 'La génération a échoué.'}
+          </p>
+        )}
+
+        {saved?.status === 'ready' && brief && (
           <>
-            <Block label="Accroche">{res.brief.accroche}</Block>
-            <Block label="Objectif">{res.brief.objectif}</Block>
-            {res.brief.points.length > 0 && (
+            <Block label="Accroche">{brief.accroche}</Block>
+            <Block label="Objectif">{brief.objectif}</Block>
+            {brief.points.length > 0 && (
               <div>
                 <Label>Points à aborder</Label>
                 <ul
@@ -59,17 +134,17 @@ export function CallBriefPanel({ investorId }: { investorId: string }) {
                     color: 'var(--text-2)',
                   }}
                 >
-                  {res.brief.points.map((p) => (
+                  {brief.points.map((p) => (
                     <li key={p}>{p}</li>
                   ))}
                 </ul>
               </div>
             )}
-            {res.brief.objections.length > 0 && (
+            {brief.objections.length > 0 && (
               <div>
                 <Label>Objections probables</Label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                  {res.brief.objections.map((o) => (
+                  {brief.objections.map((o) => (
                     <div key={o.objection} style={{ fontSize: 12 }}>
                       <div style={{ color: 'var(--text-1)', fontWeight: 600 }}>
                         « {o.objection} »
@@ -80,11 +155,12 @@ export function CallBriefPanel({ investorId }: { investorId: string }) {
                 </div>
               </div>
             )}
-            {res.brief.projets.length > 0 && (
-              <Block label="Projets à évoquer">{res.brief.projets.join(', ')}</Block>
+            {brief.projets.length > 0 && (
+              <Block label="Projets à évoquer">{brief.projets.join(', ')}</Block>
             )}
             <p style={{ fontSize: 10, color: 'var(--text-4)', margin: 0 }}>
-              Coût IA : {res.costEur.toFixed(4)} € · Vérifie les chiffres avant de citer.
+              {saved.costEur ? `Coût IA : ${Number(saved.costEur).toFixed(4)} € · ` : ''}Vérifie les
+              chiffres avant de citer.
             </p>
           </>
         )}

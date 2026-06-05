@@ -126,6 +126,17 @@ export const callOutcomeEnum = pgEnum('call_outcome', [
 
 export const closerTaskStatusEnum = pgEnum('closer_task_status', ['pending', 'done', 'cancelled']);
 
+// Documents générés par l'IA et sauvegardés sur la fiche (email de proposition, script d'appel).
+export const investorAssetKindEnum = pgEnum('investor_asset_kind', [
+  'email_proposal',
+  'call_script',
+]);
+export const investorAssetStatusEnum = pgEnum('investor_asset_status', [
+  'generating',
+  'ready',
+  'error',
+]);
+
 /* --- Social Hub --- */
 export const socialIdeaStatusEnum = pgEnum('social_idea_status', [
   'pending',
@@ -308,6 +319,29 @@ export const closerTasks = pgTable('closer_tasks', {
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
+/* ============================================================
+   INVESTOR ASSETS — emails & scripts générés par l'IA, sauvegardés par personne.
+   Un seul "actuel" par type et par investisseur (régénérer remplace, supprimer efface).
+   status: generating → ready (ou error). Permet la génération en fond.
+   ============================================================ */
+export const investorAssets = pgTable('investor_assets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  investorId: uuid('investor_id')
+    .notNull()
+    .references(() => investors.id),
+  kind: investorAssetKindEnum('kind').notNull(),
+  status: investorAssetStatusEnum('status').notNull().default('generating'),
+  subject: text('subject'), // email uniquement
+  preheader: text('preheader'), // email uniquement
+  body: text('body'), // corps de l'email OU script (texte)
+  data: jsonb('data'), // contenu structuré (brief d'appel, avertissements AMF…)
+  error: text('error'),
+  costEur: numeric('cost_eur', { precision: 10, scale: 6 }),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* ============================================================
