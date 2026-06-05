@@ -3,6 +3,7 @@
 import { Check, PhoneCall } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { useToast } from '@/components/shared/toast';
 import { type LogCallInput, logCallAction } from './actions';
 
 type Outcome = LogCallInput['outcome'];
@@ -26,6 +27,7 @@ const STAGES: { value: NonNullable<LogCallInput['nextStage']>; label: string }[]
 
 export function CallLogPanel({ investorId }: { investorId: string }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [outcome, setOutcome] = useState<Outcome>('reached');
   const [note, setNote] = useState('');
@@ -50,8 +52,10 @@ export function CallLogPanel({ investorId }: { investorId: string }) {
         setNextStage('');
         setCallbackAt('');
         router.refresh();
+        toast('Appel enregistré.', { variant: 'success' });
       } else {
         setMsg({ ok: false, text: res.message });
+        toast(res.message, { variant: 'error' });
       }
     });
   }

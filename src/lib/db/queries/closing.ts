@@ -253,6 +253,23 @@ export async function getPipelineBoard(): Promise<BoardColumn[]> {
   });
 }
 
+export type FunnelStage = { stage: string; label: string; total: number };
+
+/** Comptage des personnes par étape du tunnel (vue tunnel lecture seule). */
+export async function getPipelineFunnel(): Promise<FunnelStage[]> {
+  const rows = await db
+    .select({ stage: investors.pipelineStage, n: count() })
+    .from(investors)
+    .where(isNull(investors.deletedAt))
+    .groupBy(investors.pipelineStage);
+  const map = new Map(rows.map((r) => [r.stage, Number(r.n)]));
+  return PIPELINE_STAGES.map((s) => ({
+    stage: s.value,
+    label: s.label,
+    total: map.get(s.value) ?? 0,
+  }));
+}
+
 export type CloserOption = { id: string; name: string | null; role: string };
 
 /** Liste des closers (pour l'assignation). */
