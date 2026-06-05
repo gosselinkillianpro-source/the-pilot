@@ -13,8 +13,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 const SOURCE_TABS: { value: QueueSource; label: string }[] = [
-  { value: 'all', label: 'Tous' },
   { value: 'breach', label: 'BREACH (mes pubs)' },
+  { value: 'all', label: 'Tous' },
   { value: 'other', label: 'Hors BREACH' },
 ];
 
@@ -24,6 +24,18 @@ const NEW_LEADS_ALERT = 60;
 
 function nb(n: number): string {
   return n.toLocaleString('fr-FR');
+}
+
+/** Date + heure précises (ex. « 4 juin 2026 à 14:32 »). */
+function fmtDateTime(d: Date | null): string {
+  if (!d) return '';
+  return new Date(d).toLocaleString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function tempClass(t: QueueRow['scored']['temperature']): string {
@@ -44,8 +56,10 @@ export default async function CallQueuePage({
   searchParams: Promise<{ source?: string }>;
 }) {
   const sp = await searchParams;
+  // Par défaut on affiche les leads BREACH (les pubs de Killian) : c'est le périmètre
+  // de travail prioritaire. Les onglets permettent de basculer sur Tous / Hors BREACH.
   const source: QueueSource =
-    sp.source === 'breach' ? 'breach' : sp.source === 'other' ? 'other' : 'all';
+    sp.source === 'all' ? 'all' : sp.source === 'other' ? 'other' : 'breach';
 
   const [queue, user] = await Promise.all([
     getCallQueue({ excludeWon: true, source }),
@@ -78,7 +92,7 @@ export default async function CallQueuePage({
           return (
             <Link
               key={t.value}
-              href={t.value === 'all' ? '/closing/queue' : `/closing/queue?source=${t.value}`}
+              href={t.value === 'breach' ? '/closing/queue' : `/closing/queue?source=${t.value}`}
               className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
             >
               {t.value === 'breach' ? <Target size={13} /> : null}
@@ -278,6 +292,21 @@ function QueueRowItem({
             <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
           ) : null}
         </div>
+        {row.sahCreatedAt ? (
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--text-4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Date et heure d'inscription (Seven At Home)"
+          >
+            <Clock size={11} />
+            Inscrit le {fmtDateTime(row.sahCreatedAt)}
+          </span>
+        ) : null}
       </div>
 
       {/* Facteurs (transparence) */}

@@ -12,6 +12,8 @@ export type QueueRow = {
   email: string;
   phone: string | null;
   city: string | null;
+  /** Date de création du compte côté SAH (= date d'inscription). */
+  sahCreatedAt: Date | null;
   registrationComplete: boolean;
   onboardingComplete: boolean;
   assignedCloserId: string | null;
@@ -171,6 +173,7 @@ export async function getCallQueue(opts?: {
       email: r.email,
       phone: r.phone,
       city: r.address_city,
+      sahCreatedAt: r.sah_created_at ? new Date(r.sah_created_at) : null,
       registrationComplete: r.registration_complete,
       onboardingComplete: r.onboarding_complete,
       assignedCloserId: r.assigned_closer_id,

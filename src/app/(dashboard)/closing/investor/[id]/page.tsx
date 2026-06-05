@@ -385,29 +385,7 @@ export default async function InvestorPage({ params }: Props) {
             </div>
           </Card>
 
-          {/* Identité */}
-          <Card title="Identité">
-            <Row label="Civilité" value={civ || '—'} />
-            <Row label="Date de naissance" value={fmtBirthdate(investor.dateOfBirth)} />
-            <Row label="Nationalité" value={investor.nationality ?? '—'} />
-          </Card>
-
-          {/* Coordonnées */}
-          <Card title="Coordonnées">
-            <Row label="Email" value={investor.email} />
-            <Row label="Téléphone" value={investor.phone ?? '—'} />
-            <Row label="Adresse" value={fullAddress(investor)} />
-            <Row label="Résidence fiscale" value={investor.taxResidencyCountry ?? '—'} />
-          </Card>
-
-          {/* Apporteur d'affaires */}
-          <Card title="Apporteur">
-            <Row label="Code bonus" value={investor.bonusCode ?? '—'} />
-            <Row label="CGP" value={investor.cgpName ?? '—'} />
-            <Row label="Réseau CGP" value={investor.cgpNetwork ?? '—'} />
-          </Card>
-
-          {/* Lemonway / Onboarding */}
+          {/* Lemonway / Onboarding — remonté en haut (info clé pour le closer) */}
           <Card title="Lemonway / Onboarding">
             <Row
               label="Profil complété"
@@ -441,10 +419,32 @@ export default async function InvestorPage({ params }: Props) {
             </p>
           </Card>
 
-          {/* Dates */}
+          {/* Dates — remonté en haut (savoir quand le compte a été créé) */}
           <Card title="Dates (SAH)">
             <Row label="Créé le" value={fmtDateTime(investor.sahCreatedAt)} />
             <Row label="Modifié le" value={fmtDateTime(investor.sahUpdatedAt)} />
+          </Card>
+
+          {/* Identité */}
+          <Card title="Identité">
+            <Row label="Civilité" value={civ || '—'} />
+            <Row label="Date de naissance" value={fmtBirthdate(investor.dateOfBirth)} />
+            <Row label="Nationalité" value={investor.nationality ?? '—'} />
+          </Card>
+
+          {/* Coordonnées */}
+          <Card title="Coordonnées">
+            <Row label="Email" value={investor.email} />
+            <Row label="Téléphone" value={investor.phone ?? '—'} />
+            <Row label="Adresse" value={fullAddress(investor)} />
+            <Row label="Résidence fiscale" value={investor.taxResidencyCountry ?? '—'} />
+          </Card>
+
+          {/* Apporteur d'affaires */}
+          <Card title="Apporteur">
+            <Row label="Code bonus" value={investor.bonusCode ?? '—'} />
+            <Row label="CGP" value={investor.cgpName ?? '—'} />
+            <Row label="Réseau CGP" value={investor.cgpNetwork ?? '—'} />
           </Card>
         </aside>
       </div>
