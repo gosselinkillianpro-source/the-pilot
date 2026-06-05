@@ -25,6 +25,31 @@ import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investo
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investors } from '@/lib/db/schema';
 
+/**
+ * Propriété « collante » : dès qu'un closer traite une personne (appel, action planifiée),
+ * elle lui est assignée — UNIQUEMENT si elle n'a pas déjà un closer. On ne vole jamais le
+ * lead d'un autre closer ; un admin peut réassigner via assignCloserAction.
+ * Renvoie true si l'assignation a bien eu lieu maintenant (utile pour l'annulation).
+ */
+async function assignOwnershipIfFree(investorId: string, closerId: string): Promise<boolean> {
+  const res = await db
+    .update(investors)
+    .set({ assignedCloserId: closerId })
+    .where(and(eq(investors.id, investorId), isNull(investors.assignedCloserId)))
+    .returning({ id: investors.id });
+  return res.length > 0;
+}
+
+/** Lit l'étape pipeline courante (mémorisée au moment de l'appel pour mesurer la progression). */
+async function getCurrentStage(investorId: string): Promise<string | null> {
+  const r = await db
+    .select({ stage: investors.pipelineStage })
+    .from(investors)
+    .where(eq(investors.id, investorId))
+    .limit(1);
+  return r[0]?.stage ?? null;
+}
+
 export type DraftProposalResult =
   | {
       ok: true;
@@ -177,13 +202,16 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
 
   try {
     await ensureUserRecord(user);
-    // 1. L'appel lui-même (alimente timeline + attribution)
+    const stageAtCall = await getCurrentStage(parsed.investorId);
+    // 1. L'appel lui-même (alimente timeline + attribution). On mémorise l'étape pipeline
+    //    au moment de l'appel pour mesurer plus tard une progression attribuée à cet appel.
     await db.insert(interactions).values({
       investorId: parsed.investorId,
       type: 'call_outbound',
       outcome: parsed.outcome,
       note: parsed.note ?? null,
       userId: user.id,
+      metadata: { stageAtCall },
     });
 
     // 2. Rappel programmé (optionnel)
@@ -210,6 +238,9 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
       })
       .where(eq(investors.id, parsed.investorId));
 
+    // 4. Propriété collante : ce closer devient le correspondant attitré (si lead libre).
+    await assignOwnershipIfFree(parsed.investorId, user.id);
+
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -227,6 +258,7 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
     revalidatePath(`/closing/investor/${parsed.investorId}`);
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
@@ -468,11 +500,16 @@ export async function releaseLeadAction(input: { investorId: string }): Promise<
   }
 }
 
+export type MarkCalledResult =
+  | { ok: true; interactionId: string; assignedNow: boolean }
+  | { ok: false; message: string };
+
 /**
- * Action rapide « Appelé » depuis la file : enregistre un appel (sans détail) et
- * libère le verrou. La personne sort alors de la file d'appels (appelée récemment).
+ * Action rapide « Appelé » depuis la file : enregistre un appel (sans résultat encore)
+ * et libère le verrou. La personne sort de la file et atterrit dans « Suivi », où l'on
+ * qualifiera le résultat plus tard. Renvoie l'id de l'appel (pour pouvoir annuler).
  */
-export async function markCalledAction(input: { investorId: string }): Promise<CallActionResult> {
+export async function markCalledAction(input: { investorId: string }): Promise<MarkCalledResult> {
   let parsed: { investorId: string };
   try {
     parsed = claimSchema.parse(input);
@@ -487,12 +524,19 @@ export async function markCalledAction(input: { investorId: string }): Promise<C
   }
   try {
     await ensureUserRecord(user);
-    await db.insert(interactions).values({
-      investorId: parsed.investorId,
-      type: 'call_outbound',
-      note: 'Appelé (depuis la file)',
-      userId: user.id,
-    });
+    const stageAtCall = await getCurrentStage(parsed.investorId);
+    const inserted = await db
+      .insert(interactions)
+      .values({
+        investorId: parsed.investorId,
+        type: 'call_outbound',
+        note: 'Appelé (depuis la file)',
+        userId: user.id,
+        metadata: { quick: true, stageAtCall },
+      })
+      .returning({ id: interactions.id });
+    // Propriété collante : ce closer devient le correspondant attitré (si lead libre).
+    const assignedNow = await assignOwnershipIfFree(parsed.investorId, user.id);
     await db
       .update(investors)
       .set({ claimedById: null, claimedAt: null })
@@ -508,6 +552,157 @@ export async function markCalledAction(input: { investorId: string }): Promise<C
     });
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
+    return { ok: true, interactionId: inserted[0]?.id ?? '', assignedNow };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+const undoCallSchema = z.object({
+  interactionId: z.string().uuid(),
+  unassign: z.boolean().optional(),
+});
+
+/**
+ * Annule un appel « Appelé » fraîchement enregistré (bouton Annuler du toast) :
+ * supprime l'interaction et, si on venait de l'assigner, retire l'assignation.
+ * La personne réapparaît alors dans la file d'appels.
+ */
+export async function undoCallAction(input: {
+  interactionId: string;
+  unassign?: boolean;
+}): Promise<CallActionResult> {
+  let parsed: z.infer<typeof undoCallSchema>;
+  try {
+    parsed = undoCallSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    const rows = await db
+      .select({ investorId: interactions.investorId })
+      .from(interactions)
+      .where(and(eq(interactions.id, parsed.interactionId), eq(interactions.userId, user.id)))
+      .limit(1);
+    const investorId = rows[0]?.investorId;
+    if (!investorId) return { ok: false, message: 'Appel introuvable (déjà annulé ?).' };
+    await db.delete(interactions).where(eq(interactions.id, parsed.interactionId));
+    if (parsed.unassign) {
+      await db
+        .update(investors)
+        .set({ assignedCloserId: null })
+        .where(and(eq(investors.id, investorId), eq(investors.assignedCloserId, user.id)));
+    }
+    revalidatePath('/closing/queue');
+    revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
+    revalidatePath(`/closing/investor/${investorId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+const qualifyCallSchema = z.object({
+  callId: z.string().uuid(),
+  outcome: z.enum(['reached', 'no_answer', 'voicemail', 'wrong_number']),
+  note: z.string().trim().max(4000).optional(),
+  nextStage: z.enum(PIPELINE_STAGES).optional(),
+  callbackAt: z.string().datetime({ offset: true }).optional(),
+});
+
+/**
+ * Qualifie un appel déjà passé (depuis la page Suivi) : renseigne le résultat + notes,
+ * fait avancer l'étape (option) et programme un rappel (option). La personne quitte
+ * alors la liste « à qualifier ».
+ */
+export async function qualifyCallAction(input: {
+  callId: string;
+  outcome: 'reached' | 'no_answer' | 'voicemail' | 'wrong_number';
+  note?: string;
+  nextStage?: string;
+  callbackAt?: string;
+}): Promise<CallActionResult> {
+  let parsed: z.infer<typeof qualifyCallSchema>;
+  try {
+    parsed = qualifyCallSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await ensureUserRecord(user);
+    const rows = await db
+      .select({ investorId: interactions.investorId, note: interactions.note })
+      .from(interactions)
+      .where(eq(interactions.id, parsed.callId))
+      .limit(1);
+    const investorId = rows[0]?.investorId;
+    if (!investorId) return { ok: false, message: 'Appel introuvable.' };
+
+    // On remplace la note repère « Appelé (depuis la file) » par la vraie note,
+    // sinon on complète la note existante.
+    const placeholder = 'Appelé (depuis la file)';
+    const existing = rows[0]?.note?.trim() ?? '';
+    const addition = parsed.note?.trim() ?? '';
+    let finalNote: string | null;
+    if (!existing || existing === placeholder) finalNote = addition || null;
+    else if (addition) finalNote = `${existing} — ${addition}`;
+    else finalNote = existing;
+
+    await db
+      .update(interactions)
+      .set({ outcome: parsed.outcome, note: finalNote })
+      .where(eq(interactions.id, parsed.callId));
+
+    if (parsed.callbackAt) {
+      await db.insert(closerTasks).values({
+        investorId,
+        closerId: user.id,
+        type: 'callback',
+        dueAt: new Date(parsed.callbackAt),
+        note: parsed.note ?? null,
+        createdBy: user.id,
+      });
+    }
+    if (parsed.nextStage) {
+      await db
+        .update(investors)
+        .set({ pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() })
+        .where(eq(investors.id, investorId));
+    }
+    await assignOwnershipIfFree(investorId, user.id);
+
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.call_qualified',
+      resourceType: 'investor',
+      resourceId: investorId,
+      metadata: {
+        outcome: parsed.outcome,
+        nextStage: parsed.nextStage ?? null,
+        callbackAt: parsed.callbackAt ?? null,
+      },
+    });
+
+    revalidatePath('/closing/suivi');
+    revalidatePath('/closing/today');
+    revalidatePath('/closing/queue');
+    revalidatePath(`/closing/investor/${investorId}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -538,6 +733,34 @@ export async function completeTaskAction(input: { taskId: string }): Promise<Cal
       .set({ status: 'done', completedAt: new Date() })
       .where(eq(closerTasks.id, parsed.taskId));
     revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+/** Annule la complétion d'une tâche (bouton Annuler du toast) → repasse « en attente ». */
+export async function reopenTaskAction(input: { taskId: string }): Promise<CallActionResult> {
+  let parsed: { taskId: string };
+  try {
+    parsed = completeTaskSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await db
+      .update(closerTasks)
+      .set({ status: 'pending', completedAt: null })
+      .where(eq(closerTasks.id, parsed.taskId));
+    revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };

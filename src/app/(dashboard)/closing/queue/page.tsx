@@ -288,6 +288,25 @@ function QueueRowItem({
               tu travailles dessus
             </span>
           ) : null}
+          {row.assignedCloserId ? (
+            row.assignedCloserId === myId ? (
+              <span
+                className="badge badge-brand"
+                style={{ fontSize: 10 }}
+                title="C'est ton lead attitré : tu en es le correspondant"
+              >
+                ★ ton lead
+              </span>
+            ) : (
+              <span
+                className="badge badge-neutral"
+                style={{ fontSize: 10 }}
+                title="Suivi par un closer attitré"
+              >
+                suivi&nbsp;: {row.assignedCloserName ?? 'un closer'}
+              </span>
+            )
+          ) : null}
           {row.city ? (
             <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
           ) : null}
@@ -342,7 +361,7 @@ function QueueRowItem({
                 <Phone size={13} />
               </a>
             ) : null}
-            <MarkCalledButton investorId={row.id} />
+            <MarkCalledButton investorId={row.id} name={row.fullName ?? row.email} />
           </>
         )}
       </div>

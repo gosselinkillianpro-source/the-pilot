@@ -25,6 +25,8 @@ export type QueueRow = {
   /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
   claimedById: string | null;
   claimerName: string | null;
+  /** Closer attitré (propriété collante) : son correspondant permanent. */
+  assignedCloserName: string | null;
   scored: ScoredInvestor;
 };
 
@@ -48,6 +50,7 @@ type RawRow = {
   claimed_by_id: string | null;
   claimed_at: string | Date | null;
   claimer_name: string | null;
+  assigned_closer_name: string | null;
 };
 
 /** Un code bonus "BREACH" (SEVEN-BREACH, BREACH-VIP…) = lead venant des pubs de Killian. */
@@ -112,6 +115,7 @@ export async function getCallQueue(opts?: {
       i.claimed_by_id::text as claimed_by_id,
       i.claimed_at,
       cu.full_name as claimer_name,
+      au.full_name as assigned_closer_name,
       coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total_invested,
       count(s.id) filter (where s.status <> 'cancelled') as active_subscriptions,
       count(distinct s.project_id) filter (
@@ -131,13 +135,14 @@ export async function getCallQueue(opts?: {
     left join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
     left join users cu on cu.id = i.claimed_by_id
+    left join users au on au.id = i.assigned_closer_id
     where i.deleted_at is null
     ${closerFilter}
     ${oneFilter}
     ${stageFilter}
     ${sourceFilter}
     ${recentCallFilter}
-    group by i.id, cu.full_name
+    group by i.id, cu.full_name, au.full_name
   `);
 
   const rows = result as unknown as RawRow[];
@@ -183,6 +188,7 @@ export async function getCallQueue(opts?: {
       isBreach: isBreachCode(r.bonus_code),
       claimedById: claimActive ? r.claimed_by_id : null,
       claimerName: claimActive ? r.claimer_name : null,
+      assignedCloserName: r.assigned_closer_name,
       scored,
     };
   });
