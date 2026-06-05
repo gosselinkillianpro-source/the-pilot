@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInvestorScored } from '@/lib/db/queries/call-queue';
 import {
+  getCallImpact,
   getClosers,
   getInvestorOpenTasks,
   getInvestorTimeline,
@@ -47,6 +48,17 @@ const ACTION_LABEL: Record<string, string> = {
   email: 'Email',
   message: 'Message',
   todo: 'Tâche',
+};
+
+const STAGE_LABEL: Record<string, string> = {
+  new: 'Nouveau',
+  contacted: 'Contacté',
+  meeting_booked: 'RDV pris',
+  meeting_done: 'RDV fait',
+  proposal_sent: 'Proposition',
+  closed_won: 'Gagné',
+  closed_lost: 'Perdu',
+  dormant: 'En sommeil',
 };
 
 function tempClass(t: string): string {
@@ -126,12 +138,13 @@ export default async function InvestorPage({ params }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const [subs, scored, timeline, closers, openTasks] = await Promise.all([
+  const [subs, scored, timeline, closers, openTasks, callImpact] = await Promise.all([
     getInvestorSubscriptions(investor.id),
     getInvestorScored(investor.id),
     getInvestorTimeline(investor.id),
     getClosers(),
     getInvestorOpenTasks(investor.id),
+    getCallImpact(investor.id),
   ]);
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
@@ -240,6 +253,51 @@ export default async function InvestorPage({ params }: Props) {
                     Appeler
                   </a>
                 ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Impact du dernier appel : l'appel a-t-il servi ? (rentabilité) */}
+          {callImpact && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div className="view-card-title">Impact du dernier appel</div>
+                {callImpact.outcome ? (
+                  <span className="badge badge-neutral">
+                    {OUTCOME_LABEL[callImpact.outcome] ?? callImpact.outcome}
+                  </span>
+                ) : (
+                  <span className="badge badge-warning">à qualifier</span>
+                )}
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+              >
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                  Appelé le {fmtDateTime(callImpact.lastCallAt)}
+                </div>
+                {callImpact.investedAfterAmount > 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+                    ✅ A investi {fmtMoney(callImpact.investedAfterAmount)} dans les 30 jours
+                    suivant l'appel
+                    {callImpact.investedAfterCount > 1
+                      ? ` (${callImpact.investedAfterCount} souscriptions)`
+                      : ''}{' '}
+                    — appel rentable.
+                  </div>
+                ) : callImpact.stageProgressed ? (
+                  <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+                    ✅ A progressé après l'appel :{' '}
+                    {STAGE_LABEL[callImpact.stageAtCall ?? ''] ?? callImpact.stageAtCall} →{' '}
+                    {STAGE_LABEL[callImpact.currentStage] ?? callImpact.currentStage} — appel utile.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+                    Pas encore d'effet mesurable depuis l'appel (statut inchangé, pas
+                    d'investissement).
+                  </div>
+                )}
               </div>
             </div>
           )}

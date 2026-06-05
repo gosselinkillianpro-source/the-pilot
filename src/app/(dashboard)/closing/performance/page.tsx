@@ -17,6 +17,8 @@ export default async function ClosingPerformancePage({
   const period = resolvePeriod(await searchParams);
   const report = await getCloserPerformance(period);
   const attributedAmount = report.totalAmount - report.unattributed.amount;
+  const callsCount = report.deltas.calls.current;
+  const eurosPerCall = callsCount > 0 ? attributedAmount / callsCount : 0;
 
   return (
     <>
@@ -44,6 +46,7 @@ export default async function ClosingPerformancePage({
         />
         <Kpi label="Souscriptions (période)" value={String(report.totalSubs)} />
         <Kpi label="Collecte attribuée aux appels" value={money(attributedAmount)} />
+        <Kpi label="€ par appel (attribué)" value={money(eurosPerCall)} />
       </div>
 
       <div className="view-card">

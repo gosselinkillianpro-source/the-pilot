@@ -114,6 +114,104 @@ export async function getInvestorOpenTasks(investorId: string): Promise<Investor
   return rows.map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now }));
 }
 
+/** Rang « avancement » dans le tunnel (pour détecter une progression après un appel). */
+const STAGE_RANK: Record<string, number> = {
+  new: 0,
+  contacted: 1,
+  meeting_booked: 2,
+  meeting_done: 3,
+  proposal_sent: 4,
+  closed_won: 5,
+  closed_lost: -1,
+  dormant: -1,
+};
+
+export type CallImpact = {
+  lastCallAt: Date;
+  outcome: string | null;
+  stageAtCall: string | null;
+  currentStage: string;
+  stageProgressed: boolean;
+  investedAfterCount: number;
+  investedAfterAmount: number;
+};
+
+/**
+ * « L'appel a-t-il servi ? » pour une personne : on regarde, après son dernier appel,
+ * s'il y a eu une progression d'étape ou un investissement (dans les 30 jours).
+ * C'est la mesure de rentabilité d'un appel, côté fiche.
+ */
+export async function getCallImpact(investorId: string): Promise<CallImpact | null> {
+  if (!UUID_RE.test(investorId)) return null;
+
+  const calls = await db
+    .select({
+      at: interactions.createdAt,
+      outcome: interactions.outcome,
+      metadata: interactions.metadata,
+    })
+    .from(interactions)
+    .where(
+      and(
+        eq(interactions.investorId, investorId),
+        inArray(interactions.type, ['call_outbound', 'call_inbound']),
+      ),
+    )
+    .orderBy(desc(interactions.createdAt))
+    .limit(1);
+  const last = calls[0];
+  if (!last) return null;
+  const lastCallAt = new Date(last.at);
+  const meta = (last.metadata ?? {}) as { stageAtCall?: string | null };
+  const stageAtCall = meta.stageAtCall ?? null;
+
+  const inv = await db
+    .select({
+      stage: investors.pipelineStage,
+      stageUpdatedAt: investors.pipelineStageUpdatedAt,
+    })
+    .from(investors)
+    .where(eq(investors.id, investorId))
+    .limit(1);
+  const currentStage = inv[0]?.stage ?? 'new';
+  const stageUpdatedAt = inv[0]?.stageUpdatedAt ?? null;
+
+  const rankNow = STAGE_RANK[currentStage] ?? 0;
+  const rankAtCall = stageAtCall ? (STAGE_RANK[stageAtCall] ?? 0) : 0;
+  const stageProgressed =
+    stageAtCall != null &&
+    rankNow > rankAtCall &&
+    rankNow >= 1 &&
+    stageUpdatedAt != null &&
+    new Date(stageUpdatedAt).getTime() >= lastCallAt.getTime();
+
+  const windowEnd = new Date(lastCallAt.getTime() + 30 * 86_400_000);
+  const subAgg = await db
+    .select({
+      n: count(),
+      amount: sql<string>`coalesce(sum(${subscriptions.amount}), 0)`,
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.investorId, investorId),
+        sql`${subscriptions.status} <> 'cancelled'`,
+        gte(subscriptions.signedAt, lastCallAt),
+        lte(subscriptions.signedAt, windowEnd),
+      ),
+    );
+
+  return {
+    lastCallAt,
+    outcome: last.outcome,
+    stageAtCall,
+    currentStage,
+    stageProgressed,
+    investedAfterCount: Number(subAgg[0]?.n) || 0,
+    investedAfterAmount: Number(subAgg[0]?.amount) || 0,
+  };
+}
+
 export type BoardCard = {
   id: string;
   fullName: string | null;
