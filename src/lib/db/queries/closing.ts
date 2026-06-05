@@ -86,6 +86,34 @@ export async function getDueTasks(opts?: { closerId?: string }): Promise<CloserT
   return rows.map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now.getTime() }));
 }
 
+export type InvestorOpenTask = {
+  id: string;
+  type: string;
+  dueAt: Date;
+  note: string | null;
+  closerName: string | null;
+  overdue: boolean;
+};
+
+/** Actions/rappels en attente d'un investisseur (carte « Actions à venir » sur la fiche). */
+export async function getInvestorOpenTasks(investorId: string): Promise<InvestorOpenTask[]> {
+  if (!UUID_RE.test(investorId)) return [];
+  const now = Date.now();
+  const rows = await db
+    .select({
+      id: closerTasks.id,
+      type: closerTasks.type,
+      dueAt: closerTasks.dueAt,
+      note: closerTasks.note,
+      closerName: users.fullName,
+    })
+    .from(closerTasks)
+    .leftJoin(users, eq(closerTasks.closerId, users.id))
+    .where(and(eq(closerTasks.investorId, investorId), eq(closerTasks.status, 'pending')))
+    .orderBy(closerTasks.dueAt);
+  return rows.map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now }));
+}
+
 export type BoardCard = {
   id: string;
   fullName: string | null;

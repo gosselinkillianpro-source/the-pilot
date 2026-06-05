@@ -1,14 +1,20 @@
-import { ArrowLeft, Phone } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInvestorScored } from '@/lib/db/queries/call-queue';
-import { getClosers, getInvestorTimeline, type TimelineItem } from '@/lib/db/queries/closing';
+import {
+  getClosers,
+  getInvestorOpenTasks,
+  getInvestorTimeline,
+  type TimelineItem,
+} from '@/lib/db/queries/closing';
 import {
   getInvestorById,
   getInvestorSubscriptions,
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
 import { getInvestorStage } from '@/lib/investor-stage';
+import { ActionRowButtons, PlanActionPanel } from './actions-panel';
 import { AssignCloser } from './assign-closer';
 import { CallBriefPanel } from './call-brief-panel';
 import { CallLogPanel } from './call-log-panel';
@@ -34,6 +40,13 @@ const OUTCOME_LABEL: Record<string, string> = {
   voicemail: 'Répondeur',
   wrong_number: 'Mauvais numéro',
   callback_scheduled: 'Rappel programmé',
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  callback: 'Rappel',
+  email: 'Email',
+  message: 'Message',
+  todo: 'Tâche',
 };
 
 function tempClass(t: string): string {
@@ -113,11 +126,12 @@ export default async function InvestorPage({ params }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const [subs, scored, timeline, closers] = await Promise.all([
+  const [subs, scored, timeline, closers, openTasks] = await Promise.all([
     getInvestorSubscriptions(investor.id),
     getInvestorScored(investor.id),
     getInvestorTimeline(investor.id),
     getClosers(),
+    getInvestorOpenTasks(investor.id),
   ]);
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
@@ -235,6 +249,63 @@ export default async function InvestorPage({ params }: Props) {
 
           {/* Enregistrer un appel */}
           <CallLogPanel investorId={investor.id} />
+
+          {/* Actions planifiées (rappel / email / message / tâche) */}
+          <div className="view-card">
+            <div className="view-card-header">
+              <div
+                className="view-card-title"
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <CalendarPlus size={15} />
+                Actions planifiées
+              </div>
+              <span className="badge badge-neutral">{openTasks.length}</span>
+            </div>
+            <div
+              className="view-card-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+            >
+              <PlanActionPanel investorId={investor.id} />
+              {openTasks.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {openTasks.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '10px 0',
+                        borderTop: '1px solid var(--border)',
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <span
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                        >
+                          <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                            {ACTION_LABEL[t.type] ?? t.type}
+                          </span>
+                          <span style={{ color: t.overdue ? 'var(--danger)' : 'var(--text-2)' }}>
+                            {t.overdue ? '⏰ ' : ''}
+                            {fmtDateTime(t.dueAt)}
+                          </span>
+                        </span>
+                        {t.note ? (
+                          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                            {t.note}
+                          </div>
+                        ) : null}
+                      </div>
+                      <ActionRowButtons taskId={t.id} label={ACTION_LABEL[t.type] ?? undefined} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
           <InvestorEmailPanel
             investorId={investor.id}

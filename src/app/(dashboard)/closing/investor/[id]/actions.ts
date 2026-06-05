@@ -766,3 +766,104 @@ export async function reopenTaskAction(input: { taskId: string }): Promise<CallA
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
   }
 }
+
+/* ============================================================
+   Planifier une action (rappel / email / message / tâche)
+   ============================================================ */
+
+const planActionSchema = z.object({
+  investorId: z.string().uuid(),
+  type: z.enum(['callback', 'email', 'message', 'todo']),
+  dueAt: z.string().datetime({ offset: true }),
+  note: z.string().trim().max(2000).optional(),
+});
+
+export type PlanActionResult = { ok: true; taskId: string } | { ok: false; message: string };
+
+/**
+ * Planifie une action sur une personne (rappel, email, message, tâche) avec note + date/heure.
+ * Crée une tâche (closer_tasks) qui apparaît sur la fiche, dans « Aujourd'hui » et « Suivi ».
+ */
+export async function planActionAction(input: {
+  investorId: string;
+  type: 'callback' | 'email' | 'message' | 'todo';
+  dueAt: string;
+  note?: string;
+}): Promise<PlanActionResult> {
+  let parsed: z.infer<typeof planActionSchema>;
+  try {
+    parsed = planActionSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides (date/heure manquante ?).' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await ensureUserRecord(user);
+    const inserted = await db
+      .insert(closerTasks)
+      .values({
+        investorId: parsed.investorId,
+        closerId: user.id,
+        type: parsed.type,
+        dueAt: new Date(parsed.dueAt),
+        note: parsed.note ?? null,
+        createdBy: user.id,
+      })
+      .returning({ id: closerTasks.id });
+    // Propriété collante : planifier une action sur une personne libre la rattache au closer.
+    await assignOwnershipIfFree(parsed.investorId, user.id);
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.action_planned',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { type: parsed.type, dueAt: parsed.dueAt },
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
+    return { ok: true, taskId: inserted[0]?.id ?? '' };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
+
+/** Supprime (annule) une action planifiée. Réversible via reopenTaskAction (bouton Annuler). */
+export async function cancelTaskAction(input: { taskId: string }): Promise<CallActionResult> {
+  let parsed: { taskId: string };
+  try {
+    parsed = completeTaskSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    const rows = await db
+      .select({ investorId: closerTasks.investorId })
+      .from(closerTasks)
+      .where(eq(closerTasks.id, parsed.taskId))
+      .limit(1);
+    await db
+      .update(closerTasks)
+      .set({ status: 'cancelled' })
+      .where(eq(closerTasks.id, parsed.taskId));
+    if (rows[0]?.investorId) revalidatePath(`/closing/investor/${rows[0].investorId}`);
+    revalidatePath('/closing/today');
+    revalidatePath('/closing/suivi');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}
