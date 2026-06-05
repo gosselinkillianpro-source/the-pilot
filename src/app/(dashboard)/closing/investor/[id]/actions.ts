@@ -867,3 +867,50 @@ export async function cancelTaskAction(input: { taskId: string }): Promise<CallA
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
   }
 }
+
+/* ============================================================
+   Notes libres par personne (persistées sur la fiche)
+   ============================================================ */
+
+const saveNoteSchema = z.object({
+  investorId: z.string().uuid(),
+  note: z.string().max(8000),
+});
+
+/** Enregistre la note libre d'un investisseur (bloc-notes persistant de la fiche). */
+export async function saveInternalNoteAction(input: {
+  investorId: string;
+  note: string;
+}): Promise<CallActionResult> {
+  let parsed: z.infer<typeof saveNoteSchema>;
+  try {
+    parsed = saveNoteSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    const trimmed = parsed.note.trim();
+    await db
+      .update(investors)
+      .set({ internalNote: trimmed || null })
+      .where(eq(investors.id, parsed.investorId));
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.note_saved',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
+  }
+}

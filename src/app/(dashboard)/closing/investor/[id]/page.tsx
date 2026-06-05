@@ -20,6 +20,7 @@ import { AssignCloser } from './assign-closer';
 import { CallBriefPanel } from './call-brief-panel';
 import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel } from './investor-email-panel';
+import { InvestorNotes } from './investor-notes';
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -502,6 +503,9 @@ export default async function InvestorPage({ params }: Props) {
         </div>
 
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Notes libres (persistées) — en haut, accès immédiat */}
+          <InvestorNotes investorId={investor.id} initialNote={investor.internalNote ?? ''} />
+
           {/* Suivi closing : assignation */}
           <Card title="Suivi closing">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
