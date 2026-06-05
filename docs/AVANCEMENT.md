@@ -2,7 +2,20 @@
 
 > Journal de bord pour reprendre le dev d'une session à l'autre.
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
-> Dernière mise à jour : 2026-06-02 (EN LIGNE sur Render + intégration SAH live + données réelles).
+> Dernière mise à jour : 2026-06-05 (refonte UX du module closing — branche `feat/closing-ameliorations`).
+
+> ## 🟢 CLOSING — refonte UX + suivi / attribution / sauvegarde (2026-06-05)
+> Sur la branche `feat/closing-ameliorations` (pas encore mergée sur `main`). 11 améliorations :
+> - **File d'appels** : par défaut sur **BREACH** ; **date + heure précises** d'inscription affichées ; badge **closer attitré** (« ★ ton lead » / « suivi : X »).
+> - **Fiche investisseur** : **Lemonway/Onboarding + Dates remontés en haut** ; **bloc Notes persistant** (`investors.internal_note`, sauvegarde au blur + bouton) ; carte **Actions planifiées** (rappel/email/message/tâche + date/heure → `closer_tasks`, type déjà textuel donc pas de migration) ; **Impact du dernier appel** (progression d'étape ou investissement ≤30j = appel utile/rentable) ; Email IA & Brief d'appel **sauvegardés** par profil (états en cours/prêt/erreur, Régénérer remplace, Supprimer efface).
+> - **Nouvelle page `/closing/suivi`** (onglet **Suivi**) : « à qualifier » (dernier appel sans résultat), « rappels & actions à venir », KPIs (appelés 7j, à qualifier, rappels, convertis 30j). Le bouton **« Appelé »** y envoie la personne (qualification du résultat plus tard) + confirmation **Annuler** 6 s.
+> - **Assignation collante** (`assignOwnershipIfFree`) : le 1er closer qui traite une personne (appel / Appelé / action planifiée) en devient le correspondant attitré **si le lead est libre** ; l'admin garde la main (`assignCloserAction`).
+> - **Attribution / rentabilité** : étape pipeline mémorisée au moment de l'appel (`interactions.metadata.stageAtCall`) ; page **Performance** enrichie d'un **« € par appel (attribué) »**. (le moteur d'attribution appel→€ existait déjà)
+> - **Tunnel** : `/closing/board` (onglet renommé **Tunnel**) = vue **lecture seule** des étapes (barres + taux de passage), remplace le Kanban à cartes. Composant `StageMover` supprimé (mort).
+> - **Socle UI — notifications maison** (`src/components/shared/toast.tsx`, monté dans `(dashboard)/layout.tsx`) : toast en bas d'écran (barre de décompte ~6 s + bouton **Annuler**/undo), **loader d'activité** en bas à droite (« … en cours »). Utilisé partout (Appelé, Fait, qualifier, planifier, notes, je prends, assignation, génération IA, envoi). **Aucune dépendance ajoutée.**
+> - **Génération IA en fond** : `generateProposalAssetAction` / `generateCallScriptAssetAction` persistent en base (`investor_assets`, statut `generating`→`ready`/`error`) ; le travail se termine côté serveur **même si on quitte la page**.
+> - **⚠️ MIGRATION À APPLIQUER** : `drizzle/migrations/0008_zippy_post.sql` crée la table **`investor_assets`** + RLS (admin / executive lecture / closer-ses-leads, ajoutées à `drizzle/policies.sql`). Lancer **`pnpm db:migrate`** puis **`node scripts/apply-rls.mjs`**. Tant que non appliquée : la sauvegarde des mails/scripts ne marche pas (tout le reste fonctionne).
+> - Vérifs : `typecheck` ✅, `build` ✅, `test:run` ✅ (11/11). `lint` : seules erreurs restantes = `scripts/*.mjs` pré-existants (hors app), code `src/` propre.
 
 > ## 🟢 ÉTAT AU 2026-06-02 — en ligne + vraies données SAH
 > - **Hébergé sur Render** (région Frankfurt EU). Dépôt GitHub privé `gosselinkillianpro-source/the-pilot`, push `main` → autodeploy. Config : `render.yaml`, guide : `docs/DEPLOIEMENT-RENDER.md`. Build pnpm : voir `pnpm-workspace.yaml` (`allowBuilds: true` — sinon ERR_PNPM_IGNORED_BUILDS).
