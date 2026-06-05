@@ -223,7 +223,8 @@ export default async function ProjectDetailPage({ params }: Props) {
                 value={project.durationMonths ? `${project.durationMonths} mois` : '—'}
               />
               <Row label="Ouverture" value={fmtDate(project.openedAt)} />
-              <Row label="Échéance prévue" value={fmtDate(project.expectedCompletionAt)} />
+              <Row label="Clôture collecte" value={fmtDate(project.expectedCompletionAt)} />
+              <Row label="Remboursement (réel SAH)" value={fmtDate(project.repaymentDate)} />
               <Row label="Souscriptions" value={String(project.subs)} />
             </div>
           </div>

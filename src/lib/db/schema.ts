@@ -237,6 +237,9 @@ export const projects = pgTable('projects', {
   durationMonths: integer('duration_months'),
   openedAt: timestamp('opened_at', { withTimezone: true }),
   expectedCompletionAt: timestamp('expected_completion_at', { withTimezone: true }),
+  // Date réelle de remboursement (dernière échéance SAH : lending_terms/royalties_terms).
+  // Signal d'échéance pour les relances avant remboursement (re-mobilisation des fonds).
+  repaymentDate: timestamp('repayment_date', { withTimezone: true }),
   locationCity: text('location_city'),
   locationRegion: text('location_region'),
   projectType: projectTypeEnum('project_type'),

@@ -76,6 +76,7 @@ export type ProjectDetail = ProjectListItem & {
   descriptionShort: string | null;
   descriptionLong: string | null;
   createdAt: Date | null;
+  repaymentDate: Date | null;
 };
 
 export async function getProjectDetail(id: string): Promise<ProjectDetail | null> {
@@ -103,6 +104,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       descriptionShort: projects.descriptionShort,
       descriptionLong: projects.descriptionLong,
       createdAt: projects.createdAt,
+      repaymentDate: projects.repaymentDate,
     })
     .from(projects)
     .where(eq(projects.id, id))
@@ -116,6 +118,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
     descriptionShort: m?.descriptionShort ?? null,
     descriptionLong: m?.descriptionLong ?? null,
     createdAt: m?.createdAt ?? null,
+    repaymentDate: m?.repaymentDate ?? null,
   };
 }
 

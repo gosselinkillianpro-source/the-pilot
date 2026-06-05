@@ -51,15 +51,26 @@ type SahProject = {
   closing_date: Date | null;
   city: string | null;
   short_description: string | null;
+  repayment_date: Date | null;
 };
 
 async function syncProjects(): Promise<number> {
   const sahDb = getSahClient();
+  // repayment_date = DERNIÈRE échéance réelle calculée par SAH (lending_terms +
+  // royalties_terms). C'est la vraie date de remboursement du capital, qui démarre
+  // au financement effectif du projet (pas à l'ouverture). Sert aux relances avant échéance.
   const rows = await sahDb<SahProject[]>`
-    select id::text, name, status, maximum_targeted_amount,
-           estimated_annual_profitability::text, investment_duration,
-           collect_starts_at, closing_date, city, short_description
-    from projects
+    select p.id::text, p.name, p.status, p.maximum_targeted_amount,
+           p.estimated_annual_profitability::text, p.investment_duration,
+           p.collect_starts_at, p.closing_date, p.city, p.short_description,
+           (
+             select max(due_on) from (
+               select due_on from lending_terms where project_id = p.id
+               union all
+               select due_on from royalties_terms where project_id = p.id
+             ) t
+           )::timestamptz as repayment_date
+    from projects p
   `;
   if (rows.length === 0) return 0;
 
@@ -72,6 +83,7 @@ async function syncProjects(): Promise<number> {
     durationMonths: parseDurationMonths(p.investment_duration),
     openedAt: p.collect_starts_at ?? null,
     expectedCompletionAt: p.closing_date ?? null,
+    repaymentDate: p.repayment_date ?? null,
     locationCity: p.city ?? null,
     descriptionShort: p.short_description ?? null,
     updatedAt: new Date(),
@@ -90,6 +102,7 @@ async function syncProjects(): Promise<number> {
         durationMonths: sql`excluded.duration_months`,
         openedAt: sql`excluded.opened_at`,
         expectedCompletionAt: sql`excluded.expected_completion_at`,
+        repaymentDate: sql`excluded.repayment_date`,
         locationCity: sql`excluded.location_city`,
         descriptionShort: sql`excluded.description_short`,
         updatedAt: sql`excluded.updated_at`,

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "repayment_date" timestamp with time zone;

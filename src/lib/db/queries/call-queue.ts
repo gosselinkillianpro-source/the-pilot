@@ -118,10 +118,9 @@ export async function getCallQueue(opts?: {
       min(
         case
           when s.status <> 'cancelled'
-            and s.signed_at is not null
-            and p.duration_months is not null
-            and (s.signed_at + make_interval(months => p.duration_months)) > now()
-          then (s.signed_at + make_interval(months => p.duration_months))
+            and p.repayment_date is not null
+            and p.repayment_date > now()
+          then p.repayment_date
         end
       ) as nearest_repayment
     from investors i
