@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Bell,
   Building2,
@@ -20,6 +21,7 @@ import { ToastProvider } from '@/components/shared/toast';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { isAuthDisabled } from '@/lib/auth/dev-bypass';
+import { touchLastSeen } from '@/lib/db/queries/users';
 
 function deriveDisplay(email: string): { name: string; initials: string } {
   const local = email.split('@')[0] ?? 'utilisateur';
@@ -31,6 +33,7 @@ function deriveDisplay(email: string): { name: string; initials: string } {
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const user = await getAuthenticatedUser();
+  await touchLastSeen(user.id); // « vu à l'instant » (présence du menu Équipe) — throttlé + best-effort
   const { name, initials } = deriveDisplay(user.email);
   return (
     <ToastProvider>
@@ -63,6 +66,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               <Users />
               Closing
             </SidebarLink>
+            {user.role === 'admin' && (
+              <SidebarLink href="/equipe">
+                <Activity />
+                Équipe
+              </SidebarLink>
+            )}
             <SidebarLink href="/projects">
               <Building2 />
               Projets

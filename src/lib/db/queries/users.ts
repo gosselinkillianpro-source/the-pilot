@@ -1,5 +1,5 @@
 import 'server-only';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
@@ -32,4 +32,25 @@ export async function ensureUserRecord(u: AuthenticatedUser): Promise<void> {
       target: users.id,
       set: { email: sql`excluded.email`, role: sql`excluded.role` },
     });
+}
+
+/**
+ * « Vu à l'instant » : met à jour users.last_seen_at, au plus une fois par ~45 s
+ * (la condition de date évite d'écrire à chaque navigation). Base de l'indicateur
+ * « en ligne » du menu Équipe. Sans effet si la ligne n'existe pas encore.
+ */
+export async function touchLastSeen(userId: string): Promise<void> {
+  try {
+    await db
+      .update(users)
+      .set({ lastSeenAt: new Date() })
+      .where(
+        and(
+          eq(users.id, userId),
+          sql`(${users.lastSeenAt} is null or ${users.lastSeenAt} < now() - interval '45 seconds')`,
+        ),
+      );
+  } catch {
+    // Présence = best-effort : ne JAMAIS bloquer le rendu d'une page si cet update échoue.
+  }
 }
