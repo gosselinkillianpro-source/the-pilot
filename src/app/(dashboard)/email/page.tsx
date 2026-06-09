@@ -153,6 +153,7 @@ export default async function EmailPage() {
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr 90px 90px 90px 80px',
@@ -175,6 +176,7 @@ export default async function EmailPage() {
           {campaigns.map((c, idx) => (
             <div
               key={c.id}
+              className="r-stack"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 90px 90px 90px 80px',

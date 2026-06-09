@@ -125,6 +125,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           </div>
           <div className="view-card-body" style={{ padding: 0 }}>
             <div
+              className="r-stack r-head"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1.8fr 1fr 0.8fr 0.8fr',
@@ -150,6 +151,7 @@ export default async function ProjectDetailPage({ params }: Props) {
               investors.map((inv, idx) => (
                 <div
                   key={`${inv.investorId}-${inv.signedAt ? new Date(inv.signedAt).getTime() : 'x'}-${inv.amount}`}
+                  className="r-stack"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1.8fr 1fr 0.8fr 0.8fr',

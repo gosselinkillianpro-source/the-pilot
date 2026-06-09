@@ -52,6 +52,7 @@ export default async function TodayPage() {
             tasks.map((t, idx) => (
               <div
                 key={t.id}
+                className="r-stack"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1.4fr 1.4fr 150px',

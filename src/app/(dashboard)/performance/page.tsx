@@ -82,6 +82,7 @@ export default async function PerformancePage({
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '1.4fr 0.8fr 1.1fr 1.1fr',
@@ -192,6 +193,7 @@ function RoiRow({
 }) {
   return (
     <div
+      className="r-stack"
       style={{
         display: 'grid',
         gridTemplateColumns: '1.4fr 0.8fr 1.1fr 1.1fr',
@@ -239,6 +241,7 @@ function SourceRow({
 }) {
   return (
     <div
+      className="r-stack"
       style={{
         display: 'grid',
         gridTemplateColumns: '1.4fr 1fr 1fr 1fr',

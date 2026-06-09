@@ -106,6 +106,7 @@ export default async function ContactsPage({
         <div className="view-card">
           <div className="view-card-body" style={{ padding: 0 }}>
             <div
+              className="r-stack r-head"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1.6fr 1.2fr 1fr 90px',
@@ -133,6 +134,7 @@ export default async function ContactsPage({
               contacts.map((c, idx) => (
                 <div
                   key={c.id}
+                  className="r-stack"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1.6fr 1.2fr 1fr 90px',

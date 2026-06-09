@@ -284,6 +284,7 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
   return (
     <>
       <div
+        className="r-stack r-head"
         style={{
           display: 'grid',
           gridTemplateColumns: cols,
@@ -307,6 +308,7 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
         return (
           <div
             key={rowKey}
+            className="r-stack"
             style={{
               display: 'grid',
               gridTemplateColumns: cols,

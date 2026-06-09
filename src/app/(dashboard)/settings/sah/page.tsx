@@ -295,6 +295,7 @@ export default async function SahExplorerPage() {
                   dont le nombre de profils colle à la cible.
                 </p>
                 <div
+                  className="r-stack r-head"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 90px 110px 110px',
@@ -316,6 +317,7 @@ export default async function SahExplorerPage() {
                   return (
                     <div
                       key={c.column}
+                      className="r-stack"
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 90px 110px 110px',
@@ -353,6 +355,7 @@ export default async function SahExplorerPage() {
                   <strong>{profilDiag.targets.personsComplete}</strong>.
                 </p>
                 <div
+                  className="r-stack r-head"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 90px 110px 120px',
@@ -374,6 +377,7 @@ export default async function SahExplorerPage() {
                   return (
                     <div
                       key={s.value}
+                      className="r-stack"
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 90px 110px 120px',
@@ -424,6 +428,7 @@ export default async function SahExplorerPage() {
                 {cols.map((c) => (
                   <div
                     key={c.column}
+                    className="r-stack"
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '1fr 180px 70px',

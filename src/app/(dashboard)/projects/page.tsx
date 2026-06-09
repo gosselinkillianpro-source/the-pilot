@@ -40,6 +40,7 @@ export default async function ProjectsPage() {
       <div className="view-card">
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '2fr 1fr 1.6fr 0.8fr 0.8fr',
@@ -79,6 +80,7 @@ function Row({ p, last }: { p: ProjectListItem; last: boolean }) {
   return (
     <Link
       href={`/projects/${p.id}`}
+      className="r-stack"
       style={{
         display: 'grid',
         gridTemplateColumns: '2fr 1fr 1.6fr 0.8fr 0.8fr',

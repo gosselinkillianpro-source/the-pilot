@@ -83,6 +83,7 @@ export default async function PipelinePage({
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '1.4fr 1.4fr 1fr 200px',
@@ -111,6 +112,7 @@ export default async function PipelinePage({
               <Link
                 key={inv.id}
                 href={`/closing/investor/${inv.id}`}
+                className="r-stack"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1.4fr 1.4fr 1fr 200px',

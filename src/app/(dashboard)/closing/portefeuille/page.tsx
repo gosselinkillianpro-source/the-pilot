@@ -152,6 +152,7 @@ function gridCols(showCloser: boolean): string {
 function HeaderRow({ showCloser }: { showCloser: boolean }) {
   return (
     <div
+      className="r-stack r-head"
       style={{
         display: 'grid',
         gridTemplateColumns: gridCols(showCloser),
@@ -195,6 +196,7 @@ function Row({
 
   return (
     <div
+      className="r-stack"
       style={{
         display: 'grid',
         gridTemplateColumns: gridCols(showCloser),

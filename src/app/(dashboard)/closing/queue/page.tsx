@@ -230,6 +230,7 @@ function QueueRowItem({
 
   return (
     <div
+      className="r-stack"
       style={{
         display: 'grid',
         gridTemplateColumns: '30px 1.3fr 1.4fr 56px 210px',

@@ -496,6 +496,7 @@ export default async function InvestorPage({ params }: Props) {
                     return (
                       <div
                         key={s.id}
+                        className="r-stack"
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '1.6fr 1fr 0.8fr 110px',

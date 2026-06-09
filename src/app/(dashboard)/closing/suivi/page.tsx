@@ -167,6 +167,7 @@ export default async function SuiviPage() {
               return (
                 <div
                   key={t.taskId}
+                  className="r-stack"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '1.4fr 1.4fr 150px',

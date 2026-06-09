@@ -110,6 +110,7 @@ export default function ActionsRoiPage() {
         <div className="view-card-body" style={{ padding: 0 }}>
           {/* En-tête colonnes */}
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '1.4fr 0.8fr 0.8fr 1fr 1.2fr 0.9fr',
@@ -138,6 +139,7 @@ export default function ActionsRoiPage() {
             return (
               <div
                 key={a.kind}
+                className="r-stack"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1.4fr 0.8fr 0.8fr 1fr 1.2fr 0.9fr',

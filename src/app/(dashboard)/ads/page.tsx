@@ -102,6 +102,7 @@ export default function AdsPage() {
           {CAMPAIGNS.map((c, idx) => (
             <div
               key={c.id}
+              className="r-stack"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '80px 1fr auto auto auto auto',

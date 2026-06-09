@@ -55,6 +55,7 @@ export default async function ClosingPerformancePage({
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.8fr 1fr 1.2fr',
@@ -82,6 +83,7 @@ export default async function ClosingPerformancePage({
             report.closers.map((c, idx) => (
               <div
                 key={c.closerId}
+                className="r-stack"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.8fr 1fr 1.2fr',

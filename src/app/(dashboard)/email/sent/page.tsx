@@ -89,6 +89,7 @@ export default async function SentEmailsPage() {
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
           <div
+            className="r-stack r-head"
             style={{
               display: 'grid',
               gridTemplateColumns: '110px 1fr 1.4fr 90px',
@@ -118,6 +119,7 @@ export default async function SentEmailsPage() {
               return (
                 <div
                   key={m.id}
+                  className="r-stack"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '110px 1fr 1.4fr 90px',
