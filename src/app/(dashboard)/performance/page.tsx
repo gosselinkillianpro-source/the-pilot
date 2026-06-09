@@ -106,6 +106,24 @@ export default async function PerformancePage({
             amount={money(attributedToCalls)}
             per={money(perCall)}
           />
+          {callsCount < 20 && (
+            <div
+              style={{
+                margin: '10px 20px',
+                padding: '8px 10px',
+                borderRadius: 8,
+                fontSize: 12,
+                color: 'var(--warning)',
+                background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--warning) 24%, transparent)',
+              }}
+            >
+              ⚠️ Échantillon faible ({nb(callsCount)} appel{callsCount > 1 ? 's' : ''} sur la
+              période) : ce ROI n'est pas encore représentatif. Il se fiabilise à mesure que les
+              closers enregistrent leurs appels (l'attribution ne compte que les appels passés dans
+              l'outil, suivis d'une souscription sous 30 jours).
+            </div>
+          )}
           <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-4)' }}>
             L'attribution Email (ouvertures / clics) s'activera dès que le webhook Brevo enverra les
             événements — la ligne Email se remplira alors automatiquement.
