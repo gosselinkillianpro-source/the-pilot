@@ -1,6 +1,14 @@
 'use client';
 
-import { BarChart3, CalendarClock, Layers, ListChecks, PhoneOutgoing, Users } from 'lucide-react';
+import {
+  BarChart3,
+  Briefcase,
+  CalendarClock,
+  Layers,
+  ListChecks,
+  PhoneOutgoing,
+  Users,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -9,6 +17,7 @@ const TABS: { href: string; label: string; icon: ReactNode }[] = [
   { href: '/closing/queue', label: "File d'appels", icon: <ListChecks size={15} /> },
   { href: '/closing/today', label: "Aujourd'hui", icon: <CalendarClock size={15} /> },
   { href: '/closing/suivi', label: 'Suivi', icon: <PhoneOutgoing size={15} /> },
+  { href: '/closing/portefeuille', label: 'Portefeuille', icon: <Briefcase size={15} /> },
   { href: '/closing/board', label: 'Tunnel', icon: <Layers size={15} /> },
   { href: '/closing/pipeline', label: 'Investisseurs', icon: <Users size={15} /> },
   { href: '/closing/performance', label: 'Performance', icon: <BarChart3 size={15} /> },
