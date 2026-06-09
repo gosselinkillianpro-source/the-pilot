@@ -1,22 +1,9 @@
-import {
-  Activity,
-  BarChart3,
-  Bell,
-  Building2,
-  ChevronDown,
-  LayoutGrid,
-  Mail,
-  Search,
-  Share2,
-  Sparkles,
-  Target,
-  TrendingUp,
-  Users,
-} from 'lucide-react';
+import { Bell, ChevronDown, Search } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { SidebarLink } from '@/components/shared/sidebar-nav';
+import { MobileNav } from '@/components/shared/mobile-nav';
+import { NavContent } from '@/components/shared/nav-content';
 import { ToastProvider } from '@/components/shared/toast';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -56,55 +43,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <kbd>⌘K</kbd>
           </div>
 
-          <div className="view-sidebar-section">
-            <div className="view-sidebar-section-title">Workspace</div>
-            <SidebarLink href="/dashboard" exact>
-              <LayoutGrid />
-              Vue d'ensemble
-            </SidebarLink>
-            <SidebarLink href="/closing">
-              <Users />
-              Closing
-            </SidebarLink>
-            {user.role === 'admin' && (
-              <SidebarLink href="/equipe">
-                <Activity />
-                Équipe
-              </SidebarLink>
-            )}
-            <SidebarLink href="/projects">
-              <Building2 />
-              Projets
-            </SidebarLink>
-            <SidebarLink href="/breach" style={{ color: 'var(--ai)' }}>
-              <Target />
-              BREACH
-            </SidebarLink>
-            <SidebarLink href="/email">
-              <Mail />
-              Email
-            </SidebarLink>
-            <SidebarLink href="/social">
-              <Share2 />
-              Social
-            </SidebarLink>
-            <SidebarLink href="/ads">
-              <TrendingUp />
-              Ads
-            </SidebarLink>
-            <SidebarLink href="/performance">
-              <BarChart3 />
-              Performance
-            </SidebarLink>
-          </div>
-
-          <div className="view-sidebar-section">
-            <div className="view-sidebar-section-title">IA</div>
-            <SidebarLink href="/brain" style={{ color: 'var(--ai)' }}>
-              <Sparkles />
-              Pilot Brain
-            </SidebarLink>
-          </div>
+          <NavContent role={user.role} />
 
           <UserMenu name={name} role={user.role} initials={initials} />
         </aside>
@@ -127,6 +66,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
           )}
           <div className="view-topbar">
+            <MobileNav role={user.role} name={name} initials={initials} />
             <div className="view-topbar-breadcrumb">
               <span className="crumb">Workspace</span>
               <ChevronDown size={12} style={{ transform: 'rotate(-90deg)' }} />

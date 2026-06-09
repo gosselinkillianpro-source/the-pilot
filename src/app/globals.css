@@ -1437,3 +1437,180 @@
   }
 }
 
+/* ============================================================
+   RESPONSIVE V2 — directive PROMPT_RESPONSIVE_THE_PILOT
+   Mobile-first renforcé : anti-débordement, svh, safe-areas, burger,
+   tableaux empilés, perf (verre/animations dégradés), mouvement réduit.
+   Section APPENDUE volontairement : ses règles l'emportent sur le responsive V1.
+   ============================================================ */
+
+/* §2 — Garde-fous globaux : rien ne dépasse en largeur */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+img,
+video,
+iframe,
+svg,
+canvas,
+audio,
+embed,
+object {
+  max-width: 100%;
+}
+body {
+  overflow-wrap: break-word;
+}
+
+/* §3 — Hauteur viewport moderne (le fallback 100vh est défini plus haut) */
+.app-shell {
+  min-height: 100svh;
+}
+
+/* §6 — échelle typo fluide (titres) */
+:root {
+  --step-2: clamp(1.44rem, 1.25rem + 0.96vw, 2rem);
+  --step-3: clamp(1.73rem, 1.43rem + 1.5vw, 2.6rem);
+}
+
+/* §11 — Safe areas (encoche / barre home iOS) sur le contenu */
+.app-main {
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+
+/* §8bis-B — scroll horizontal MAÎTRISÉ pour les tableaux à comparer */
+.table-scroll > * {
+  min-width: max-content;
+}
+
+/* Burger : masqué sur desktop, visible sous 64rem (la nav passe en drawer) */
+.burger-btn {
+  display: none;
+}
+@media (max-width: 63.99rem) {
+  .view-sidebar {
+    display: none !important;
+  }
+  .burger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--glass-bg-strong);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+}
+
+/* Drawer de navigation mobile */
+.mobile-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  height: 100lvh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.mobile-drawer-overlay[data-open='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mobile-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(85vw, 20rem);
+  height: 100svh;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 14px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+.mobile-drawer[data-open='true'] {
+  transform: translateX(0);
+}
+.mobile-drawer .view-sidebar-link {
+  min-height: 44px;
+}
+body.drawer-open {
+  overflow: hidden;
+}
+
+/* §8bis — Empilement des lignes "tableau" denses sous tablette.
+   .r-stack force l'empilement vertical même si la ligne porte un display:grid INLINE
+   (le !important d'une feuille de style l'emporte sur un style inline non-important).
+   .r-head = ligne d'en-tête de colonnes, masquée une fois empilé. */
+@media (max-width: 47.99rem) {
+  :root {
+    --glass-blur: blur(12px) saturate(140%);
+    --glass-blur-soft: blur(10px) saturate(130%);
+    --glass-blur-deep: blur(16px) saturate(150%);
+  }
+
+  body {
+    font-size: 1rem;
+  } /* corps ≥16px sur mobile (lisibilité, anti-zoom) */
+  .page-title {
+    font-size: var(--step-2);
+  }
+
+  .r-stack {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    grid-template-columns: none !important;
+  }
+  .r-stack > * {
+    text-align: left !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    justify-content: flex-start !important;
+  }
+  .r-head {
+    display: none !important;
+  }
+
+  /* Effets coûteux allégés sur petit écran (§10) */
+  .horizon-blob {
+    animation: none !important;
+  }
+}
+
+/* §12 — Mouvement réduit : on coupe les animations décoratives */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .horizon-sun,
+  .horizon-blob {
+    animation: none !important;
+  }
+}
+
