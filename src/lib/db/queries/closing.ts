@@ -475,6 +475,8 @@ export type BreachStats = {
   // Référence pour comparer : hors BREACH
   otherTotal: number;
   otherOnboarded: number;
+  otherInvestors: number;
+  otherInvested: number;
   otherAvgTicketPerInvestor: number;
 };
 
@@ -701,6 +703,8 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
     period: periodBlock,
     otherTotal: Number(o.total),
     otherOnboarded: Number(o.onboarded),
+    otherInvestors,
+    otherInvested,
     otherAvgTicketPerInvestor: otherInvestors > 0 ? Math.round(otherInvested / otherInvestors) : 0,
   };
 }
