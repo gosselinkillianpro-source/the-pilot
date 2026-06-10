@@ -1,7 +1,14 @@
-import { Calendar, Image as ImageIcon, Lightbulb, Radar, Share2 } from 'lucide-react';
+import { Calendar, Image as ImageIcon, Lightbulb, Radar, Share2, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
 const MODULES = [
+  {
+    href: '/social/generateur',
+    icon: Sparkles,
+    title: 'Générateur de posts',
+    desc: 'Brain Réseaux : contenu conforme + slides HTML premium (gabarits L1–L7) prêtes pour Figma.',
+    live: true,
+  },
   {
     href: '/social/ideas',
     icon: Lightbulb,
