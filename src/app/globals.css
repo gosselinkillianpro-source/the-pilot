@@ -1458,7 +1458,17 @@ body.drawer-open {
 @media (max-width: 900px) {
   /* --- Coque : une seule colonne, scroll de page (pas de scroll interne) --- */
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* CAUSE RACINE du débordement : sans min-width:0, une colonne flex/grid refuse de
+     se réduire sous la largeur de son contenu (ex. la barre d'onglets large) → elle
+     gonfle toute la colonne au-delà de l'écran. On force la réduction en cascade. */
+  .app-shell,
+  .app-shell > *,
+  .app-main,
+  .app-main > *,
+  .app-main > * > * {
+    min-width: 0;
   }
   .app-main {
     padding: 16px 14px;
