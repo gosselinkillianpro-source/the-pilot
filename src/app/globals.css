@@ -1294,100 +1294,8 @@
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 860px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-  .app-main {
-    padding: 14px;
-    gap: 16px;
-    overflow-y: visible;
-  }
-  .split-2col {
-    grid-template-columns: 1fr;
-  }
-
-  /* Barre latérale → barre de navigation horizontale collante en haut */
-  .view-sidebar {
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 8px 10px;
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .view-sidebar::-webkit-scrollbar {
-    display: none;
-  }
-  .view-sidebar-brand {
-    flex-shrink: 0;
-    margin-right: 2px;
-  }
-  .view-sidebar > .view-topbar-search {
-    display: none;
-  }
-  .view-sidebar-section {
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-  }
-  .view-sidebar-section-title {
-    display: none;
-  }
-  .view-sidebar-link {
-    white-space: nowrap;
-    flex-shrink: 0;
-    padding: 9px 12px;
-    min-height: 42px;
-  }
-  .view-sidebar-link.active::before {
-    display: none;
-  }
-  .view-sidebar-link-badge {
-    display: none;
-  }
-  .view-sidebar-user {
-    margin-top: 0;
-    flex-shrink: 0;
-  }
-  .view-sidebar-user-info {
-    display: none;
-  }
-
-  /* Topbar allégée (recherche/fil d'Ariane non essentiels sur mobile) */
-  .view-topbar {
-    padding: 8px 14px;
-  }
-  .view-topbar-breadcrumb {
-    display: none;
-  }
-  .view-topbar .view-topbar-search {
-    display: none;
-  }
-
-  /* Titres + champs : éviter le zoom auto iOS (police < 16px) */
-  .page-title {
-    font-size: 1.2rem;
-  }
-  .input,
-  select.input,
-  textarea.input {
-    font-size: 16px;
-  }
-
-  /* Cibles tactiles : boutons d'action confortables */
-  .btn-sm {
-    min-height: 38px;
-  }
-}
+/* (Ancien bloc responset V1 « sidebar horizontale » retiré — remplacé par le système
+   mobile vertical unique plus bas : @media (max-width: 900px).) */
 
 /* Deux cartes côte à côte → empilées sur mobile */
 .grid-2 {
@@ -1490,27 +1398,9 @@ body {
   min-width: max-content;
 }
 
-/* Burger : masqué sur desktop, visible sous 64rem (la nav passe en drawer) */
+/* Burger : masqué sur desktop ; affiché par le bloc mobile unique plus bas. */
 .burger-btn {
   display: none;
-}
-@media (max-width: 63.99rem) {
-  .view-sidebar {
-    display: none !important;
-  }
-  .burger-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--glass-bg-strong);
-    color: var(--text-2);
-    cursor: pointer;
-  }
 }
 
 /* Drawer de navigation mobile */
@@ -1561,38 +1451,130 @@ body.drawer-open {
    .r-stack force l'empilement vertical même si la ligne porte un display:grid INLINE
    (le !important d'une feuille de style l'emporte sur un style inline non-important).
    .r-head = ligne d'en-tête de colonnes, masquée une fois empilé. */
-@media (max-width: 47.99rem) {
-  :root {
-    --glass-blur: blur(12px) saturate(140%);
-    --glass-blur-soft: blur(10px) saturate(130%);
-    --glass-blur-deep: blur(16px) saturate(150%);
+/* ============================================================
+   SYSTÈME MOBILE UNIQUE — vertical, simple, rien ne déborde (≤ 900px)
+   Un seul bloc fait foi pour le mobile. Principe : TOUT en une colonne.
+   ============================================================ */
+@media (max-width: 900px) {
+  /* --- Coque : une seule colonne, scroll de page (pas de scroll interne) --- */
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .app-main {
+    padding: 16px 14px;
+    gap: 14px;
+    overflow-y: visible;
   }
 
-  body {
-    font-size: 1rem;
-  } /* corps ≥16px sur mobile (lisibilité, anti-zoom) */
-  .page-title {
-    font-size: var(--step-2);
+  /* --- Nav : barre latérale masquée → burger + drawer VERTICAL --- */
+  .view-sidebar {
+    display: none !important;
+  }
+  .burger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--glass-bg-strong);
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .mobile-drawer .view-sidebar-section {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .mobile-drawer .view-sidebar-section-title {
+    display: block;
+  }
+  .mobile-drawer .view-sidebar-link {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 44px;
   }
 
-  .r-stack {
+  /* Topbar allégée (fil d'Ariane + recherche non essentiels sur mobile) */
+  .view-topbar {
+    padding: 8px 12px;
+  }
+  .view-topbar-breadcrumb {
+    display: none;
+  }
+  .view-topbar .view-topbar-search {
+    display: none;
+  }
+
+  /* --- TOUT passe en une seule colonne (verticalité) --- */
+  .kpi-grid,
+  .split-2col,
+  .grid-2,
+  .cards-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Toute grille inline (lignes de tableaux, cartes…) → empilée verticalement.
+     On matche le NOM de propriété `grid-template-columns` (présent que le style
+     inline ait un espace après ":" ou non) → robuste SSR + CSSOM. */
+  .app-main [style*="grid-template-columns"] {
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 6px !important;
-    grid-template-columns: none !important;
+    gap: 8px !important;
   }
-  .r-stack > * {
-    text-align: left !important;
+  .app-main [style*="grid-template-columns"] > * {
     min-width: 0 !important;
+    text-align: left !important;
     white-space: normal !important;
-    justify-content: flex-start !important;
   }
   .r-head {
     display: none !important;
   }
 
-  /* Effets coûteux allégés sur petit écran (§10) */
+  /* Lignes flex horizontales (titre + bouton, badges) → autorisées à passer à la ligne */
+  .app-main [style*="justify-content"] {
+    flex-wrap: wrap;
+  }
+
+  /* --- Cartes : marges + on clippe tout débordement interne (zéro scroll horizontal) --- */
+  .view-card {
+    overflow: hidden;
+  }
+  .view-card-body {
+    padding: 14px !important;
+  }
+
+  /* --- Textes réduits : rien ne dépasse, gros chiffres sur UNE ligne --- */
+  body {
+    font-size: 15px;
+  }
+  .page-title {
+    font-size: 1.35rem !important;
+  }
+  .kpi-hero-value {
+    font-size: clamp(1.3rem, 6.5vw, 1.7rem) !important;
+    white-space: nowrap;
+  }
+  .input,
+  select.input,
+  textarea.input {
+    font-size: 16px;
+  } /* anti-zoom iOS */
+  .btn-sm {
+    min-height: 40px;
+  }
+
+  /* --- Perf : effets coûteux allégés (§10) --- */
+  :root {
+    --glass-blur: blur(12px) saturate(140%);
+    --glass-blur-soft: blur(10px) saturate(130%);
+    --glass-blur-deep: blur(16px) saturate(150%);
+  }
   .horizon-blob {
     animation: none !important;
   }
