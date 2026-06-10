@@ -1,28 +1,136 @@
 import { AlertTriangle, CheckCircle2, PlugZap } from 'lucide-react';
-import { getAdsOverview } from '@/lib/ads/overview';
+import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
+import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
+import { resolveAdsPeriod } from '@/lib/ads/period';
 import { getAuthenticatedUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-function money(n: number): string {
-  return `${Math.round(n).toLocaleString('fr-FR')} €`;
+function eur(n: number | null, decimals = 0): string {
+  if (n === null) return '—';
+  return `${n.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} €`;
 }
-function nb(n: number): string {
+function int(n: number): string {
   return Math.round(n).toLocaleString('fr-FR');
 }
+function pct(n: number): string {
+  return `${n.toFixed(2)} %`;
+}
 
-export default async function AdsPage() {
+function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div
+      style={{
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '12px 14px',
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--text-3)',
+          textTransform: 'uppercase',
+          letterSpacing: 0.3,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color: 'var(--text-1)',
+          fontFamily: 'var(--font-mono)',
+          marginTop: 2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </div>
+      {hint ? (
+        <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 2 }}>{hint}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function CampaignCard({ c }: { c: AdCampaign }) {
+  const d = derive(rawOf(c));
+  return (
+    <div className="view-card">
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="badge badge-neutral">{c.platform}</span>
+          <span
+            style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)', minWidth: 0, flex: 1 }}
+          >
+            {c.name}
+          </span>
+          <span
+            className={`badge ${c.status === 'active' ? 'badge-success badge-dot' : 'badge-neutral'}`}
+          >
+            {c.status === 'active' ? 'Active' : 'Pause'}
+          </span>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+            gap: 8,
+          }}
+        >
+          <StatTile label="Dépense" value={eur(c.spend)} />
+          <StatTile label="Impressions" value={int(c.impressions)} />
+          {c.reach !== null ? <StatTile label="Portée" value={int(c.reach)} /> : null}
+          <StatTile label="Clics" value={int(c.clicks)} />
+          <StatTile label="CTR" value={pct(d.ctr)} />
+          <StatTile label="CPC" value={eur(d.cpc, 2)} />
+          <StatTile label="CPM" value={eur(d.cpm, 2)} />
+          <StatTile label="Résultats" value={int(c.results)} />
+          <StatTile label="Coût / résultat" value={eur(d.cpa, 2)} />
+          {d.frequency !== null ? (
+            <StatTile label="Fréquence" value={d.frequency.toFixed(2)} />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default async function AdsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+}) {
   await getAuthenticatedUser();
-  const overview = await getAdsOverview();
-  const { totals, platforms, campaigns } = overview;
+  const sp = await searchParams;
+  const period = resolveAdsPeriod(sp);
+  const overview = await getAdsOverview(period);
+  const { totals, platforms, campaigns, byPlatform } = overview;
 
   return (
     <>
-      <div>
-        <h1 className="page-title">Ads Control</h1>
-        <div className="page-desc">
-          Vue consolidée Meta + Google Ads (lecture seule). Données réelles du mois en cours.
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 className="page-title">Ads Control</h1>
+          <div className="page-desc">
+            Vue consolidée Meta + Google Ads (lecture seule) · période : {period.label}
+          </div>
         </div>
+        <AdsPeriodFilter />
       </div>
 
       {/* État des connexions */}
@@ -87,95 +195,90 @@ export default async function AdsPage() {
         </div>
       )}
 
-      {/* KPIs réels */}
+      {/* KPIs globaux */}
       <div
         className="kpi-grid"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          gap: 10,
+        }}
       >
-        <div className="kpi-hero">
-          <div className="kpi-hero-label">Dépense (mois)</div>
-          <div className="kpi-hero-value">{money(totals.spend)}</div>
-          <div className="kpi-hero-trend">
-            <span>Meta + Google</span>
-          </div>
-        </div>
-        <div className="kpi-hero">
-          <div className="kpi-hero-label">CPA blended</div>
-          <div className="kpi-hero-value">
-            {totals.cpaBlended === null ? '—' : money(totals.cpaBlended)}
-          </div>
-          <div className="kpi-hero-trend">
-            <span>{nb(totals.results)} résultat(s)</span>
-          </div>
-        </div>
-        <div className="kpi-hero">
-          <div className="kpi-hero-label">Clics</div>
-          <div className="kpi-hero-value">{nb(totals.clicks)}</div>
-          <div className="kpi-hero-trend">
-            <span>{nb(totals.impressions)} impressions</span>
-          </div>
-        </div>
-        <div className="kpi-hero">
-          <div className="kpi-hero-label">Campagnes actives</div>
-          <div className="kpi-hero-value">{totals.activeCount}</div>
-          <div className="kpi-hero-trend">
-            <span>sur {campaigns.length} au total</span>
-          </div>
-        </div>
+        <StatTile label="Dépense" value={eur(totals.spend)} hint="Meta + Google" />
+        <StatTile label="Impressions" value={int(totals.impressions)} />
+        {totals.hasReach ? (
+          <StatTile label="Portée" value={int(totals.reach)} hint="cumul (approx.)" />
+        ) : null}
+        <StatTile label="Clics" value={int(totals.clicks)} />
+        <StatTile label="CTR" value={pct(totals.ctr)} />
+        <StatTile label="CPC" value={eur(totals.cpc, 2)} hint="coût / clic" />
+        <StatTile label="CPM" value={eur(totals.cpm, 2)} hint="/ 1000 impr." />
+        <StatTile label="Résultats" value={int(totals.results)} hint="conversions / leads" />
+        <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
+        <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
 
-      {/* Campagnes */}
-      <div className="view-card">
-        <div className="view-card-header">
-          <div className="view-card-title">Campagnes</div>
-        </div>
-        <div className="view-card-body" style={{ padding: 0 }}>
-          {campaigns.length === 0 ? (
-            <div style={{ padding: '20px', fontSize: 13, color: 'var(--text-3)' }}>
-              Aucune campagne à afficher pour le mois en cours.
-            </div>
-          ) : (
-            campaigns.map((c, idx) => (
+      {/* Répartition par plateforme */}
+      {byPlatform.length > 1 && (
+        <div className="view-card">
+          <div className="view-card-header">
+            <div className="view-card-title">Répartition par plateforme</div>
+          </div>
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+          >
+            {byPlatform.map((b) => (
               <div
-                key={`${c.platform}-${c.id}`}
-                className="r-stack"
+                key={b.platform}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '80px 1fr auto auto auto auto',
+                  gridTemplateColumns: '90px repeat(4, 1fr)',
+                  gap: 12,
                   alignItems: 'center',
-                  gap: 16,
-                  padding: '14px 20px',
-                  borderBottom: idx < campaigns.length - 1 ? '1px solid var(--border)' : 'none',
                 }}
               >
-                <span className="badge badge-neutral">{c.platform}</span>
-                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-1)', minWidth: 0 }}>
-                  {c.name}
+                <span className="badge badge-neutral">{b.platform}</span>
+                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Dépense</span>
+                  <br />
+                  {eur(b.raw.spend)}
                 </div>
-                <div
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-2)' }}
-                >
-                  {money(c.spend)}
+                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Clics</span>
+                  <br />
+                  {int(b.raw.clicks)}
                 </div>
-                <div
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-2)' }}
-                >
-                  CPA {c.cpa === null ? '—' : money(c.cpa)}
+                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Résultats</span>
+                  <br />
+                  {int(b.raw.results)}
                 </div>
-                <div
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-3)' }}
-                >
-                  CTR {c.ctr.toFixed(1)}%
+                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Coût / résultat</span>
+                  <br />
+                  {eur(b.derived.cpa, 2)}
                 </div>
-                <span
-                  className={`badge ${c.status === 'active' ? 'badge-success badge-dot' : 'badge-neutral'}`}
-                >
-                  {c.status === 'active' ? 'Active' : 'Pause'}
-                </span>
               </div>
-            ))
-          )}
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* Campagnes détaillées */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
+          Campagnes ({campaigns.length})
+        </div>
+        {campaigns.length === 0 ? (
+          <div className="view-card">
+            <div className="view-card-body" style={{ fontSize: 13, color: 'var(--text-3)' }}>
+              Aucune campagne à afficher pour cette période.
+            </div>
+          </div>
+        ) : (
+          campaigns.map((c) => <CampaignCard key={`${c.platform}-${c.id}`} c={c} />)
+        )}
       </div>
     </>
   );

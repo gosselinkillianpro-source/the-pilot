@@ -1,4 +1,5 @@
 import 'server-only';
+import { type AdsPeriod, googleDateClause } from '@/lib/ads/period';
 
 /**
  * Client Google Ads API (v17, REST) — LECTURE SEULE des campagnes pub SAH.
@@ -40,10 +41,9 @@ export type GoogleAdsCampaign = {
   status: 'active' | 'paused';
   spend: number; // euros
   impressions: number;
+  reach: number | null; // non fourni par Google Ads -> null
   clicks: number;
-  ctr: number; // %
   results: number; // conversions
-  cpa: number | null;
   currency: string;
 };
 
@@ -73,7 +73,6 @@ type GaqlRow = {
     costMicros?: string;
     impressions?: string;
     clicks?: string;
-    ctr?: number;
     conversions?: number;
   };
   customer?: { currencyCode?: string };
@@ -81,11 +80,8 @@ type GaqlRow = {
 
 /**
  * Récupère les campagnes Google Ads avec métriques sur une période.
- * @param duringClause segment GAQL, ex. 'THIS_MONTH', 'LAST_30_DAYS', 'LAST_7_DAYS'
  */
-export async function fetchGoogleAdsCampaigns(
-  duringClause = 'THIS_MONTH',
-): Promise<GoogleAdsCampaign[]> {
+export async function fetchGoogleAdsCampaigns(period: AdsPeriod): Promise<GoogleAdsCampaign[]> {
   const cfg = getGoogleAdsConfig();
   if (!cfg.configured) {
     throw new Error(`Google Ads non configuré : ${cfg.reason}`);
@@ -99,9 +95,9 @@ export async function fetchGoogleAdsCampaigns(
   const query = `
     SELECT campaign.id, campaign.name, campaign.status,
            metrics.cost_micros, metrics.impressions, metrics.clicks,
-           metrics.ctr, metrics.conversions, customer.currency_code
+           metrics.conversions, customer.currency_code
     FROM campaign
-    WHERE segments.date DURING ${duringClause}
+    WHERE ${googleDateClause(period)}
   `;
 
   const res = await fetch(`${ADS_BASE}/customers/${cfg.customerId}/googleAds:searchStream`, {
@@ -139,7 +135,6 @@ export async function fetchGoogleAdsCampaigns(
       const spend = Number(row.metrics?.costMicros ?? 0) / 1_000_000;
       const impressions = Number(row.metrics?.impressions ?? 0);
       const clicks = Number(row.metrics?.clicks ?? 0);
-      const ctr = Number(row.metrics?.ctr ?? 0) * 100; // GAQL ctr est un ratio 0..1
       const results = Number(row.metrics?.conversions ?? 0);
       const status: 'active' | 'paused' = row.campaign?.status === 'ENABLED' ? 'active' : 'paused';
       out.push({
@@ -149,10 +144,9 @@ export async function fetchGoogleAdsCampaigns(
         status,
         spend,
         impressions,
+        reach: null,
         clicks,
-        ctr,
         results,
-        cpa: results > 0 ? spend / results : null,
         currency: row.customer?.currencyCode ?? 'EUR',
       });
     }

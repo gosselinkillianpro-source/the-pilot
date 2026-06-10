@@ -1,4 +1,5 @@
 import 'server-only';
+import { type AdsPeriod, metaInsightsRange } from '@/lib/ads/period';
 
 /**
  * Client Meta Marketing API (Graph API) — LECTURE SEULE des campagnes pub SAH.
@@ -35,18 +36,17 @@ export type MetaCampaign = {
   status: 'active' | 'paused';
   spend: number; // en euros
   impressions: number;
+  reach: number | null; // personnes uniques touchées (Meta uniquement)
   clicks: number;
-  ctr: number; // %
   results: number; // conversions/leads (objectif de la campagne)
-  cpa: number | null; // coût par résultat, null si 0 résultat
   currency: string;
 };
 
 type GraphInsight = {
   spend?: string;
   impressions?: string;
+  reach?: string;
   clicks?: string;
-  ctr?: string;
   actions?: { action_type: string; value: string }[];
   account_currency?: string;
 };
@@ -79,9 +79,8 @@ function extractResults(insight: GraphInsight | undefined): number {
 
 /**
  * Récupère les campagnes du compte avec leurs insights sur une période.
- * @param datePreset ex. 'this_month', 'last_30d', 'last_7d'
  */
-export async function fetchMetaCampaigns(datePreset = 'this_month'): Promise<MetaCampaign[]> {
+export async function fetchMetaCampaigns(period: AdsPeriod): Promise<MetaCampaign[]> {
   const cfg = getMetaConfig();
   if (!cfg.configured) {
     throw new Error(`Meta non configuré : ${cfg.reason}`);
@@ -89,9 +88,9 @@ export async function fetchMetaCampaigns(datePreset = 'this_month'): Promise<Met
   const token = process.env.META_SYSTEM_USER_TOKEN as string;
   const account = cfg.accountId.startsWith('act_') ? cfg.accountId : `act_${cfg.accountId}`;
 
-  const insightsFields = 'spend,impressions,clicks,ctr,actions,account_currency';
+  const insightsFields = 'spend,impressions,reach,clicks,actions,account_currency';
   const params = new URLSearchParams({
-    fields: `id,name,effective_status,insights.date_preset(${datePreset}){${insightsFields}}`,
+    fields: `id,name,effective_status,insights.${metaInsightsRange(period)}{${insightsFields}}`,
     limit: '200',
     access_token: token,
   });
@@ -110,8 +109,8 @@ export async function fetchMetaCampaigns(datePreset = 'this_month'): Promise<Met
     const insight = row.insights?.data?.[0];
     const spend = Number(insight?.spend ?? 0);
     const impressions = Number(insight?.impressions ?? 0);
+    const reach = insight?.reach !== undefined ? Number(insight.reach) : null;
     const clicks = Number(insight?.clicks ?? 0);
-    const ctr = Number(insight?.ctr ?? 0);
     const results = extractResults(insight);
     const status: 'active' | 'paused' = row.effective_status === 'ACTIVE' ? 'active' : 'paused';
     return {
@@ -121,10 +120,9 @@ export async function fetchMetaCampaigns(datePreset = 'this_month'): Promise<Met
       status,
       spend,
       impressions,
+      reach,
       clicks,
-      ctr,
       results,
-      cpa: results > 0 ? spend / results : null,
       currency: insight?.account_currency ?? 'EUR',
     };
   });
