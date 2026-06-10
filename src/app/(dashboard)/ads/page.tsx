@@ -1,8 +1,10 @@
-import { AlertTriangle, CheckCircle2, PlugZap } from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, PlugZap, TrendingDown, Trophy } from 'lucide-react';
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
+import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
 import { resolveAdsPeriod } from '@/lib/ads/period';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { AdsReco } from './ads-reco';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,11 +109,14 @@ export default async function AdsPage({
 }: {
   searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
-  await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
   const overview = await getAdsOverview(period);
   const { totals, platforms, campaigns, byPlatform } = overview;
+  const alerts = buildAdsAlerts(campaigns, totals.cpa);
+  const ranking = rankCampaigns(campaigns);
+  const canReco = user.role === 'admin' || user.role === 'executive';
 
   return (
     <>
@@ -217,6 +222,211 @@ export default async function AdsPage({
         <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
+
+      {/* Analyse IA du Pilote (admin / gérant) */}
+      {canReco && campaigns.length > 0 && <AdsReco />}
+
+      {/* Alertes */}
+      {alerts.length > 0 && (
+        <div className="view-card">
+          <div className="view-card-header">
+            <div
+              className="view-card-title"
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <AlertTriangle size={16} /> À surveiller ({alerts.length})
+            </div>
+          </div>
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            {alerts.map((a) => {
+              const danger = a.level === 'danger';
+              const color = danger ? 'var(--danger)' : 'var(--warning)';
+              return (
+                <div
+                  key={`${a.title}|${a.detail}`}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: `color-mix(in srgb, ${color} 8%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${color} 24%, transparent)`,
+                  }}
+                >
+                  <span style={{ color, display: 'flex', marginTop: 1 }}>
+                    <AlertTriangle size={14} />
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+                      {a.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{a.detail}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Top / Flop */}
+      {(ranking.best.length > 0 || ranking.wasted.length > 0) && (
+        <div
+          className="split-2col"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}
+        >
+          <div className="view-card">
+            <div className="view-card-header">
+              <div
+                className="view-card-title"
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <Trophy size={15} /> Meilleures (coût / résultat)
+              </div>
+            </div>
+            <div
+              className="view-card-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              {ranking.best.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                  Aucune campagne avec résultats.
+                </div>
+              ) : (
+                ranking.best.map((x) => (
+                  <div
+                    key={`${x.c.platform}-${x.c.id}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      fontSize: 13,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: 'var(--text-2)',
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {x.c.platform} · {x.c.name}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--success)',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {eur(x.cpa, 0)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="view-card">
+            <div className="view-card-header">
+              <div
+                className="view-card-title"
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                <TrendingDown size={15} /> À optimiser
+              </div>
+            </div>
+            <div
+              className="view-card-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              {ranking.worst.map((x) => (
+                <div
+                  key={`${x.c.platform}-${x.c.id}`}
+                  style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}
+                >
+                  <span
+                    style={{
+                      color: 'var(--text-2)',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {x.c.platform} · {x.c.name}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--warning)',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {eur(x.cpa, 0)}
+                  </span>
+                </div>
+              ))}
+              {ranking.wasted.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text-4)',
+                      marginTop: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Ban size={12} /> Budget sans résultat
+                  </div>
+                  {ranking.wasted.map((c) => (
+                    <div
+                      key={`${c.platform}-${c.id}`}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        fontSize: 13,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: 'var(--text-2)',
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {c.platform} · {c.name}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--danger)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {eur(c.spend, 0)}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Répartition par plateforme */}
       {byPlatform.length > 1 && (
