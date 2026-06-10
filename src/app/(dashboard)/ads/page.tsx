@@ -12,6 +12,7 @@ import { Sparkline } from '@/components/shared/sparkline';
 import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
 import { resolveAdsPeriod } from '@/lib/ads/period';
+import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
 import { getAdsTrends } from '@/lib/ads/trends';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { AdsReco } from './ads-reco';
@@ -142,8 +143,10 @@ function TrendBlock({
   );
 }
 
-function CampaignCard({ c }: { c: AdCampaign }) {
+function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
   const d = derive(rawOf(c));
+  const roas = roi && c.spend > 0 ? roi.invested / c.spend : null;
+  const costPerInvestor = roi && roi.investors > 0 ? c.spend / roi.investors : null;
   return (
     <div className="view-card">
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -180,6 +183,22 @@ function CampaignCard({ c }: { c: AdCampaign }) {
             <StatTile label="Fréquence" value={d.frequency.toFixed(2)} />
           ) : null}
         </div>
+        {roi ? (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+              gap: 8,
+              paddingTop: 10,
+              borderTop: '1px dashed var(--border)',
+            }}
+          >
+            <StatTile label="Investisseurs" value={int(roi.investors)} hint="réels (SAH)" />
+            <StatTile label="Capital investi" value={eur(roi.invested)} />
+            <StatTile label="ROAS réel" value={roas === null ? '—' : `×${roas.toFixed(1)}`} />
+            <StatTile label="Coût / investisseur" value={eur(costPerInvestor, 0)} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -193,8 +212,16 @@ export default async function AdsPage({
   const user = await getAuthenticatedUser();
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
-  const [overview, trends] = await Promise.all([getAdsOverview(period), getAdsTrends(period)]);
+  const [overview, trends, roi] = await Promise.all([
+    getAdsOverview(period),
+    getAdsTrends(period),
+    getCampaignRoi(),
+  ]);
   const { totals, platforms, campaigns, byPlatform } = overview;
+  const globalRoas =
+    roi.hasAttribution && totals.spend > 0 ? roi.totalInvested / totals.spend : null;
+  const costPerInvestor =
+    roi.hasAttribution && roi.totalInvestors > 0 ? totals.spend / roi.totalInvestors : null;
   const alerts = buildAdsAlerts(campaigns, totals.cpa);
   const ranking = rankCampaigns(campaigns);
   const canReco = user.role === 'admin' || user.role === 'executive';
@@ -302,6 +329,54 @@ export default async function AdsPage({
         <StatTile label="Résultats" value={int(totals.results)} hint="conversions / leads" />
         <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
+      </div>
+
+      {/* ROI réel : pub -> investisseurs */}
+      <div
+        className="view-card"
+        style={{ borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' }}
+      >
+        <div className="view-card-header">
+          <div className="view-card-title">ROI réel · pub → investisseurs</div>
+          {roi.hasAttribution ? (
+            <span className="badge badge-success badge-dot">données SAH</span>
+          ) : (
+            <span className="badge badge-neutral">en attente SAH</span>
+          )}
+        </div>
+        <div className="view-card-body">
+          {roi.hasAttribution ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                gap: 10,
+              }}
+            >
+              <StatTile
+                label="Investisseurs"
+                value={int(roi.totalInvestors)}
+                hint="réels générés"
+              />
+              <StatTile label="Capital investi" value={eur(roi.totalInvested)} />
+              <StatTile
+                label="ROAS réel"
+                value={globalRoas === null ? '—' : `×${globalRoas.toFixed(1)}`}
+                hint="investi / dépensé"
+              />
+              <StatTile label="Coût / investisseur" value={eur(costPerInvestor, 0)} />
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
+              La tuyauterie est prête : dès que SAH renseigne l'
+              <strong>origine d'acquisition</strong> de chaque inscrit (la campagne d'où il vient),
+              THE PILOT reliera automatiquement la dépense pub aux{' '}
+              <strong>investisseurs réels</strong> et au <strong>capital investi</strong> — pour
+              calculer le coût par investisseur et le ROAS réel, par campagne. (À voir lors de
+              l'appel SAH.)
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Évolution + comparaison période précédente */}
@@ -618,7 +693,9 @@ export default async function AdsPage({
             </div>
           </div>
         ) : (
-          campaigns.map((c) => <CampaignCard key={`${c.platform}-${c.id}`} c={c} />)
+          campaigns.map((c) => (
+            <CampaignCard key={`${c.platform}-${c.id}`} c={c} roi={roi.byCampaign.get(c.id)} />
+          ))
         )}
       </div>
     </>
