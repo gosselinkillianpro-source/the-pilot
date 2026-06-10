@@ -1451,6 +1451,14 @@ body.drawer-open {
    .r-stack force l'empilement vertical même si la ligne porte un display:grid INLINE
    (le !important d'une feuille de style l'emporte sur un style inline non-important).
    .r-head = ligne d'en-tête de colonnes, masquée une fois empilé. */
+/* File d'appels : carte investisseur. Desktop = grille à colonnes ; mobile = empilée (plus bas). */
+.queue-row {
+  display: grid;
+  grid-template-columns: 30px 1.3fr 1.4fr 56px 210px;
+  gap: 12px;
+  align-items: center;
+}
+
 /* ============================================================
    SYSTÈME MOBILE UNIQUE — vertical, simple, rien ne déborde (≤ 900px)
    Un seul bloc fait foi pour le mobile. Principe : TOUT en une colonne.
@@ -1587,6 +1595,39 @@ body.drawer-open {
   }
   .horizon-blob {
     animation: none !important;
+  }
+
+  /* File d'appels : carte verticale — nom + score IA en HAUT À DROITE, puis facteurs,
+     puis boutons alignés sur toute la largeur dessous. */
+  .queue-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'identity priority' 'factors factors' 'actions actions';
+    gap: 6px 10px;
+    align-items: start;
+  }
+  .queue-rank {
+    display: none;
+  }
+  .queue-identity {
+    grid-area: identity;
+  }
+  .queue-factors {
+    grid-area: factors;
+  }
+  .queue-priority {
+    grid-area: priority;
+    align-items: flex-end !important;
+  }
+  .queue-actions {
+    grid-area: actions;
+    justify-content: stretch !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    margin-top: 4px;
+  }
+  .queue-actions > * {
+    flex: 1 1 0 !important;
+    justify-content: center;
   }
 }
 

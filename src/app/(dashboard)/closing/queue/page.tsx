@@ -230,23 +230,27 @@ function QueueRowItem({
 
   return (
     <div
-      className="r-stack"
+      className="queue-row"
       style={{
-        display: 'grid',
-        gridTemplateColumns: '30px 1.3fr 1.4fr 56px 210px',
-        gap: 12,
-        alignItems: 'center',
-        padding: '12px 20px',
+        padding: '12px 16px',
         borderBottom: last ? 'none' : '1px solid var(--border)',
         opacity: claimedByOther ? 0.55 : 1,
         background: claimedByMe ? 'var(--success-bg, #e6f6ec)' : 'transparent',
       }}
     >
       {/* Rang global */}
-      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-4)' }}>#{rank}</span>
+      <span
+        className="queue-rank"
+        style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-4)' }}
+      >
+        #{rank}
+      </span>
 
       {/* Identité + statut */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <div
+        className="queue-identity"
+        style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}
+      >
         <Link
           href={`/closing/investor/${row.id}`}
           style={{
@@ -330,12 +334,18 @@ function QueueRowItem({
       </div>
 
       {/* Facteurs (transparence) */}
-      <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+      <div
+        className="queue-factors"
+        style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}
+      >
         {s.factors.join(' · ')}
       </div>
 
       {/* Priorité + température */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <div
+        className="queue-priority"
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+      >
         <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>{s.priority}</span>
         <span className={tempClass(s.temperature)} style={{ fontSize: 10 }}>
           {s.temperatureLabel}
@@ -344,6 +354,7 @@ function QueueRowItem({
 
       {/* Actions */}
       <div
+        className="queue-actions"
         style={{
           display: 'flex',
           gap: 6,
