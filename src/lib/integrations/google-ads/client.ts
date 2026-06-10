@@ -1,5 +1,12 @@
 import 'server-only';
-import { type AdsPeriod, googleDateClause } from '@/lib/ads/period';
+import {
+  type AccountTotals,
+  type AdsPeriod,
+  type DailyPoint,
+  type DateRange,
+  googleBetweenClause,
+  googleDateClause,
+} from '@/lib/ads/period';
 
 /**
  * Client Google Ads API (v17, REST) — LECTURE SEULE des campagnes pub SAH.
@@ -76,30 +83,18 @@ type GaqlRow = {
     conversions?: number;
   };
   customer?: { currencyCode?: string };
+  segments?: { date?: string };
 };
 
-/**
- * Récupère les campagnes Google Ads avec métriques sur une période.
- */
-export async function fetchGoogleAdsCampaigns(period: AdsPeriod): Promise<GoogleAdsCampaign[]> {
+/** Exécute une requête GAQL (searchStream) et renvoie les lignes aplaties. */
+async function gaqlSearch(query: string): Promise<GaqlRow[]> {
   const cfg = getGoogleAdsConfig();
-  if (!cfg.configured) {
-    throw new Error(`Google Ads non configuré : ${cfg.reason}`);
-  }
+  if (!cfg.configured) throw new Error(`Google Ads non configuré : ${cfg.reason}`);
   const accessToken = await getAccessToken();
   const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? cfg.customerId).replace(
     /-/g,
     '',
   );
-
-  const query = `
-    SELECT campaign.id, campaign.name, campaign.status,
-           metrics.cost_micros, metrics.impressions, metrics.clicks,
-           metrics.conversions, customer.currency_code
-    FROM campaign
-    WHERE ${googleDateClause(period)}
-  `;
-
   const res = await fetch(`${ADS_BASE}/customers/${cfg.customerId}/googleAds:searchStream`, {
     method: 'POST',
     headers: {
@@ -111,7 +106,6 @@ export async function fetchGoogleAdsCampaigns(period: AdsPeriod): Promise<Google
     body: JSON.stringify({ query }),
     cache: 'no-store',
   });
-
   const text = await res.text();
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
@@ -126,30 +120,75 @@ export async function fetchGoogleAdsCampaigns(period: AdsPeriod): Promise<Google
     }
     throw new Error(`Google Ads API : ${msg}`);
   }
-
-  // searchStream renvoie un tableau de chunks { results: [...] }
   const chunks = JSON.parse(text) as { results?: GaqlRow[] }[];
-  const out: GoogleAdsCampaign[] = [];
-  for (const chunk of chunks) {
-    for (const row of chunk.results ?? []) {
-      const spend = Number(row.metrics?.costMicros ?? 0) / 1_000_000;
-      const impressions = Number(row.metrics?.impressions ?? 0);
-      const clicks = Number(row.metrics?.clicks ?? 0);
-      const results = Number(row.metrics?.conversions ?? 0);
-      const status: 'active' | 'paused' = row.campaign?.status === 'ENABLED' ? 'active' : 'paused';
-      out.push({
-        platform: 'Google',
-        id: String(row.campaign?.id ?? ''),
-        name: row.campaign?.name ?? '(sans nom)',
-        status,
-        spend,
-        impressions,
-        reach: null,
-        clicks,
-        results,
-        currency: row.customer?.currencyCode ?? 'EUR',
-      });
-    }
-  }
-  return out;
+  return chunks.flatMap((c) => c.results ?? []);
+}
+
+/**
+ * Récupère les campagnes Google Ads avec métriques sur une période.
+ */
+export async function fetchGoogleAdsCampaigns(period: AdsPeriod): Promise<GoogleAdsCampaign[]> {
+  const query = `
+    SELECT campaign.id, campaign.name, campaign.status,
+           metrics.cost_micros, metrics.impressions, metrics.clicks,
+           metrics.conversions, customer.currency_code
+    FROM campaign
+    WHERE ${googleDateClause(period)}
+  `;
+  const rows = await gaqlSearch(query);
+  return rows.map((row): GoogleAdsCampaign => {
+    const spend = Number(row.metrics?.costMicros ?? 0) / 1_000_000;
+    const status: 'active' | 'paused' = row.campaign?.status === 'ENABLED' ? 'active' : 'paused';
+    return {
+      platform: 'Google',
+      id: String(row.campaign?.id ?? ''),
+      name: row.campaign?.name ?? '(sans nom)',
+      status,
+      spend,
+      impressions: Number(row.metrics?.impressions ?? 0),
+      reach: null,
+      clicks: Number(row.metrics?.clicks ?? 0),
+      results: Number(row.metrics?.conversions ?? 0),
+      currency: row.customer?.currencyCode ?? 'EUR',
+    };
+  });
+}
+
+/** Totaux compte Google Ads sur une plage (pour comparaison de période). */
+export async function fetchGoogleAccountTotals(range: DateRange): Promise<AccountTotals> {
+  const query = `
+    SELECT metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions
+    FROM customer
+    WHERE ${googleBetweenClause(range)}
+  `;
+  const rows = await gaqlSearch(query);
+  return rows.reduce<AccountTotals>(
+    (acc, row) => ({
+      spend: acc.spend + Number(row.metrics?.costMicros ?? 0) / 1_000_000,
+      impressions: acc.impressions + Number(row.metrics?.impressions ?? 0),
+      reach: null,
+      clicks: acc.clicks + Number(row.metrics?.clicks ?? 0),
+      results: acc.results + Number(row.metrics?.conversions ?? 0),
+    }),
+    { spend: 0, impressions: 0, reach: null, clicks: 0, results: 0 },
+  );
+}
+
+/** Série journalière Google Ads (dépense, clics, résultats) sur une plage. */
+export async function fetchGoogleDailySeries(range: DateRange): Promise<DailyPoint[]> {
+  const query = `
+    SELECT segments.date, metrics.cost_micros, metrics.clicks, metrics.conversions
+    FROM customer
+    WHERE ${googleBetweenClause(range)}
+    ORDER BY segments.date
+  `;
+  const rows = await gaqlSearch(query);
+  return rows
+    .filter((r) => r.segments?.date)
+    .map((r) => ({
+      date: r.segments?.date as string,
+      spend: Number(r.metrics?.costMicros ?? 0) / 1_000_000,
+      clicks: Number(r.metrics?.clicks ?? 0),
+      results: Number(r.metrics?.conversions ?? 0),
+    }));
 }

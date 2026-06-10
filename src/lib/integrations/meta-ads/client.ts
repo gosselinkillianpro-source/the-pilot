@@ -1,5 +1,12 @@
 import 'server-only';
-import { type AdsPeriod, metaInsightsRange } from '@/lib/ads/period';
+import {
+  type AccountTotals,
+  type AdsPeriod,
+  type DailyPoint,
+  type DateRange,
+  metaInsightsRange,
+  metaTimeRangeValue,
+} from '@/lib/ads/period';
 
 /**
  * Client Meta Marketing API (Graph API) — LECTURE SEULE des campagnes pub SAH.
@@ -126,4 +133,53 @@ export async function fetchMetaCampaigns(period: AdsPeriod): Promise<MetaCampaig
       currency: insight?.account_currency ?? 'EUR',
     };
   });
+}
+
+type GraphDailyRow = GraphInsight & { date_start?: string };
+
+async function fetchMetaInsights(range: DateRange, daily: boolean): Promise<GraphDailyRow[]> {
+  const token = process.env.META_SYSTEM_USER_TOKEN as string;
+  const cfg = getMetaConfig();
+  if (!cfg.configured) throw new Error(`Meta non configuré : ${cfg.reason}`);
+  const account = cfg.accountId.startsWith('act_') ? cfg.accountId : `act_${cfg.accountId}`;
+  const params = new URLSearchParams({
+    fields: 'spend,impressions,reach,clicks,actions',
+    time_range: metaTimeRangeValue(range),
+    level: 'account',
+    access_token: token,
+  });
+  if (daily) params.set('time_increment', '1');
+  const url = `${GRAPH_BASE}/${account}/insights?${params.toString()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  const json = (await res.json()) as { data?: GraphDailyRow[] } & GraphError;
+  if (!res.ok || json.error) {
+    throw new Error(`Meta API : ${json.error?.message ?? `HTTP ${res.status}`}`);
+  }
+  return json.data ?? [];
+}
+
+/** Totaux compte Meta agrégés sur une plage (pour comparaison de période). */
+export async function fetchMetaAccountTotals(range: DateRange): Promise<AccountTotals> {
+  const rows = await fetchMetaInsights(range, false);
+  const r = rows[0];
+  return {
+    spend: Number(r?.spend ?? 0),
+    impressions: Number(r?.impressions ?? 0),
+    reach: r?.reach !== undefined ? Number(r.reach) : null,
+    clicks: Number(r?.clicks ?? 0),
+    results: extractResults(r),
+  };
+}
+
+/** Série journalière Meta (dépense, clics, résultats) sur une plage. */
+export async function fetchMetaDailySeries(range: DateRange): Promise<DailyPoint[]> {
+  const rows = await fetchMetaInsights(range, true);
+  return rows
+    .filter((r) => r.date_start)
+    .map((r) => ({
+      date: r.date_start as string,
+      spend: Number(r.spend ?? 0),
+      clicks: Number(r.clicks ?? 0),
+      results: extractResults(r),
+    }));
 }

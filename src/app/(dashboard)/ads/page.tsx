@@ -1,8 +1,18 @@
-import { AlertTriangle, Ban, CheckCircle2, PlugZap, TrendingDown, Trophy } from 'lucide-react';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  PlugZap,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+} from 'lucide-react';
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
+import { Sparkline } from '@/components/shared/sparkline';
 import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
 import { resolveAdsPeriod } from '@/lib/ads/period';
+import { getAdsTrends } from '@/lib/ads/trends';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { AdsReco } from './ads-reco';
 
@@ -61,6 +71,77 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
+function DeltaBadge({
+  pct,
+  tone = 'up-good',
+}: {
+  pct: number | null;
+  tone?: 'up-good' | 'down-good' | 'neutral';
+}) {
+  if (pct === null) return <span style={{ fontSize: 11, color: 'var(--text-4)' }}>—</span>;
+  const up = pct > 0;
+  let color = 'var(--text-4)';
+  if (pct !== 0 && tone !== 'neutral') {
+    const good = tone === 'up-good' ? up : !up;
+    color = good ? 'var(--success)' : 'var(--danger)';
+  }
+  const Arrow = up ? TrendingUp : TrendingDown;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color }}>
+      {pct !== 0 ? <Arrow size={11} /> : null}
+      {up ? '+' : ''}
+      {pct}% <span style={{ color: 'var(--text-4)' }}>vs préc.</span>
+    </span>
+  );
+}
+
+function TrendBlock({
+  label,
+  value,
+  pct,
+  tone,
+  values,
+  color,
+}: {
+  label: string;
+  value: string;
+  pct: number | null;
+  tone: 'up-good' | 'down-good' | 'neutral';
+  values?: number[];
+  color?: string;
+}) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--text-3)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.3,
+          }}
+        >
+          {label}
+        </span>
+        <DeltaBadge pct={pct} tone={tone} />
+      </div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: 'var(--text-1)',
+          fontFamily: 'var(--font-mono)',
+        }}
+      >
+        {value}
+      </div>
+      {values ? <Sparkline values={values} color={color ?? 'var(--accent)'} /> : null}
+    </div>
+  );
+}
+
 function CampaignCard({ c }: { c: AdCampaign }) {
   const d = derive(rawOf(c));
   return (
@@ -112,7 +193,7 @@ export default async function AdsPage({
   const user = await getAuthenticatedUser();
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
-  const overview = await getAdsOverview(period);
+  const [overview, trends] = await Promise.all([getAdsOverview(period), getAdsTrends(period)]);
   const { totals, platforms, campaigns, byPlatform } = overview;
   const alerts = buildAdsAlerts(campaigns, totals.cpa);
   const ranking = rankCampaigns(campaigns);
@@ -222,6 +303,56 @@ export default async function AdsPage({
         <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
+
+      {/* Évolution + comparaison période précédente */}
+      {trends.available && (
+        <div className="view-card">
+          <div className="view-card-header">
+            <div className="view-card-title">Évolution sur la période</div>
+            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>vs période précédente</span>
+          </div>
+          <div className="view-card-body">
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: 18,
+              }}
+            >
+              <TrendBlock
+                label="Dépense"
+                value={eur(trends.current.spend)}
+                pct={trends.deltaPct.spend}
+                tone="neutral"
+                values={trends.series.map((p) => p.spend)}
+                color="var(--accent)"
+              />
+              <TrendBlock
+                label="Clics"
+                value={int(trends.current.clicks)}
+                pct={trends.deltaPct.clicks}
+                tone="up-good"
+                values={trends.series.map((p) => p.clicks)}
+                color="var(--info, #3b82f6)"
+              />
+              <TrendBlock
+                label="Résultats"
+                value={int(trends.current.results)}
+                pct={trends.deltaPct.results}
+                tone="up-good"
+                values={trends.series.map((p) => p.results)}
+                color="var(--success)"
+              />
+              <TrendBlock
+                label="Coût / résultat"
+                value={eur(trends.current.cpa, 2)}
+                pct={trends.deltaPct.cpa}
+                tone="down-good"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Analyse IA du Pilote (admin / gérant) */}
       {canReco && campaigns.length > 0 && <AdsReco />}

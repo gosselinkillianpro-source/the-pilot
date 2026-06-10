@@ -48,3 +48,69 @@ export function googleDateClause(period: AdsPeriod): string {
   }
   return `segments.date DURING ${period.google}`;
 }
+
+/** Plage de dates explicite (YYYY-MM-DD, bornes incluses) pour comparaison & séries. */
+export type DateRange = { since: string; until: string };
+
+/** Point d'une série journalière. */
+export type DailyPoint = { date: string; spend: number; clicks: number; results: number };
+
+/** Totaux agrégés au niveau compte (pour comparaison de période). */
+export type AccountTotals = {
+  spend: number;
+  impressions: number;
+  reach: number | null;
+  clicks: number;
+  results: number;
+};
+
+const DAY_MS = 86_400_000;
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Convertit une période (même préréglée) en plage de dates explicite, basée sur `now`. */
+export function periodToRange(period: AdsPeriod, now: Date = new Date()): DateRange {
+  if (period.kind === 'custom') return { since: period.from, until: period.to };
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  switch (period.key) {
+    case 'today':
+      return { since: isoDay(now), until: isoDay(now) };
+    case 'yesterday': {
+      const d = new Date(now.getTime() - DAY_MS);
+      return { since: isoDay(d), until: isoDay(d) };
+    }
+    case 'last_7d':
+      return { since: isoDay(new Date(now.getTime() - 6 * DAY_MS)), until: isoDay(now) };
+    case 'last_30d':
+      return { since: isoDay(new Date(now.getTime() - 29 * DAY_MS)), until: isoDay(now) };
+    case 'last_month': {
+      const start = new Date(Date.UTC(y, m - 1, 1));
+      const end = new Date(Date.UTC(y, m, 0)); // dernier jour du mois précédent
+      return { since: isoDay(start), until: isoDay(end) };
+    }
+    default: // this_month
+      return { since: isoDay(new Date(Date.UTC(y, m, 1))), until: isoDay(now) };
+  }
+}
+
+/** Plage précédente, de même longueur, immédiatement avant `range`. */
+export function previousRange(range: DateRange): DateRange {
+  const since = new Date(`${range.since}T00:00:00Z`).getTime();
+  const until = new Date(`${range.until}T00:00:00Z`).getTime();
+  const lengthDays = Math.round((until - since) / DAY_MS) + 1;
+  const prevUntil = new Date(since - DAY_MS);
+  const prevSince = new Date(prevUntil.getTime() - (lengthDays - 1) * DAY_MS);
+  return { since: isoDay(prevSince), until: isoDay(prevUntil) };
+}
+
+/** Fragment Meta time_range pour l'endpoint /insights (passé en query param). */
+export function metaTimeRangeValue(range: DateRange): string {
+  return JSON.stringify({ since: range.since, until: range.until });
+}
+
+/** Clause GAQL BETWEEN à partir d'une plage explicite. */
+export function googleBetweenClause(range: DateRange): string {
+  return `segments.date BETWEEN '${range.since}' AND '${range.until}'`;
+}
