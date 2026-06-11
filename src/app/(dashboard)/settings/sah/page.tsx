@@ -4,12 +4,14 @@ import {
   getProfilCompletDiagnostic,
   getRegFieldDiagnostic,
   getSahBreachSubDiag,
+  getSahBreachTreeDiag,
   getSahDiagnostics,
   getSahReferralDiag,
   getSahSchema,
   type ProfilCompletDiagnostic,
   type RegFieldDiagnostic,
   type SahBreachSubDiag,
+  type SahBreachTreeDiag,
   type SahColumn,
   type SahDiagnostics,
   type SahReferralDiag,
@@ -47,15 +49,17 @@ export default async function SahExplorerPage() {
   let subDiag: SahBreachSubDiag | null = null;
   let regDiag: RegFieldDiagnostic | null = null;
   let referralDiag: SahReferralDiag | null = null;
+  let treeDiag: SahBreachTreeDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag, regDiag, referralDiag] = await Promise.all([
+    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag] = await Promise.all([
       getSahSchema(),
       getSahDiagnostics(),
       getProfilCompletDiagnostic(),
       getSahBreachSubDiag(),
       getRegFieldDiagnostic(),
       getSahReferralDiag(),
+      getSahBreachTreeDiag(),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
@@ -191,6 +195,83 @@ export default async function SahExplorerPage() {
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
                   Copie ce bloc à Claude : il s'en sert pour construire l'attribution BREACH
                   multi-niveaux (tout cumulé) + le parrain sur chaque fiche.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {treeDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div
+                  className="view-card-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Network size={15} />
+                  Ton réseau BREACH réel (via l'arbre de parrainage)
+                </div>
+                <span className="badge badge-success">{treeDiag.totalNetworkParent} personnes</span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}
+              >
+                <p style={{ margin: 0, color: 'var(--text-2)' }}>
+                  Reconstitué via <code>users.parent_id</code> (qui a invité qui), à partir des{' '}
+                  <strong>{treeDiag.directBreach}</strong> inscrits BREACH directs. Tout cumulé :{' '}
+                  <strong>{treeDiag.totalNetworkParent}</strong> personnes ·{' '}
+                  <strong>{money(treeDiag.totalCollecteParent)}</strong> de collecte.
+                </p>
+                <div
+                  className="r-stack r-head"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 110px 140px',
+                    gap: 8,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--text-3)',
+                    padding: '0 4px',
+                  }}
+                >
+                  <span>niveau</span>
+                  <span style={{ textAlign: 'right' }}>personnes</span>
+                  <span style={{ textAlign: 'right' }}>collecte</span>
+                </div>
+                {treeDiag.byDepthParent.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                    Aucun descendant trouvé via parent_id — le lien de parrainage est peut-être
+                    porté par <code>invited_by_id</code>. Dis-le-moi, j'adapte.
+                  </div>
+                ) : (
+                  treeDiag.byDepthParent.map((d) => (
+                    <div
+                      key={d.depth}
+                      className="r-stack"
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 110px 140px',
+                        gap: 8,
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '4px',
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-1)' }}>
+                        {d.depth === 0 ? 'BREACH direct (N)' : `N-${d.depth}`}
+                      </span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-1)' }}>{d.users}</span>
+                      <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>
+                        {money(d.collecte)}
+                      </span>
+                    </div>
+                  ))
+                )}
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
+                  Contrôles : {treeDiag.usersWithParentId} personnes ont un parent ·{' '}
+                  {treeDiag.usersWithInvitedBy} ont un « invité par » · types
+                  «&nbsp;invited_by&nbsp;» :{' '}
+                  {treeDiag.invitedByTypes.map((t) => `${t.value} (${t.count})`).join(', ') || '—'}.
                 </p>
               </div>
             </div>

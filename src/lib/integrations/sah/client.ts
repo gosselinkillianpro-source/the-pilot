@@ -469,3 +469,92 @@ export async function getSahReferralDiag(): Promise<SahReferralDiag> {
     verdict,
   };
 }
+
+/* ============================================================
+   DIAGNOSTIC ARBRE BREACH — parcourt réellement la généalogie (users.parent_id)
+   à partir des inscrits BREACH directs, et compte par niveau + collecte.
+   100% NON SENSIBLE (agrégats). Lecture seule (CTE récursive bornée).
+   ============================================================ */
+export type SahBreachTreeDiag = {
+  directBreach: number; // niveau 0 (inscrits avec un code breach)
+  byDepthParent: { depth: number; users: number; collecte: number }[];
+  totalNetworkParent: number; // tous niveaux confondus (via parent_id)
+  totalCollecteParent: number;
+  usersWithParentId: number;
+  usersWithInvitedBy: number;
+  invitedByTypes: { value: string; count: number }[];
+};
+
+export async function getSahBreachTreeDiag(): Promise<SahBreachTreeDiag> {
+  const sql = getSahClient();
+
+  const directBreach = await sql<{ c: number }[]>`
+    select count(*)::int as c
+    from users u join bonus_codes bc on bc.id = u.bonus_code_id
+    where bc.code ilike '%breach%'
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+
+  // Réseau via parent_id : descendants des inscrits BREACH directs, par niveau.
+  const byDepthParent = await sql<{ depth: number; users: number; collecte: number }[]>`
+    with recursive direct as (
+      select u.id
+      from users u join bonus_codes bc on bc.id = u.bonus_code_id
+      where bc.code ilike '%breach%'
+    ),
+    tree as (
+      select id, 0 as depth from direct
+      union all
+      select c.id, t.depth + 1
+      from users c join tree t on c.parent_id = t.id
+      where t.depth < 12
+    )
+    select t.depth::int as depth,
+           count(distinct t.id)::int as users,
+           coalesce(sum(case when s.canceled_at is null then s.amount else 0 end), 0)::bigint as collecte
+    from tree t
+    left join users_profiles up on up.user_id = t.id
+    left join subscriptions s on s.users_profile_id = up.id
+    group by t.depth
+    order by t.depth
+  `
+    .then((rows) =>
+      rows.map((r) => ({
+        depth: Number(r.depth),
+        users: Number(r.users),
+        collecte: Number(r.collecte),
+      })),
+    )
+    .catch(() => [] as { depth: number; users: number; collecte: number }[]);
+
+  const usersWithParentId = await sql<{ c: number }[]>`
+    select count(*)::int as c from users where parent_id is not null
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+  const usersWithInvitedBy = await sql<{ c: number }[]>`
+    select count(*)::int as c from users where invited_by_id is not null
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+  const invitedByTypes = await sql<{ value: string; count: number }[]>`
+    select coalesce(invited_by_type, '(null)') as value, count(*)::int as count
+    from users group by invited_by_type order by count desc limit 10
+  `
+    .then((rows) => rows.map((r) => ({ value: r.value, count: Number(r.count) })))
+    .catch(() => [] as { value: string; count: number }[]);
+
+  const totalNetworkParent = byDepthParent.reduce((s, d) => s + d.users, 0);
+  const totalCollecteParent = byDepthParent.reduce((s, d) => s + d.collecte, 0);
+
+  return {
+    directBreach,
+    byDepthParent,
+    totalNetworkParent,
+    totalCollecteParent,
+    usersWithParentId,
+    usersWithInvitedBy,
+    invitedByTypes,
+  };
+}
