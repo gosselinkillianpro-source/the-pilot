@@ -110,6 +110,12 @@ function Row({ p, last }: { p: ProjectListItem; last: boolean }) {
           {p.targetAmount ? (
             <span style={{ color: 'var(--text-4)' }}> / {money(p.targetAmount)}</span>
           ) : null}
+          {progress != null ? (
+            <span style={{ color: 'var(--brand)', fontWeight: 600 }}>
+              {' '}
+              · {Math.round(progress)}%
+            </span>
+          ) : null}
         </span>
         {progress != null && (
           <div style={{ height: 5, background: 'var(--glass-bg)', borderRadius: 3 }}>
@@ -117,12 +123,18 @@ function Row({ p, last }: { p: ProjectListItem; last: boolean }) {
               style={{
                 width: `${Math.min(100, progress)}%`,
                 height: '100%',
-                background: 'linear-gradient(90deg,#2563EB,#7C3AED)',
+                background:
+                  progress >= 100 ? 'var(--success)' : 'linear-gradient(90deg,#2563EB,#7C3AED)',
                 borderRadius: 3,
               }}
             />
           </div>
         )}
+        {progress != null && p.targetAmount && p.collected < p.targetAmount ? (
+          <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
+            reste {money(p.targetAmount - p.collected)}
+          </span>
+        ) : null}
       </div>
       <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--text-2)' }}>
         {p.investors}

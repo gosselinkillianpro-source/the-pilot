@@ -177,16 +177,22 @@ export default async function DashboardPage({
               label="Profil complété"
               value={stats.investors.registered}
               total={stats.investors.total}
+              prevValue={stats.investors.total}
+              prevLabel="inscrits"
             />
             <FunnelRow
               label="Onboardés (KYC)"
               value={stats.investors.onboarded}
               total={stats.investors.total}
+              prevValue={stats.investors.registered}
+              prevLabel="profils complétés"
             />
             <FunnelRow
               label="Ont investi"
               value={stats.collecte.investors}
               total={stats.investors.total}
+              prevValue={stats.investors.onboarded}
+              prevLabel="onboardés"
             />
           </div>
         </div>
@@ -296,8 +302,22 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
   );
 }
 
-function FunnelRow({ label, value, total }: { label: string; value: number; total: number }) {
+function FunnelRow({
+  label,
+  value,
+  total,
+  prevValue,
+  prevLabel,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  prevValue?: number;
+  prevLabel?: string;
+}) {
   const ratio = total > 0 ? value / total : 0;
+  // Taux de passage depuis l'étape précédente (révèle la déperdition).
+  const stepRate = prevValue && prevValue > 0 ? Math.round((value / prevValue) * 100) : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
@@ -319,6 +339,11 @@ function FunnelRow({ label, value, total }: { label: string; value: number; tota
           }}
         />
       </div>
+      {stepRate !== null && prevLabel ? (
+        <span style={{ fontSize: 10, color: 'var(--text-4)' }}>
+          → {stepRate}% des {prevLabel}
+        </span>
+      ) : null}
     </div>
   );
 }
