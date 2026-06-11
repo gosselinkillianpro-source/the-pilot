@@ -1,4 +1,7 @@
+import 'server-only';
 import { headers } from 'next/headers';
+import { db } from '@/lib/db';
+import { auditLog } from '@/lib/db/schema';
 
 export type AuditAction = {
   userId: string | null;
@@ -10,20 +13,38 @@ export type AuditAction = {
   metadata?: Record<string, unknown>;
 };
 
-export async function logAudit(entry: AuditAction): Promise<void> {
-  const headerList = await headers();
-  const ip = headerList.get('x-forwarded-for') ?? headerList.get('x-real-ip') ?? null;
-  const userAgent = headerList.get('user-agent') ?? null;
+/** Première IP de la chaîne x-forwarded-for, uniquement si elle ressemble à une IP
+ *  (la colonne est de type `inet` : une valeur invalide ferait échouer l'insert). */
+function firstValidIp(raw: string | null): string | null {
+  if (!raw) return null;
+  const first = raw.split(',')[0]?.trim();
+  if (!first) return null;
+  return /^[0-9a-fA-F:.]+$/.test(first) ? first : null;
+}
 
-  // TODO: insert into Postgres audit_log table via Drizzle
-  // For now, structured console log so it ends up in Vercel logs
-  console.log(
-    JSON.stringify({
-      kind: 'audit',
-      at: new Date().toISOString(),
-      ip,
+/**
+ * Journalise une action sensible dans la table `audit_log` (règle CLAUDE.md #11).
+ * Best-effort : un échec d'insertion ne doit JAMAIS casser l'action métier
+ * (on le remonte dans les logs serveur, sans relancer).
+ */
+export async function logAudit(entry: AuditAction): Promise<void> {
+  try {
+    const headerList = await headers();
+    const ip = firstValidIp(headerList.get('x-forwarded-for') ?? headerList.get('x-real-ip'));
+    const userAgent = headerList.get('user-agent') ?? null;
+
+    await db.insert(auditLog).values({
+      userId: entry.userId,
+      userEmail: entry.userEmail ?? null,
+      userRole: entry.userRole ?? null,
+      action: entry.action,
+      resourceType: entry.resourceType,
+      resourceId: entry.resourceId,
+      metadata: entry.metadata ?? null,
+      ipAddress: ip,
       userAgent,
-      ...entry,
-    }),
-  );
+    });
+  } catch (e) {
+    console.error('logAudit failed:', e instanceof Error ? e.message : e);
+  }
 }

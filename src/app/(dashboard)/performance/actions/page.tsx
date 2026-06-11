@@ -59,6 +59,28 @@ export default function ActionsRoiPage() {
         <PerformanceTabs active="/performance/actions" />
       </div>
 
+      {/* Avertissement honnêteté : cette page n'est PAS encore branchée sur les vraies données. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '12px 14px',
+          borderRadius: 12,
+          background: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--warning) 35%, transparent)',
+          color: 'var(--text-1)',
+          fontSize: 13,
+        }}
+      >
+        <Sparkles size={16} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+        <span>
+          <strong>Données de démonstration.</strong> Cette page illustre le futur « ROI par action »
+          — les chiffres ci-dessous sont fictifs. Le branchement sur tes vraies données
+          d'attribution (déjà calculées dans le module Closing) arrive bientôt.
+        </span>
+      </div>
+
       {/* KPIs résumé */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <div className="kpi-hero">

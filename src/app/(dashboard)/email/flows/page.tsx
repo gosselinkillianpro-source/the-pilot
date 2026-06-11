@@ -1,56 +1,65 @@
-import { Mail, Plus } from 'lucide-react';
+import { Clock, Mail } from 'lucide-react';
 
-const FAKE_FLOWS = [
+/**
+ * Automations email — feuille de route (PAS encore actives).
+ * Affichage HONNÊTE : aucune métrique inventée tant que le moteur de flows
+ * (Lot 3 : machine à rebond + endormis, avec file de validation humaine) n'est
+ * pas branché. Les automations apparaîtront ici une fois réellement exécutées.
+ */
+const PLANNED_FLOWS = [
   {
-    id: 'f1',
+    id: 'welcome',
     name: 'Bienvenue + onboarding',
-    stage: 'active',
-    sent: 487,
-    opened: '64%',
-    clicked: '23%',
+    desc: "Séquence d'accueil après inscription SAH, guide vers la complétion du profil.",
   },
   {
-    id: 'f2',
+    id: 'hot',
     name: 'Relance leads chauds (J+3)',
-    stage: 'active',
-    sent: 142,
-    opened: '71%',
-    clicked: '38%',
+    desc: 'Relance les prospects qui ouvrent/cliquent sans être rappelés.',
   },
   {
-    id: 'f3',
-    name: 'Rebond 11 mois pré-remboursement',
-    stage: 'active',
-    sent: 38,
-    opened: '82%',
-    clicked: '47%',
+    id: 'rebond',
+    name: 'Rebond avant remboursement',
+    desc: 'Avant le remboursement d’un projet, propose le réinvestissement (validation humaine).',
   },
-  { id: 'f4', name: 'Newsletter mensuelle', stage: 'draft', sent: 0, opened: '—', clicked: '—' },
+  {
+    id: 'dormant',
+    name: 'Réveil des inscrits jamais investis',
+    desc: 'Réactive le stock d’inscrits onboardés qui n’ont jamais souscrit.',
+  },
 ];
 
 export default function EmailFlowsPage() {
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 className="page-title">Email flows</h1>
-          <div className="page-desc">
-            Automations email — branchement Brevo + scanner AMF avant chaque envoi.
+      <div>
+        <h1 className="page-title">Email flows</h1>
+        <div className="page-desc">
+          Automations email à venir — chaque envoi passera par une validation humaine + un scan AMF.
+        </div>
+      </div>
+
+      <div className="alert alert-info">
+        <span className="alert-icon">
+          <Clock size={16} />
+        </span>
+        <div className="alert-body">
+          <div className="alert-title">Pas encore actif</div>
+          <div className="alert-description">
+            Aucune automation ne tourne pour l'instant (aucun email n'est envoyé automatiquement).
+            Le moteur de flows est en construction : les séquences ci-dessous seront créées ici, et
+            <strong> rien ne partira sans ta validation</strong>.
           </div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm">
-          <Plus />
-          Nouveau flow
-        </button>
       </div>
 
       <div className="view-card">
         <div className="view-card-header">
-          <div className="view-card-title">Flows actifs ({FAKE_FLOWS.length})</div>
-          <span className="badge badge-success badge-dot">Brevo connecté</span>
+          <div className="view-card-title">Séquences prévues ({PLANNED_FLOWS.length})</div>
+          <span className="badge badge-neutral">à venir</span>
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
-          {FAKE_FLOWS.map((flow, idx) => (
+          {PLANNED_FLOWS.map((flow, idx) => (
             <div
               key={flow.id}
               style={{
@@ -58,7 +67,7 @@ export default function EmailFlowsPage() {
                 alignItems: 'center',
                 gap: 16,
                 padding: '14px 20px',
-                borderBottom: idx < FAKE_FLOWS.length - 1 ? '1px solid var(--border)' : 'none',
+                borderBottom: idx < PLANNED_FLOWS.length - 1 ? '1px solid var(--border)' : 'none',
               }}
             >
               <div
@@ -76,41 +85,17 @@ export default function EmailFlowsPage() {
               >
                 <Mail size={16} />
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-1)' }}>
                   {flow.name}
                 </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-3)',
-                    fontFamily: 'var(--font-mono)',
-                    marginTop: 2,
-                  }}
-                >
-                  {flow.sent} envoyés · {flow.opened} ouverts · {flow.clicked} cliqués
+                <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                  {flow.desc}
                 </div>
               </div>
-              <span
-                className={`badge ${flow.stage === 'active' ? 'badge-success badge-dot' : 'badge-neutral'}`}
-              >
-                {flow.stage === 'active' ? 'Active' : 'Brouillon'}
-              </span>
+              <span className="badge badge-neutral">à venir</span>
             </div>
           ))}
-        </div>
-      </div>
-
-      <div className="alert alert-info">
-        <span className="alert-icon">
-          <Mail size={16} />
-        </span>
-        <div className="alert-body">
-          <div className="alert-title">Données fake en attente</div>
-          <div className="alert-description">
-            Le branchement à Brevo se fera après l'appel SAH. Les flows réels seront créés ici via
-            le builder visuel.
-          </div>
         </div>
       </div>
     </>
