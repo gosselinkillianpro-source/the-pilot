@@ -1,4 +1,4 @@
-import { AlertTriangle, List, Mail, PenLine, Send, Users } from 'lucide-react';
+import { AlertTriangle, List, Mail, PenLine, RotateCw, Send, Users } from 'lucide-react';
 import Link from 'next/link';
 import {
   getBrevoAccount,
@@ -81,6 +81,10 @@ export default async function EmailPage() {
           {smsCredits !== null && (
             <span className="badge badge-neutral">{nb(smsCredits)} crédits SMS</span>
           )}
+          <Link href="/email/relances" className="btn btn-secondary btn-sm">
+            <RotateCw size={13} />
+            Relances
+          </Link>
           <Link href="/email/contacts" className="btn btn-secondary btn-sm">
             <Users size={13} />
             Contacts
