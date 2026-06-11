@@ -6,6 +6,7 @@ import {
   getSahBreachSubDiag,
   getSahBreachTreeDiag,
   getSahDiagnostics,
+  getSahReferralDeepDiag,
   getSahReferralDiag,
   getSahSchema,
   type ProfilCompletDiagnostic,
@@ -14,6 +15,7 @@ import {
   type SahBreachTreeDiag,
   type SahColumn,
   type SahDiagnostics,
+  type SahReferralDeepDiag,
   type SahReferralDiag,
 } from '@/lib/integrations/sah/client';
 import { SyncButton } from './sync-button';
@@ -50,17 +52,20 @@ export default async function SahExplorerPage() {
   let regDiag: RegFieldDiagnostic | null = null;
   let referralDiag: SahReferralDiag | null = null;
   let treeDiag: SahBreachTreeDiag | null = null;
+  let deepDiag: SahReferralDeepDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag] = await Promise.all([
-      getSahSchema(),
-      getSahDiagnostics(),
-      getProfilCompletDiagnostic(),
-      getSahBreachSubDiag(),
-      getRegFieldDiagnostic(),
-      getSahReferralDiag(),
-      getSahBreachTreeDiag(),
-    ]);
+    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag, deepDiag] =
+      await Promise.all([
+        getSahSchema(),
+        getSahDiagnostics(),
+        getProfilCompletDiagnostic(),
+        getSahBreachSubDiag(),
+        getRegFieldDiagnostic(),
+        getSahReferralDiag(),
+        getSahBreachTreeDiag(),
+        getSahReferralDeepDiag(),
+      ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
   }
@@ -275,6 +280,56 @@ export default async function SahExplorerPage() {
                   {treeDiag.usersWithInvitedBy} ont un « invité par » · types
                   «&nbsp;invited_by&nbsp;» :{' '}
                   {treeDiag.invitedByTypes.map((t) => `${t.value} (${t.count})`).join(', ') || '—'}.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {deepDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div
+                  className="view-card-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Network size={15} />
+                  Sous-parrainage — par quel chemin ?
+                </div>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}
+              >
+                <div style={{ color: 'var(--text-2)' }}>
+                  <strong>Invitations email</strong> : {deepDiag.n1DirectViaInvited} personne(s)
+                  invitée(s) directement par un inscrit BREACH ({deepDiag.invitedByResolvable}{' '}
+                  invitations « User » valides au total dans la base).
+                </div>
+                <div style={{ color: 'var(--text-2)' }}>
+                  <strong>3 codes BREACH</strong> :{' '}
+                  {deepDiag.breachCodes.length === 0
+                    ? '—'
+                    : deepDiag.breachCodes
+                        .map(
+                          (c) =>
+                            `${c.code} (${c.usersCount ?? '?'} util.${c.ambassadorName ? `, ${c.ambassadorName}` : ''})`,
+                        )
+                        .join(' · ')}
+                </div>
+                <div style={{ color: 'var(--text-3)' }}>
+                  <strong>Table `affiliate_programs`</strong> ({deepDiag.affiliateProgramsRows}{' '}
+                  lignes) — colonnes :{' '}
+                  {deepDiag.affiliateProgramsColumns.length > 0
+                    ? deepDiag.affiliateProgramsColumns.join(', ')
+                    : '—'}
+                </div>
+                <div style={{ color: 'var(--text-3)' }}>
+                  <strong>Table `distributors_affiliated_profiles_exports`</strong> — colonnes :{' '}
+                  {deepDiag.exportsColumns.length > 0 ? deepDiag.exportsColumns.join(', ') : '—'}
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
+                  Copie ce bloc à Claude : il s'en sert pour savoir si le sous-parrainage passe par
+                  les invitations email, par un code propre, ou par les programmes d'affiliation.
                 </p>
               </div>
             </div>

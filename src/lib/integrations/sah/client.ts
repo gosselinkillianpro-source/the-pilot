@@ -560,3 +560,90 @@ export async function getSahBreachTreeDiag(): Promise<SahBreachTreeDiag> {
     invitedByTypes,
   };
 }
+
+/* ============================================================
+   DIAGNOSTIC PROFOND — par quel chemin le SOUS-parrainage est-il traçable ?
+   (invited_by email vs code bonus / affiliate_programs). Lecture seule, agrégats.
+   ============================================================ */
+export type SahReferralDeepDiag = {
+  invitedByResolvable: number; // invited_by_type='User' dont l'id existe vraiment dans users
+  n1DirectViaInvited: number; // personnes invitées DIRECTEMENT par un inscrit BREACH (email)
+  affiliateProgramsColumns: string[];
+  affiliateProgramsRows: number;
+  exportsColumns: string[];
+  breachCodes: {
+    code: string;
+    ambassadorName: string | null;
+    distributorId: string | null;
+    usersCount: number | null;
+  }[];
+};
+
+async function colsOf(sql: ReturnType<typeof getSahClient>, table: string): Promise<string[]> {
+  return sql<{ column_name: string }[]>`
+    select column_name from information_schema.columns
+    where table_name = ${table} order by ordinal_position
+  `
+    .then((rows) => rows.map((r) => r.column_name))
+    .catch(() => [] as string[]);
+}
+
+export async function getSahReferralDeepDiag(): Promise<SahReferralDeepDiag> {
+  const sql = getSahClient();
+
+  const invitedByResolvable = await sql<{ c: number }[]>`
+    select count(*)::int as c from users u
+    where u.invited_by_type = 'User' and exists (select 1 from users x where x.id = u.invited_by_id)
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+
+  const n1DirectViaInvited = await sql<{ c: number }[]>`
+    with direct as (
+      select u.id from users u join bonus_codes bc on bc.id = u.bonus_code_id
+      where bc.code ilike '%breach%'
+    )
+    select count(*)::int as c
+    from users c join direct d on c.invited_by_id = d.id and c.invited_by_type = 'User'
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+
+  const affiliateProgramsColumns = await colsOf(sql, 'affiliate_programs');
+  const affiliateProgramsRows = await sql<
+    { c: number }[]
+  >`select count(*)::int as c from affiliate_programs`
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+  const exportsColumns = await colsOf(sql, 'distributors_affiliated_profiles_exports');
+
+  const breachCodes = await sql<
+    {
+      code: string;
+      ambassador_name: string | null;
+      distributor_id: string | null;
+      users_count: number | null;
+    }[]
+  >`
+    select code, ambassador_name, distributor_id::text as distributor_id, users_count
+    from bonus_codes where code ilike '%breach%' order by users_count desc nulls last
+  `
+    .then((rows) =>
+      rows.map((r) => ({
+        code: r.code,
+        ambassadorName: r.ambassador_name,
+        distributorId: r.distributor_id,
+        usersCount: r.users_count == null ? null : Number(r.users_count),
+      })),
+    )
+    .catch(() => [] as SahReferralDeepDiag['breachCodes']);
+
+  return {
+    invitedByResolvable,
+    n1DirectViaInvited,
+    affiliateProgramsColumns,
+    affiliateProgramsRows,
+    exportsColumns,
+    breachCodes,
+  };
+}
