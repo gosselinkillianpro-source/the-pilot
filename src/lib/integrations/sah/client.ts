@@ -496,7 +496,8 @@ export async function getSahBreachTreeDiag(): Promise<SahBreachTreeDiag> {
     .then((r) => r[0]?.c ?? -1)
     .catch(() => -1);
 
-  // Réseau via parent_id : descendants des inscrits BREACH directs, par niveau.
+  // Réseau via invited_by_id (type 'User') : le VRAI lien de parrainage SAH
+  // (parent_id n'est quasi pas renseigné). Descendants des BREACH directs, par niveau.
   const byDepthParent = await sql<{ depth: number; users: number; collecte: number }[]>`
     with recursive direct as (
       select u.id
@@ -507,7 +508,8 @@ export async function getSahBreachTreeDiag(): Promise<SahBreachTreeDiag> {
       select id, 0 as depth from direct
       union all
       select c.id, t.depth + 1
-      from users c join tree t on c.parent_id = t.id
+      from users c
+      join tree t on c.invited_by_id = t.id and c.invited_by_type = 'User'
       where t.depth < 12
     )
     select t.depth::int as depth,

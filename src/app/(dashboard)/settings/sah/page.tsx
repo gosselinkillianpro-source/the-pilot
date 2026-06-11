@@ -217,10 +217,14 @@ export default async function SahExplorerPage() {
                 style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}
               >
                 <p style={{ margin: 0, color: 'var(--text-2)' }}>
-                  Reconstitué via <code>users.parent_id</code> (qui a invité qui), à partir des{' '}
+                  Reconstitué via <code>invited_by_id</code> (qui a invité qui), à partir des{' '}
                   <strong>{treeDiag.directBreach}</strong> inscrits BREACH directs. Tout cumulé :{' '}
                   <strong>{treeDiag.totalNetworkParent}</strong> personnes ·{' '}
                   <strong>{money(treeDiag.totalCollecteParent)}</strong> de collecte.
+                </p>
+                <p style={{ margin: 0, color: 'var(--text-4)', fontSize: 12 }}>
+                  (parent_id n'est presque jamais renseigné côté SAH — c'est invited_by_id qui porte
+                  l'arbre de parrainage.)
                 </p>
                 <div
                   className="r-stack r-head"
@@ -240,8 +244,7 @@ export default async function SahExplorerPage() {
                 </div>
                 {treeDiag.byDepthParent.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                    Aucun descendant trouvé via parent_id — le lien de parrainage est peut-être
-                    porté par <code>invited_by_id</code>. Dis-le-moi, j'adapte.
+                    Aucun descendant trouvé — dis-le-moi, j'inspecte un autre lien.
                   </div>
                 ) : (
                   treeDiag.byDepthParent.map((d) => (
