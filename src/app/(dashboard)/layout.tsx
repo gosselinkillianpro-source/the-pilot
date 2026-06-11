@@ -76,7 +76,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               <div className="view-topbar-search">
                 <Search size={14} />
                 <span style={{ flex: 1 }}>Rechercher</span>
-                <kbd>⌘K</kbd>
+                <kbd>Ctrl K</kbd>
               </div>
               <button
                 type="button"
@@ -95,19 +95,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                   cursor: 'pointer',
                 }}
               >
+                {/* Point rouge retiré : il était codé en dur (fausse notification permanente).
+                    Il reviendra branché sur de vraies données (centre de notifications). */}
                 <Bell size={14} />
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: 6,
-                    right: 6,
-                    width: 6,
-                    height: 6,
-                    background: 'var(--danger)',
-                    borderRadius: '50%',
-                    boxShadow: '0 0 8px var(--danger-glow)',
-                  }}
-                />
               </button>
             </div>
           </div>

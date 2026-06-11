@@ -75,6 +75,7 @@ const DEFAULT_DURATION = 6000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -86,12 +87,37 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** Disparition douce : animation de sortie (160 ms) avant le retrait du DOM. */
   const dismiss = useCallback(
     (id: string) => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
       clearTimer(id);
+      setLeaving((prev) => new Set(prev).add(id));
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+        setLeaving((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 170);
     },
     [clearTimer],
+  );
+
+  /** Pause du compte à rebours au survol du toast. */
+  const pauseTimer = useCallback((id: string) => clearTimer(id), [clearTimer]);
+
+  /** Reprise (compte à rebours complet) quand la souris quitte le toast. */
+  const resumeTimer = useCallback(
+    (id: string, duration: number) => {
+      if (duration > 0) {
+        timers.current.set(
+          id,
+          setTimeout(() => dismiss(id), duration),
+        );
+      }
+    },
+    [dismiss],
   );
 
   const toast = useCallback(
@@ -143,7 +169,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <Toaster toasts={toasts} onDismiss={dismiss} onToast={toast} />
+      <Toaster
+        toasts={toasts}
+        leaving={leaving}
+        onDismiss={dismiss}
+        onToast={toast}
+        onPause={pauseTimer}
+        onResume={resumeTimer}
+      />
       <ActivityDock activities={activities} />
     </ToastContext.Provider>
   );
@@ -175,12 +208,18 @@ const VARIANT_STYLE: Record<
 
 function Toaster({
   toasts,
+  leaving,
   onDismiss,
   onToast,
+  onPause,
+  onResume,
 }: {
   toasts: ToastItem[];
+  leaving: ReadonlySet<string>;
   onDismiss: (id: string) => void;
   onToast: (message: string, opts?: ToastOptions) => string;
+  onPause: (id: string) => void;
+  onResume: (id: string, duration: number) => void;
 }) {
   return (
     <div
@@ -198,7 +237,15 @@ function Toaster({
       }}
     >
       {toasts.map((t) => (
-        <ToastCard key={t.id} item={t} onDismiss={onDismiss} onToast={onToast} />
+        <ToastCard
+          key={t.id}
+          item={t}
+          leaving={leaving.has(t.id)}
+          onDismiss={onDismiss}
+          onToast={onToast}
+          onPause={onPause}
+          onResume={onResume}
+        />
       ))}
     </div>
   );
@@ -206,15 +253,37 @@ function Toaster({
 
 function ToastCard({
   item,
+  leaving,
   onDismiss,
   onToast,
+  onPause,
+  onResume,
 }: {
   item: ToastItem;
+  leaving: boolean;
   onDismiss: (id: string) => void;
   onToast: (message: string, opts?: ToastOptions) => string;
+  onPause: (id: string) => void;
+  onResume: (id: string, duration: number) => void;
 }) {
   const [undoing, setUndoing] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  // Incrémenté à chaque reprise pour resynchroniser la barre avec le timer.
+  const [progressEpoch, setProgressEpoch] = useState(0);
   const v = VARIANT_STYLE[item.variant];
+
+  function handleMouseEnter() {
+    if (leaving) return;
+    setHovered(true);
+    onPause(item.id);
+  }
+
+  function handleMouseLeave() {
+    if (leaving) return;
+    setHovered(false);
+    onResume(item.id, item.duration);
+    setProgressEpoch((e) => e + 1);
+  }
 
   async function handleUndo() {
     if (!item.undo) return;
@@ -231,8 +300,11 @@ function ToastCard({
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: pause-au-survol = amélioration purement souris ; le rôle live region (alert/status) est correct et la fermeture clavier reste assurée par le bouton X.
     <div
-      role="status"
+      role={item.variant === 'error' ? 'alert' : 'status'}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       style={{
         pointerEvents: 'auto',
         position: 'relative',
@@ -247,7 +319,7 @@ function ToastCard({
         WebkitBackdropFilter: 'blur(12px)',
         border: `1px solid ${v.border}`,
         boxShadow: 'var(--shadow-glass-lg)',
-        animation: 'toast-in 0.18s ease',
+        animation: leaving ? 'toast-out 0.16s ease forwards' : 'toast-in 0.18s ease',
       }}
     >
       <span style={{ color: v.color, display: 'flex', flexShrink: 0 }}>{v.icon}</span>
@@ -288,6 +360,7 @@ function ToastCard({
       </button>
       {item.duration > 0 && (
         <span
+          key={progressEpoch}
           style={{
             position: 'absolute',
             left: 0,
@@ -297,6 +370,7 @@ function ToastCard({
             background: v.color,
             transformOrigin: 'left',
             animation: `toast-progress ${item.duration}ms linear forwards`,
+            animationPlayState: hovered ? 'paused' : 'running',
           }}
         />
       )}
@@ -327,6 +401,7 @@ function ActivityDock({ activities }: { activities: ActivityItem[] }) {
         border: '1px solid var(--border-strong)',
         boxShadow: 'var(--shadow-glass-lg)',
         maxWidth: 'min(360px, calc(100vw - 40px))',
+        animation: 'toast-in 0.18s ease',
       }}
     >
       <Loader2 size={16} className="spin" style={{ color: 'var(--brand)', flexShrink: 0 }} />

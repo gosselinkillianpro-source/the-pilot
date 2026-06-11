@@ -1344,6 +1344,94 @@
     animation-duration: 1.6s;
   }
 }
+/* Sortie de toast (disparition douce au lieu d'un pop sec) */
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ============================================================
+   POLISH PREMIUM — animations d'apparition, skeletons, feedback
+   (§12 prefers-reduced-motion coupe tout automatiquement)
+   ============================================================ */
+
+/* Apparition des sections de page (rejoue à chaque navigation,
+   pas au changement de filtre : React ne re-monte pas les nœuds). */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.app-main > * {
+  animation: page-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.app-main > *:nth-child(2) {
+  animation-delay: 0.04s;
+}
+.app-main > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.app-main > *:nth-child(4) {
+  animation-delay: 0.12s;
+}
+.app-main > *:nth-child(5) {
+  animation-delay: 0.16s;
+}
+.app-main > *:nth-child(n + 6) {
+  animation-delay: 0.2s;
+}
+
+/* Skeleton shimmer — états de chargement (loading.tsx) */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    color-mix(in srgb, var(--text-4) 14%, var(--surface-2)) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Hover lift homogène : les cartes répondent au survol comme le kanban */
+.view-card,
+.kpi-hero {
+  transition:
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.view-card:hover,
+.kpi-hero:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-lg);
+}
+
+/* Feedback au clic hors boutons (les .btn ont déjà scale 0.97) */
+.view-sidebar-link:active,
+.view-kanban-card:active {
+  transform: scale(0.98);
+}
 
 /* ============================================================
    RESPONSIVE V2 — directive PROMPT_RESPONSIVE_THE_PILOT
