@@ -1,4 +1,13 @@
-import { ChevronDown, Clock, Flame, Phone, Target, TrendingUp, UserPlus } from 'lucide-react';
+import {
+  ChevronDown,
+  Clock,
+  Flame,
+  Phone,
+  PhoneCall,
+  Target,
+  TrendingUp,
+  UserPlus,
+} from 'lucide-react';
 import Link from 'next/link';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { MarkCalledButton } from '@/components/closing/mark-called-button';
@@ -77,12 +86,26 @@ export default async function CallQueuePage({
 
   return (
     <>
-      <div>
-        <h1 className="page-title">File d'appels</h1>
-        <div className="page-desc">
-          Qui appeler maintenant. {nb(total)} personnes en file · chaque liste est rangée dans
-          l'ordre (inscrit le plus récent en haut · échéance la plus proche en haut).
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 className="page-title">File d'appels</h1>
+          <div className="page-desc">
+            Qui appeler maintenant. {nb(total)} personnes en file · chaque liste est rangée dans
+            l'ordre (inscrit le plus récent en haut · échéance la plus proche en haut).
+          </div>
         </div>
+        <Link href="/closing/session" className="btn btn-primary">
+          <PhoneCall size={15} />
+          Démarrer une session d'appels
+        </Link>
       </div>
 
       {/* Filtre source : BREACH (pubs de Killian) vs reste */}
