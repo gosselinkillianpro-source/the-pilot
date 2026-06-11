@@ -1,8 +1,12 @@
+import { eq } from 'drizzle-orm';
 import { Building2, Target, TrendingUp, Users } from 'lucide-react';
 import Link from 'next/link';
 import { PeriodFilter } from '@/components/shared/period-filter';
 import { StatCard } from '@/components/shared/stat-card';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { getGlobalStats } from '@/lib/db/queries/dashboard';
+import { users } from '@/lib/db/schema';
 import { resolvePeriod } from '@/lib/period';
 import { CollecteChart } from './collecte-chart';
 
@@ -15,13 +19,36 @@ function pct(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 100) : 0;
 }
 
+/** Prénom de l'utilisateur connecté (nom en base, sinon début de l'email).
+ *  Jamais le nom d'un autre : repli neutre si rien d'exploitable. */
+async function getFirstName(userId: string, email: string): Promise<string> {
+  let fullName: string | null = null;
+  try {
+    const row = await db
+      .select({ fullName: users.fullName })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    fullName = row[0]?.fullName ?? null;
+  } catch {
+    // best-effort : pas de nom => repli sur l'email
+  }
+  const source = (fullName?.trim() || email.split('@')[0] || '').trim();
+  const first = source.split(/[\s._-]+/)[0] ?? '';
+  return first ? first.charAt(0).toUpperCase() + first.slice(1) : '';
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
+  const user = await getAuthenticatedUser();
   const period = resolvePeriod(await searchParams);
-  const stats = await getGlobalStats(period);
+  const [stats, firstName] = await Promise.all([
+    getGlobalStats(period),
+    getFirstName(user.id, user.email),
+  ]);
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
@@ -40,7 +67,7 @@ export default async function DashboardPage({
         }}
       >
         <div>
-          <h1 className="page-title">Bonjour Killian</h1>
+          <h1 className="page-title">{firstName ? `Bonjour ${firstName}` : 'Bonjour 👋'}</h1>
           <div className="page-desc">
             {today.charAt(0).toUpperCase() + today.slice(1)} ·{' '}
             {stats.investors.total.toLocaleString('fr-FR')} investisseurs ·{' '}
