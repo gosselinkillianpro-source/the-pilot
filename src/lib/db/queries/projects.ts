@@ -138,7 +138,7 @@ export async function getProjectInvestors(id: string): Promise<ProjectInvestor[]
   if (!UUID_RE.test(id)) return [];
   const rows = (await db.execute(sql`
     select
-      i.id::text as investor_id, i.full_name, i.email, i.bonus_code,
+      i.id::text as investor_id, i.full_name, i.email, i.bonus_code, i.breach_level,
       s.amount, s.shares_count, s.status, s.signed_at
     from subscriptions s
     join investors i on i.id = s.investor_id
@@ -149,6 +149,7 @@ export async function getProjectInvestors(id: string): Promise<ProjectInvestor[]
     full_name: string | null;
     email: string;
     bonus_code: string | null;
+    breach_level: number | null;
     amount: string | number | null;
     shares_count: number | null;
     status: string;
@@ -163,6 +164,6 @@ export async function getProjectInvestors(id: string): Promise<ProjectInvestor[]
     sharesCount: r.shares_count,
     status: r.status,
     signedAt: r.signed_at ? new Date(r.signed_at) : null,
-    isBreach: r.bonus_code != null && /breach/i.test(r.bonus_code),
+    isBreach: r.breach_level != null || (r.bonus_code != null && /breach/i.test(r.bonus_code)),
   }));
 }

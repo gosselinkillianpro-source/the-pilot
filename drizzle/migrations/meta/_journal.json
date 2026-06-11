@@ -64,6 +64,13 @@
       "when": 1780657084806,
       "tag": "0008_zippy_post",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781169237031,
+      "tag": "0009_lean_hellcat",
+      "breakpoints": true
     }
   ]
 }

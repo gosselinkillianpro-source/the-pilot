@@ -41,6 +41,7 @@ type RawRow = {
   assigned_closer_id: string | null;
   pipeline_stage: string;
   sah_created_at: string | Date | null;
+  breach_level: number | null;
   total_invested: string | number | null;
   active_subscriptions: string | number | null;
   active_projects: string | number | null;
@@ -90,9 +91,9 @@ export async function getCallQueue(opts?: {
       )`;
   const sourceFilter =
     opts?.source === 'breach'
-      ? sql`and i.bonus_code ilike '%breach%'`
+      ? sql`and (i.breach_level is not null or i.bonus_code ilike '%breach%')`
       : opts?.source === 'other'
-        ? sql`and (i.bonus_code is null or i.bonus_code not ilike '%breach%')`
+        ? sql`and i.breach_level is null and (i.bonus_code is null or i.bonus_code not ilike '%breach%')`
         : sql``;
   // On exclut les leads déjà clos (gagné/perdu) de la file d'appels.
   const stageFilter = opts?.excludeWon
@@ -111,6 +112,7 @@ export async function getCallQueue(opts?: {
       i.assigned_closer_id::text as assigned_closer_id,
       i.pipeline_stage,
       i.sah_created_at,
+      i.breach_level,
       i.bonus_code,
       i.claimed_by_id::text as claimed_by_id,
       i.claimed_at,
@@ -185,7 +187,7 @@ export async function getCallQueue(opts?: {
       pipelineStage: r.pipeline_stage,
       totalInvested,
       bonusCode: r.bonus_code,
-      isBreach: isBreachCode(r.bonus_code),
+      isBreach: r.breach_level != null || isBreachCode(r.bonus_code),
       claimedById: claimActive ? r.claimed_by_id : null,
       claimerName: claimActive ? r.claimer_name : null,
       assignedCloserName: r.assigned_closer_name,

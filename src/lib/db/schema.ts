@@ -215,6 +215,10 @@ export const investors = pgTable('investors', {
   onboardingComplete: boolean('onboarding_complete').notNull().default(false),
   acquisitionSource: acquisitionSourceEnum('acquisition_source'),
   acquisitionCampaignId: text('acquisition_campaign_id'),
+  // Parrainage BREACH multi-niveaux — reconstruit depuis SAH (users.invited_by_id).
+  parentSahId: text('parent_sah_id'), // sah_id du parrain (la personne qui a invité celle-ci)
+  parrainName: text('parrain_name'), // nom du parrain direct (affichage fiche)
+  breachLevel: integer('breach_level'), // 0 = BREACH direct, 1 = N-1, 2 = N-2… ; null = hors réseau BREACH
   score: integer('score'),
   scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
   scoreReasoning: text('score_reasoning'),

@@ -520,7 +520,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       count(*) filter (where sah_created_at >= now() - interval '30 days')::int as new30d,
       coalesce(sum(coalesce(wallet_balance_cents, 0)), 0) as wallet_cents
     from investors
-    where deleted_at is null and bonus_code ilike '%breach%'
+    where deleted_at is null and (breach_level is not null or bonus_code ilike '%breach%')
   `)) as unknown as FunnelRow[];
 
   const invested = (await db.execute(sql`
@@ -530,7 +530,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       count(s.id) filter (where s.status <> 'cancelled')::int as sub_count
     from subscriptions s
     join investors i on i.id = s.investor_id
-    where i.bonus_code ilike '%breach%'
+    where (i.breach_level is not null or i.bonus_code ilike '%breach%')
   `)) as unknown as InvestedRow[];
 
   const byCode = (await db.execute(sql`
@@ -541,7 +541,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as invested
     from investors i
     left join subscriptions s on s.investor_id = i.id
-    where i.deleted_at is null and i.bonus_code ilike '%breach%'
+    where i.deleted_at is null and (i.breach_level is not null or i.bonus_code ilike '%breach%')
     group by i.bonus_code
     order by total desc
   `)) as unknown as CodeRow[];
@@ -549,14 +549,14 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
   const byCity = (await db.execute(sql`
     select address_city, count(*)::int as total
     from investors
-    where deleted_at is null and bonus_code ilike '%breach%' and address_city is not null
+    where deleted_at is null and (breach_level is not null or bonus_code ilike '%breach%') and address_city is not null
     group by address_city order by total desc limit 8
   `)) as unknown as CityRow[];
 
   const byMonth = (await db.execute(sql`
     select to_char(date_trunc('month', sah_created_at), 'YYYY-MM') as month, count(*)::int as signups
     from investors
-    where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
+    where deleted_at is null and (breach_level is not null or bonus_code ilike '%breach%') and sah_created_at is not null
     group by month order by month desc limit 6
   `)) as unknown as MonthRow[];
 
@@ -567,7 +567,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
     from subscriptions s
     join investors i on i.id = s.investor_id
     join projects p on p.id = s.project_id
-    where i.bonus_code ilike '%breach%'
+    where (i.breach_level is not null or i.bonus_code ilike '%breach%')
     group by p.name order by collected desc limit 8
   `)) as unknown as ProjRow[];
 
@@ -579,7 +579,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       from subscriptions where status <> 'cancelled' and signed_at is not null
       group by investor_id
     ) fs on fs.investor_id = i.id
-    where i.bonus_code ilike '%breach%' and i.sah_created_at is not null
+    where (i.breach_level is not null or i.bonus_code ilike '%breach%') and i.sah_created_at is not null
   `)) as unknown as TimingRow[];
 
   const other = (await db.execute(sql`
@@ -590,7 +590,9 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total_invested
     from investors i
     left join subscriptions s on s.investor_id = i.id
-    where i.deleted_at is null and (i.bonus_code is null or i.bonus_code not ilike '%breach%')
+    where i.deleted_at is null
+      and i.breach_level is null
+      and (i.bonus_code is null or i.bonus_code not ilike '%breach%')
   `)) as unknown as OtherRow[];
 
   // Évolution sur la période choisie vs période précédente (bornes explicites).
@@ -600,7 +602,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       count(*) filter (where sah_created_at >= ${fromISO}::timestamptz and sah_created_at < ${toISO}::timestamptz)::int as cur,
       count(*) filter (where sah_created_at >= ${prevFromISO}::timestamptz and sah_created_at < ${prevToISO}::timestamptz)::int as prev
     from investors
-    where deleted_at is null and bonus_code ilike '%breach%' and sah_created_at is not null
+    where deleted_at is null and (breach_level is not null or bonus_code ilike '%breach%') and sah_created_at is not null
   `)) as unknown as { cur: number; prev: number }[];
 
   const subsP = (await db.execute(sql`
@@ -613,7 +615,7 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       count(distinct s.investor_id) filter (where s.signed_at >= ${prevFromISO}::timestamptz and s.signed_at < ${prevToISO}::timestamptz)::int as prev_inv
     from subscriptions s
     join investors i on i.id = s.investor_id
-    where i.bonus_code ilike '%breach%' and s.status <> 'cancelled' and s.signed_at is not null
+    where (i.breach_level is not null or i.bonus_code ilike '%breach%') and s.status <> 'cancelled' and s.signed_at is not null
   `)) as unknown as {
     cur_collecte: string | number;
     prev_collecte: string | number;

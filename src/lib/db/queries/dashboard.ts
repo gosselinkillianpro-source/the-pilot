@@ -37,7 +37,7 @@ export async function getGlobalStats(period: ResolvedPeriod): Promise<GlobalStat
         count(*) filter (where onboarding_complete)::int as onboarded,
         count(*) filter (where sah_created_at >= date_trunc('month', now()))::int as new_month,
         count(*) filter (where sah_created_at >= now() - interval '7 days')::int as new7d,
-        count(*) filter (where bonus_code ilike '%breach%')::int as breach_leads
+        count(*) filter (where breach_level is not null or bonus_code ilike '%breach%')::int as breach_leads
       from investors where deleted_at is null
     `),
     db.execute(sql`
@@ -51,7 +51,7 @@ export async function getGlobalStats(period: ResolvedPeriod): Promise<GlobalStat
     db.execute(sql`
       select coalesce(sum(s.amount) filter (where s.status <> 'cancelled'), 0) as breach_collecte
       from subscriptions s join investors i on i.id = s.investor_id
-      where i.bonus_code ilike '%breach%'
+      where (i.breach_level is not null or i.bonus_code ilike '%breach%')
     `),
     db.execute(sql`
       select count(*)::int as total,

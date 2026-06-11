@@ -131,6 +131,8 @@ type SahInvestor = {
   bonus_code: string | null;
   cgp_name: string | null;
   cgp_network: string | null;
+  parent_sah_id: string | null;
+  parrain_name: string | null;
   sah_created_at: Date | null;
   sah_updated_at: Date | null;
   kyc_validated_at: Date | null;
@@ -168,6 +170,9 @@ async function syncInvestors(): Promise<number> {
       bc.code as bonus_code,
       bc.ambassador_name as cgp_name,
       dle.name as cgp_network,
+      -- Parrainage : le vrai lien SAH est invited_by_id (type 'User'), pas parent_id.
+      case when u.invited_by_type = 'User' then u.invited_by_id::text end as parent_sah_id,
+      nullif(trim(concat(coalesce(inv.first_name, ''), ' ', coalesce(inv.last_name, ''))), '') as parrain_name,
       u.created_at as sah_created_at,
       u.updated_at as sah_updated_at,
       max(p.kyc_validated_at) as kyc_validated_at,
@@ -192,12 +197,13 @@ async function syncInvestors(): Promise<number> {
     left join users_profiles p on p.user_id = u.id
     left join bonus_codes bc on bc.id = u.bonus_code_id
     left join distributor_legal_entities dle on dle.id = u.distributor_id
+    left join users inv on inv.id = u.invited_by_id and u.invited_by_type = 'User'
     where u.email is not null
     group by u.id, u.email, u.civility, u.first_name, u.last_name, u.phone_number,
              u.birthdate, u.nationality, u.country, u.street_address_and_number,
              u.additional_address, u.city, u.zip_code, u.tax_residency_country,
              u.cached_wallet_balance_in_cents, u.created_at, u.updated_at,
-             bc.code, bc.ambassador_name, dle.name
+             bc.code, bc.ambassador_name, dle.name, inv.first_name, inv.last_name
   `;
   if (rows.length === 0) return 0;
 
@@ -222,6 +228,8 @@ async function syncInvestors(): Promise<number> {
       bonusCode: u.bonus_code ?? null,
       cgpName: u.cgp_name ?? null,
       cgpNetwork: u.cgp_network ?? null,
+      parentSahId: u.parent_sah_id ?? null,
+      parrainName: u.parrain_name ?? null,
       walletBalanceCents: u.wallet_balance_cents ?? null,
       walletStatus: u.wallet_status ?? null,
       lwOnboardingStatus: u.lw_onboarding_status ?? null,
@@ -263,6 +271,8 @@ async function syncInvestors(): Promise<number> {
           bonusCode: sql`excluded.bonus_code`,
           cgpName: sql`excluded.cgp_name`,
           cgpNetwork: sql`excluded.cgp_network`,
+          parentSahId: sql`excluded.parent_sah_id`,
+          parrainName: sql`excluded.parrain_name`,
           walletBalanceCents: sql`excluded.wallet_balance_cents`,
           walletStatus: sql`excluded.wallet_status`,
           lwOnboardingStatus: sql`excluded.lw_onboarding_status`,
@@ -278,7 +288,33 @@ async function syncInvestors(): Promise<number> {
       });
   }
 
+  await recomputeBreachLevels();
   return rows.length;
+}
+
+/**
+ * Attribution BREACH multi-niveaux : part des inscrits BREACH directs (code ~ breach,
+ * niveau 0) et descend l'arbre de parrainage (parent_sah_id) niveau par niveau.
+ * Recalcul complet (reset puis recompute) — tout cumulé sous breach_level.
+ */
+async function recomputeBreachLevels(): Promise<void> {
+  await db.execute(sql`update investors set breach_level = null where breach_level is not null`);
+  await db.execute(sql`
+    with recursive net as (
+      select id, sah_id, 0 as lvl
+      from investors
+      where deleted_at is null and bonus_code ilike '%breach%'
+      union all
+      select c.id, c.sah_id, n.lvl + 1
+      from investors c
+      join net n on c.parent_sah_id = n.sah_id
+      where c.deleted_at is null and n.lvl < 12
+    ),
+    ranked as (select id, min(lvl) as lvl from net group by id)
+    update investors i set breach_level = ranked.lvl
+    from ranked
+    where ranked.id = i.id
+  `);
 }
 
 type SahSubscription = {

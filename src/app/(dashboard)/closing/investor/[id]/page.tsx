@@ -234,6 +234,24 @@ export default async function InvestorPage({ params }: Props) {
               const stage = getInvestorStage(investor);
               return <span className={stage.badgeClass}>{stage.label}</span>;
             })()}
+            {(() => {
+              const directByCode = investor.bonusCode != null && /breach/i.test(investor.bonusCode);
+              if (investor.breachLevel == null && !directByCode) return null;
+              const label =
+                investor.breachLevel != null && investor.breachLevel > 0
+                  ? `BREACH N-${investor.breachLevel}`
+                  : 'BREACH direct';
+              const parrain =
+                investor.breachLevel != null && investor.breachLevel > 0 && investor.parrainName
+                  ? ` · parrain : ${investor.parrainName}`
+                  : '';
+              return (
+                <span className="badge badge-ai">
+                  {label}
+                  {parrain}
+                </span>
+              );
+            })()}
           </div>
         </div>
       </div>
