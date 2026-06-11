@@ -383,3 +383,89 @@ export async function getSahBreachSubDiag(): Promise<SahBreachSubDiag> {
 
   return { nonCancelled, nonCancelledNonFailed, reserved, validatedNonReserved, failed, cancelled };
 }
+
+/* ============================================================
+   DIAGNOSTIC PARRAINAGE — l'arbre BREACH multi-niveaux est-il reconstructible ?
+   On cherche, côté SAH, un lien "code de parrainage -> propriétaire (le parrain)".
+   100% NON SENSIBLE : structure (information_schema) + comptes agrégés uniquement.
+   ============================================================ */
+export type SahReferralDiag = {
+  bonusCodeColumns: { column: string; type: string }[];
+  ownerCandidates: string[]; // colonnes de bonus_codes pouvant pointer vers le propriétaire
+  referralTables: string[]; // tables liées au parrainage
+  userReferralColumns: string[]; // colonnes de users liées au parrainage
+  totalBonusCodes: number;
+  breachBonusCodes: number;
+  verdict: 'likely' | 'unlikely' | 'unknown';
+};
+
+// Une colonne "propriétaire" probable : référence un user/compte/parrain.
+const OWNER_COL = /(^|_)(user|owner|account|ambassador|parent|sponsor|referr|parrain)(_id)?$/i;
+const REFERRAL_NAME = /(bonus|referr|sponsor|parrain|affiliat|ambassad|godfather|invit)/i;
+
+export async function getSahReferralDiag(): Promise<SahReferralDiag> {
+  const sql = getSahClient();
+
+  const bonusCodeColumns = await sql<{ column_name: string; data_type: string }[]>`
+    select column_name, data_type
+    from information_schema.columns
+    where table_name = 'bonus_codes'
+    order by ordinal_position
+  `
+    .then((rows) => rows.map((r) => ({ column: r.column_name, type: r.data_type })))
+    .catch(() => [] as { column: string; type: string }[]);
+
+  const referralTables = await sql<{ table_name: string }[]>`
+    select table_name from information_schema.tables
+    where table_schema not in ('pg_catalog', 'information_schema')
+      and (
+        table_name ilike '%bonus%' or table_name ilike '%referr%' or table_name ilike '%sponsor%'
+        or table_name ilike '%parrain%' or table_name ilike '%affiliat%' or table_name ilike '%ambassad%'
+        or table_name ilike '%godfather%' or table_name ilike '%invit%'
+      )
+    order by table_name
+  `
+    .then((rows) => rows.map((r) => r.table_name))
+    .catch(() => [] as string[]);
+
+  const userReferralColumns = await sql<{ column_name: string }[]>`
+    select column_name from information_schema.columns
+    where table_name = 'users'
+      and (
+        column_name ilike '%bonus%' or column_name ilike '%referr%' or column_name ilike '%sponsor%'
+        or column_name ilike '%parent%' or column_name ilike '%invit%' or column_name ilike '%parrain%'
+        or column_name ilike '%ambassad%'
+      )
+    order by column_name
+  `
+    .then((rows) => rows.map((r) => r.column_name))
+    .catch(() => [] as string[]);
+
+  const totalBonusCodes = await sql<{ c: number }[]>`select count(*)::int as c from bonus_codes`
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+  const breachBonusCodes = await sql<{ c: number }[]>`
+    select count(*)::int as c from bonus_codes where code ilike '%breach%'
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+
+  const ownerCandidates = bonusCodeColumns.map((c) => c.column).filter((c) => OWNER_COL.test(c));
+
+  const verdict: SahReferralDiag['verdict'] =
+    bonusCodeColumns.length === 0
+      ? 'unknown'
+      : ownerCandidates.length > 0 || referralTables.length > 1
+        ? 'likely'
+        : 'unlikely';
+
+  return {
+    bonusCodeColumns,
+    ownerCandidates,
+    referralTables: referralTables.filter((t) => REFERRAL_NAME.test(t)),
+    userReferralColumns,
+    totalBonusCodes,
+    breachBonusCodes,
+    verdict,
+  };
+}

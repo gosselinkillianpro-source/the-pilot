@@ -1,16 +1,18 @@
-import { AlertTriangle, Database } from 'lucide-react';
+import { AlertTriangle, Database, Network } from 'lucide-react';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import {
   getProfilCompletDiagnostic,
   getRegFieldDiagnostic,
   getSahBreachSubDiag,
   getSahDiagnostics,
+  getSahReferralDiag,
   getSahSchema,
   type ProfilCompletDiagnostic,
   type RegFieldDiagnostic,
   type SahBreachSubDiag,
   type SahColumn,
   type SahDiagnostics,
+  type SahReferralDiag,
 } from '@/lib/integrations/sah/client';
 import { SyncButton } from './sync-button';
 
@@ -44,14 +46,16 @@ export default async function SahExplorerPage() {
   let profilDiag: ProfilCompletDiagnostic | null = null;
   let subDiag: SahBreachSubDiag | null = null;
   let regDiag: RegFieldDiagnostic | null = null;
+  let referralDiag: SahReferralDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag, regDiag] = await Promise.all([
+    [schema, diag, profilDiag, subDiag, regDiag, referralDiag] = await Promise.all([
       getSahSchema(),
       getSahDiagnostics(),
       getProfilCompletDiagnostic(),
       getSahBreachSubDiag(),
       getRegFieldDiagnostic(),
+      getSahReferralDiag(),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
@@ -106,6 +110,91 @@ export default async function SahExplorerPage() {
               </div>
             </div>
           </div>
+
+          {referralDiag && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div
+                  className="view-card-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Network size={15} />
+                  Parrainage BREACH multi-niveaux — faisabilité
+                </div>
+                <span
+                  className={`badge ${
+                    referralDiag.verdict === 'likely'
+                      ? 'badge-success'
+                      : referralDiag.verdict === 'unlikely'
+                        ? 'badge-warning'
+                        : 'badge-neutral'
+                  }`}
+                >
+                  {referralDiag.verdict === 'likely'
+                    ? 'arbre reconstructible'
+                    : referralDiag.verdict === 'unlikely'
+                      ? 'lien propriétaire absent'
+                      : 'indéterminé'}
+                </span>
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}
+              >
+                <p style={{ margin: 0, color: 'var(--text-2)' }}>
+                  {referralDiag.verdict === 'likely'
+                    ? 'Bonne nouvelle : SAH semble relier chaque code à un propriétaire — on peut remonter l’arbre (BREACH → N-1 → N-2…).'
+                    : referralDiag.verdict === 'unlikely'
+                      ? 'La table des codes ne semble PAS relier un code à la personne qui le possède. Il faudra demander à SAH d’ajouter ce lien pour reconstruire l’arbre.'
+                      : 'Impossible de lire la structure (connexion SAH ?).'}
+                </p>
+                <div style={{ color: 'var(--text-3)' }}>
+                  <strong>Colonnes « propriétaire » détectées</strong> :{' '}
+                  {referralDiag.ownerCandidates.length > 0
+                    ? referralDiag.ownerCandidates.join(', ')
+                    : 'aucune'}
+                </div>
+                <div style={{ color: 'var(--text-3)' }}>
+                  <strong>Tables liées au parrainage</strong> :{' '}
+                  {referralDiag.referralTables.length > 0
+                    ? referralDiag.referralTables.join(', ')
+                    : 'aucune'}
+                </div>
+                <div style={{ color: 'var(--text-3)' }}>
+                  <strong>Colonnes parrainage dans `users`</strong> :{' '}
+                  {referralDiag.userReferralColumns.length > 0
+                    ? referralDiag.userReferralColumns.join(', ')
+                    : 'aucune'}
+                </div>
+                <div style={{ color: 'var(--text-3)' }}>
+                  Codes bonus : <strong>{referralDiag.totalBonusCodes}</strong> au total ·{' '}
+                  <strong>{referralDiag.breachBonusCodes}</strong> contenant « breach ».
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <strong style={{ fontSize: 12 }}>Colonnes de `bonus_codes`</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {referralDiag.bonusCodeColumns.length === 0 ? (
+                      <span style={{ fontSize: 12, color: 'var(--text-4)' }}>— non lisible —</span>
+                    ) : (
+                      referralDiag.bonusCodeColumns.map((c) => (
+                        <span
+                          key={c.column}
+                          className="badge badge-neutral"
+                          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                        >
+                          {c.column}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
+                  Copie ce bloc à Claude : il s'en sert pour construire l'attribution BREACH
+                  multi-niveaux (tout cumulé) + le parrain sur chaque fiche.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="view-card">
             <div className="view-card-header">
