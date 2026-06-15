@@ -115,13 +115,18 @@ export type CodeRow = {
 };
 
 /**
- * Suivi par CODE BONUS sur la période : funnel inscrits → complets → investisseurs → collecte.
- * Trié par collecte puis inscrits, limité aux `limit` premiers codes actifs sur la fenêtre.
- * Indépendant de la dépense pub : marche avec les vraies données SAH dès maintenant.
+ * Suivi par CODE BONUS PUB sur la période : funnel inscrits → complets → investisseurs → collecte.
+ * Restreint aux codes pub (SEVEN-BREACH*, *VIP*) — les codes partenaires/CGP sont EXCLUS.
+ * Trié par collecte puis inscrits. Indépendant de la dépense pub : marche dès maintenant.
  */
 export async function getCodeTracking(range: DateRange, limit = 12): Promise<CodeRow[]> {
   const created = windowFilter('sah_created_at', range);
   const signed = windowFilter('s.signed_at', range);
+  // Filtre « code pub » = un de nos codes ads, dans les deux contextes de colonne.
+  const adInv = sql.raw(`(${AD_CODE_PATTERNS.Meta} or ${AD_CODE_PATTERNS.Google})`);
+  const adSub = sql.raw(
+    `(${AD_CODE_PATTERNS.Meta.replace('bonus_code', 'i.bonus_code')} or ${AD_CODE_PATTERNS.Google.replace('bonus_code', 'i.bonus_code')})`,
+  );
 
   const [invR, subR] = await Promise.all([
     db.execute(sql`
@@ -130,7 +135,7 @@ export async function getCodeTracking(range: DateRange, limit = 12): Promise<Cod
         count(*) filter (where registration_complete and onboarding_complete)::int as complets
       from investors
       where deleted_at is null and sah_created_at is not null
-        and bonus_code is not null and trim(bonus_code) <> '' and ${created}
+        and bonus_code is not null and trim(bonus_code) <> '' and ${adInv} and ${created}
       group by trim(bonus_code)
     `),
     db.execute(sql`
@@ -141,7 +146,7 @@ export async function getCodeTracking(range: DateRange, limit = 12): Promise<Cod
       join investors i on i.id = s.investor_id
       where s.status <> 'cancelled' and s.signed_at is not null
         and i.deleted_at is null and i.bonus_code is not null and trim(i.bonus_code) <> ''
-        and ${signed}
+        and ${adSub} and ${signed}
       group by trim(i.bonus_code)
     `),
   ]);

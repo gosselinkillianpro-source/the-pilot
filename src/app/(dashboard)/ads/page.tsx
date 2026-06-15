@@ -596,20 +596,16 @@ export default async function AdsPage({
         <div className="view-card">
           <div className="view-card-header">
             <div className="view-card-title">Tracking par code bonus</div>
-            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
-              top {codeRows.length} · {period.label}
-            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>{period.label}</span>
           </div>
           <div
             className="view-card-body"
             style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
           >
             <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
-              Chaque code saisi à l'inscription, du clic à la souscription.{' '}
+              Tes codes pub uniquement, du clic à la souscription.{' '}
               <span style={{ color: SOURCE_COLOR.Meta }}>●</span> Meta ·{' '}
-              <span style={{ color: SOURCE_COLOR.Google }}>●</span> Google ·{' '}
-              <span style={{ color: SOURCE_COLOR.Partenaire }}>●</span> partenaire/CGP. Trié par
-              collecte.
+              <span style={{ color: SOURCE_COLOR.Google }}>●</span> Google. Trié par collecte.
             </div>
             <CodeTable rows={codeRows} />
           </div>
