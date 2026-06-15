@@ -10,7 +10,7 @@ import {
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
 import { Sparkline } from '@/components/shared/sparkline';
 import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
-import { getBlendedAcquisition } from '@/lib/ads/blended';
+import { type BlendedMetrics, getBlendedAcquisition } from '@/lib/ads/blended';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
 import { resolveAdsPeriod } from '@/lib/ads/period';
 import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
@@ -224,6 +224,46 @@ function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
   );
 }
 
+function AcqMetrics({
+  spend,
+  counts,
+  metrics,
+}: {
+  spend: number;
+  counts: { inscrits: number; complets: number; investisseurs: number; collecte: number };
+  metrics: BlendedMetrics;
+}) {
+  const pr = metrics.profitRatio;
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
+        gap: 10,
+      }}
+    >
+      <StatTile label="Dépense ads" value={eur(spend)} />
+      <StatTile label="Inscrits" value={int(counts.inscrits)} hint="via le code" />
+      <StatTile label="CPA réel" value={eur(metrics.cpa, 2)} hint="coût / inscrit" />
+      <StatTile label="Inscrits complets" value={int(counts.complets)} hint="profil + KYC" />
+      <StatTile label="CPI réel" value={eur(metrics.cpi, 2)} hint="coût / complet" />
+      <StatTile label="Investisseurs" value={int(counts.investisseurs)} hint="ont signé" />
+      <StatTile label="Coût / investisseur" value={eur(metrics.costPerInvestor, 0)} />
+      <StatTile
+        label="Investissement moyen"
+        value={eur(metrics.avgTicket, 0)}
+        hint="ticket moyen"
+      />
+      <StatTile
+        label="Rentabilité"
+        value={pr === null ? '—' : `×${pr.toFixed(1)}`}
+        valueColor={pr === null ? undefined : pr >= 1 ? 'var(--success)' : 'var(--danger)'}
+        hint={pr === null ? 'invest. moyen / coût' : pr >= 1 ? 'rentable ✓' : 'pas encore rentable'}
+      />
+    </div>
+  );
+}
+
 export default async function AdsPage({
   searchParams,
 }: {
@@ -238,7 +278,8 @@ export default async function AdsPage({
     getCampaignRoi(),
   ]);
   const { totals, platforms, campaigns, byPlatform } = overview;
-  const blended = await getBlendedAcquisition(period, totals.spend, trends.previous.spend);
+  const spendByPlatform = Object.fromEntries(byPlatform.map((b) => [b.platform, b.raw.spend]));
+  const blended = await getBlendedAcquisition(period, spendByPlatform);
   const globalRoas =
     roi.hasAttribution && totals.spend > 0 ? roi.totalInvested / totals.spend : null;
   const costPerInvestor =
@@ -352,99 +393,68 @@ export default async function AdsPage({
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
 
-      {/* Coût réel d'acquisition : dépense pub croisée avec les vrais chiffres SAH */}
-      {blended.spend > 0 && (
+      {/* Coût réel d'acquisition : dépense pub attribuée par code bonus, croisée SAH */}
+      {blended.available && (
         <div
           className="view-card"
           style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
         >
           <div className="view-card-header">
             <div className="view-card-title">Coût réel d'acquisition · croisé SAH</div>
-            <span className="badge badge-success badge-dot">chiffres SAH réels</span>
+            <span className="badge badge-success badge-dot">attribué par code</span>
           </div>
           <div
             className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
           >
             <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>
-              On <strong>ignore les conversions déclarées par Meta/Google</strong> (gonflées,
-              dédoublées) et on divise la dépense pub par les{' '}
-              <strong>vrais comptages Seven At Home</strong> de la période. C'est ce qui corrige le
-              « Meta dit 600 inscrits, il y en a 180 ».
+              Chaque inscrit est rattaché à sa source via son <strong>code bonus</strong> :{' '}
+              <strong>SEVEN-BREACH → Meta</strong>, <strong>BREACH-VIP → Google</strong>. On{' '}
+              <strong>ignore les conversions déclarées par les régies</strong> (gonflées) et on
+              divise leur dépense par les <strong>vrais inscrits SAH</strong> de ce code. C'est ce
+              qui corrige le « Meta dit 600 inscrits, il y en a 180 ».
             </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                gap: 10,
-              }}
-            >
-              <StatTile label="Dépense ads" value={eur(blended.spend)} hint="Meta + Google" />
-              <StatTile
-                label="Nouveaux inscrits"
-                value={int(blended.counts.inscrits)}
-                hint="comptes créés (SAH)"
-              />
-              <StatTile
-                label="CPA réel"
-                value={eur(blended.metrics.cpa, 2)}
-                hint="coût / inscrit"
-                deltaPct={blended.deltaPct.cpa}
-              />
-              <StatTile
-                label="Inscrits complets"
-                value={int(blended.counts.complets)}
-                hint="profil + KYC"
-              />
-              <StatTile
-                label="CPI réel"
-                value={eur(blended.metrics.cpi, 2)}
-                hint="coût / inscrit complet"
-                deltaPct={blended.deltaPct.cpi}
-              />
-              <StatTile
-                label="Investisseurs"
-                value={int(blended.counts.investisseurs)}
-                hint="ont signé sur la période"
-              />
-              <StatTile
-                label="Coût / investisseur"
-                value={eur(blended.metrics.costPerInvestor, 0)}
-                hint="dépense / investisseur"
-                deltaPct={blended.deltaPct.costPerInvestor}
-              />
-              <StatTile
-                label="Investissement moyen"
-                value={eur(blended.metrics.avgTicket, 0)}
-                hint="ticket moyen"
-              />
-              <StatTile
-                label="Rentabilité"
-                value={
-                  blended.metrics.profitRatio === null
-                    ? '—'
-                    : `×${blended.metrics.profitRatio.toFixed(1)}`
-                }
-                valueColor={
-                  blended.metrics.profitRatio === null
-                    ? undefined
-                    : blended.metrics.profitRatio >= 1
-                      ? 'var(--success)'
-                      : 'var(--danger)'
-                }
-                hint={
-                  blended.metrics.profitRatio === null
-                    ? 'invest. moyen / coût'
-                    : blended.metrics.profitRatio >= 1
-                      ? 'rentable ✓'
-                      : 'pas encore rentable'
-                }
-              />
-            </div>
+
+            {blended.platforms.length > 1 && blended.total ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--text-2)',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Total ads (Meta + Google)
+                </div>
+                <AcqMetrics
+                  spend={blended.total.spend}
+                  counts={blended.total.counts}
+                  metrics={blended.total.metrics}
+                />
+              </div>
+            ) : null}
+
+            {blended.platforms.map((p) => (
+              <div key={p.platform} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="badge badge-neutral">{p.platform}</span>
+                  <span
+                    style={{ fontSize: 12, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}
+                  >
+                    code {p.code}
+                  </span>
+                </div>
+                <AcqMetrics spend={p.spend} counts={p.counts} metrics={p.metrics} />
+              </div>
+            ))}
+
             <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5 }}>
-              Tout compté (ads + parrainage + SEO) · « complet » = profil renseigné + KYC validé ·
-              les investissements d'une période récente sont encore partiels (le closing prend
-              plusieurs semaines). Deltas comparés à la période précédente (baisse de coût = vert).
+              « complet » = profil renseigné + KYC validé · investisseurs &amp; collecte =
+              souscriptions signées sur la période par ces inscrits · une période récente est encore
+              partielle (le closing prend plusieurs semaines). Mapping codes : SEVEN-BREACH* → Meta,
+              *VIP* → Google — dis-moi si tu ajoutes d'autres codes pub.
             </div>
           </div>
         </div>

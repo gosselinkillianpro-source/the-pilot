@@ -1,14 +1,19 @@
 import 'server-only';
 
-import { type AcquisitionCounts, getAcquisitionCounts } from '@/lib/db/queries/ads-acquisition';
-import { type AdsPeriod, periodToRange, previousRange } from './period';
+import {
+  type AcquisitionCounts,
+  AD_CODE_LABELS,
+  type AdPlatform,
+  getAttributedCounts,
+} from '@/lib/db/queries/ads-acquisition';
+import { type AdsPeriod, periodToRange } from './period';
 
 /**
- * Coût d'acquisition « réel », croisé Meta/Google + SAH.
+ * Coût d'acquisition « réel », croisé Meta/Google + SAH, attribué par CODE BONUS.
  *
- * On ne garde QUE la dépense pub des régies (leur seul chiffre fiable) et on la
- * divise par les VRAIS comptages SAH de la même fenêtre — pas par les conversions
- * gonflées du pixel Meta. C'est ce qui corrige le « Meta dit 600, il y en a 180 ».
+ * On ne garde QUE la dépense pub de chaque régie (leur seul chiffre fiable) et on la
+ * divise par les VRAIS inscrits SAH portant le code de cette régie — pas par les
+ * conversions gonflées du pixel. C'est ce qui corrige « Meta dit 600, il y en a 180 ».
  */
 export type BlendedMetrics = {
   cpa: number | null; // dépense / inscrit
@@ -30,44 +35,64 @@ function compute(spend: number, c: AcquisitionCounts): BlendedMetrics {
   return { cpa, cpi, costPerInvestor, avgTicket, profitRatio };
 }
 
-function pctDelta(a: number | null, b: number | null): number | null {
-  if (a === null || b === null || b === 0) return null;
-  return Math.round(((a - b) / b) * 100);
+function sumCounts(a: AcquisitionCounts, b: AcquisitionCounts): AcquisitionCounts {
+  return {
+    inscrits: a.inscrits + b.inscrits,
+    complets: a.complets + b.complets,
+    investisseurs: a.investisseurs + b.investisseurs,
+    collecte: a.collecte + b.collecte,
+  };
 }
 
-export type BlendedAcquisition = {
-  available: boolean;
+export type PlatformAcq = {
+  platform: AdPlatform;
+  code: string;
   spend: number;
   counts: AcquisitionCounts;
   metrics: BlendedMetrics;
-  deltaPct: { cpa: number | null; cpi: number | null; costPerInvestor: number | null };
+};
+
+export type BlendedAcquisition = {
+  available: boolean;
+  platforms: PlatformAcq[]; // uniquement celles avec une dépense > 0
+  total: { spend: number; counts: AcquisitionCounts; metrics: BlendedMetrics } | null;
 };
 
 /**
- * @param spendCurrent  dépense pub de la période (Meta + Google) — cohérente avec le KPI « Dépense ».
- * @param spendPrevious dépense pub de la période précédente (pour le delta).
+ * @param spendByPlatform dépense pub de la période par régie (depuis overview.byPlatform).
  */
 export async function getBlendedAcquisition(
   period: AdsPeriod,
-  spendCurrent: number,
-  spendPrevious: number,
+  spendByPlatform: Partial<Record<AdPlatform, number>>,
 ): Promise<BlendedAcquisition> {
-  const cur = periodToRange(period);
-  const prev = previousRange(cur);
-  const { current, previous } = await getAcquisitionCounts(cur, prev);
+  const counts = await getAttributedCounts(periodToRange(period));
 
-  const metrics = compute(spendCurrent, current);
-  const metricsPrev = compute(spendPrevious, previous);
+  const platforms: PlatformAcq[] = [];
+  for (const platform of ['Meta', 'Google'] as const) {
+    const spend = spendByPlatform[platform] ?? 0;
+    if (spend <= 0) continue; // pas de dépense → rien à attribuer
+    platforms.push({
+      platform,
+      code: AD_CODE_LABELS[platform],
+      spend,
+      counts: counts[platform],
+      metrics: compute(spend, counts[platform]),
+    });
+  }
+
+  if (platforms.length === 0) return { available: false, platforms: [], total: null };
+
+  const totalSpend = platforms.reduce((acc, p) => acc + p.spend, 0);
+  const totalCounts = platforms.reduce((acc, p) => sumCounts(acc, p.counts), {
+    inscrits: 0,
+    complets: 0,
+    investisseurs: 0,
+    collecte: 0,
+  } as AcquisitionCounts);
 
   return {
-    available: spendCurrent > 0 || current.inscrits > 0,
-    spend: spendCurrent,
-    counts: current,
-    metrics,
-    deltaPct: {
-      cpa: pctDelta(metrics.cpa, metricsPrev.cpa),
-      cpi: pctDelta(metrics.cpi, metricsPrev.cpi),
-      costPerInvestor: pctDelta(metrics.costPerInvestor, metricsPrev.costPerInvestor),
-    },
+    available: true,
+    platforms,
+    total: { spend: totalSpend, counts: totalCounts, metrics: compute(totalSpend, totalCounts) },
   };
 }
