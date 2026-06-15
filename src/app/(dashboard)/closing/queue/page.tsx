@@ -213,7 +213,16 @@ export default async function CallQueuePage({
         </div>
       ) : (
         groups.map((g, gi) => (
-          <details key={g.bucket} className="view-card" open={gi < 2}>
+          // Accordéon natif (name partagé) : une seule file ouverte à la fois.
+          // Ouvrir une file ferme les autres → on arrive en haut de la liste choisie
+          // (et plus au bas des longues listes restées ouvertes au-dessus).
+          <details
+            key={g.bucket}
+            name="call-queue"
+            className="view-card"
+            open={gi === 0}
+            style={{ scrollMarginTop: 16 }}
+          >
             <summary
               className="view-card-header"
               style={{ cursor: 'pointer', listStyle: 'none', alignItems: 'center' }}
