@@ -7,15 +7,17 @@ import {
   TrendingUp,
   Trophy,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
 import { Sparkline } from '@/components/shared/sparkline';
 import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
-import { type BlendedMetrics, getBlendedAcquisition } from '@/lib/ads/blended';
+import { type BlendedAcquisition, getBlendedAcquisition } from '@/lib/ads/blended';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
-import { resolveAdsPeriod } from '@/lib/ads/period';
+import { periodToRange, resolveAdsPeriod } from '@/lib/ads/period';
 import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
 import { getAdsTrends } from '@/lib/ads/trends';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { type CodeRow, type CodeSource, getCodeTracking } from '@/lib/db/queries/ads-acquisition';
 import { AdsReco } from './ads-reco';
 
 export const dynamic = 'force-dynamic';
@@ -224,42 +226,212 @@ function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
   );
 }
 
-function AcqMetrics({
-  spend,
-  counts,
-  metrics,
-}: {
-  spend: number;
-  counts: { inscrits: number; complets: number; investisseurs: number; collecte: number };
-  metrics: BlendedMetrics;
-}) {
-  const pr = metrics.profitRatio;
+function Th({ children, left }: { children: ReactNode; left?: boolean }) {
   return (
-    <div
+    <th
       style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))',
-        gap: 10,
+        textAlign: left ? 'left' : 'right',
+        fontSize: 10.5,
+        fontWeight: 600,
+        color: 'var(--text-3)',
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
+        padding: '6px 10px',
+        borderBottom: '1px solid var(--border)',
+        whiteSpace: 'nowrap',
       }}
     >
-      <StatTile label="Dépense ads" value={eur(spend)} />
-      <StatTile label="Inscrits" value={int(counts.inscrits)} hint="via le code" />
-      <StatTile label="CPA réel" value={eur(metrics.cpa, 2)} hint="coût / inscrit" />
-      <StatTile label="Inscrits complets" value={int(counts.complets)} hint="profil + KYC" />
-      <StatTile label="CPI réel" value={eur(metrics.cpi, 2)} hint="coût / complet" />
-      <StatTile label="Investisseurs" value={int(counts.investisseurs)} hint="ont signé" />
-      <StatTile label="Coût / investisseur" value={eur(metrics.costPerInvestor, 0)} />
-      <StatTile
-        label="Investissement moyen"
-        value={eur(metrics.avgTicket, 0)}
-        hint="ticket moyen"
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  left,
+  color,
+  bold,
+}: {
+  children: ReactNode;
+  left?: boolean;
+  color?: string;
+  bold?: boolean;
+}) {
+  return (
+    <td
+      style={{
+        textAlign: left ? 'left' : 'right',
+        fontSize: 13,
+        fontFamily: left ? 'inherit' : 'var(--font-mono)',
+        color: color ?? 'var(--text-1)',
+        fontWeight: bold ? 600 : 400,
+        padding: '9px 10px',
+        borderBottom: '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </td>
+  );
+}
+
+const SOURCE_COLOR: Record<CodeSource, string> = {
+  Meta: 'var(--info, #3b82f6)',
+  Google: 'var(--warning)',
+  Partenaire: 'var(--text-4)',
+};
+
+function SourceTag({ source }: { source: CodeSource }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 12,
+        color: 'var(--text-2)',
+      }}
+    >
+      <span
+        style={{ width: 7, height: 7, borderRadius: '50%', background: SOURCE_COLOR[source] }}
       />
-      <StatTile
-        label="Rentabilité"
-        value={pr === null ? '—' : `×${pr.toFixed(1)}`}
-        valueColor={pr === null ? undefined : pr >= 1 ? 'var(--success)' : 'var(--danger)'}
-        hint={pr === null ? 'invest. moyen / coût' : pr >= 1 ? 'rentable ✓' : 'pas encore rentable'}
-      />
+      {source}
+    </span>
+  );
+}
+
+/** Tableau coût réel par régie (Meta / Google / Total). */
+function CostTable({ blended }: { blended: BlendedAcquisition }) {
+  const rows = [
+    ...blended.platforms.map((p) => ({
+      key: p.platform as string,
+      label: p.platform as string,
+      sub: `code ${p.code}`,
+      spend: p.spend,
+      counts: p.counts,
+      metrics: p.metrics,
+      total: false,
+    })),
+    ...(blended.platforms.length > 1 && blended.total
+      ? [
+          {
+            key: 'total',
+            label: 'Total ads',
+            sub: 'Meta + Google',
+            spend: blended.total.spend,
+            counts: blended.total.counts,
+            metrics: blended.total.metrics,
+            total: true,
+          },
+        ]
+      : []),
+  ];
+  return (
+    <div className="table-scroll">
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+        <thead>
+          <tr>
+            <Th left>Source</Th>
+            <Th>Dépense</Th>
+            <Th>Inscrits</Th>
+            <Th>CPA</Th>
+            <Th>Complets</Th>
+            <Th>CPI</Th>
+            <Th>Investisseurs</Th>
+            <Th>Coût / inv.</Th>
+            <Th>Ticket moyen</Th>
+            <Th>Rentabilité</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const pr = r.metrics.profitRatio;
+            return (
+              <tr
+                key={r.key}
+                style={
+                  r.total
+                    ? { background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }
+                    : undefined
+                }
+              >
+                <Td left bold>
+                  <span style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{r.label}</span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-4)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      {r.sub}
+                    </span>
+                  </span>
+                </Td>
+                <Td>{eur(r.spend)}</Td>
+                <Td>{int(r.counts.inscrits)}</Td>
+                <Td>{eur(r.metrics.cpa, 2)}</Td>
+                <Td>{int(r.counts.complets)}</Td>
+                <Td>{eur(r.metrics.cpi, 2)}</Td>
+                <Td>{int(r.counts.investisseurs)}</Td>
+                <Td>{eur(r.metrics.costPerInvestor, 0)}</Td>
+                <Td>{eur(r.metrics.avgTicket, 0)}</Td>
+                <Td
+                  bold
+                  color={pr === null ? undefined : pr >= 1 ? 'var(--success)' : 'var(--danger)'}
+                >
+                  {pr === null ? '—' : `×${pr.toFixed(1)}`}
+                </Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Tableau de suivi par code bonus (toutes sources, sur la période). */
+function CodeTable({ rows }: { rows: CodeRow[] }) {
+  return (
+    <div className="table-scroll">
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+        <thead>
+          <tr>
+            <Th left>Code bonus</Th>
+            <Th left>Source</Th>
+            <Th>Inscrits</Th>
+            <Th>Complets</Th>
+            <Th>Investisseurs</Th>
+            <Th>Collecte</Th>
+            <Th>Ticket moyen</Th>
+            <Th>Conv. inv.</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const ticket = r.investisseurs > 0 ? r.collecte / r.investisseurs : null;
+            const conv = r.inscrits > 0 ? (r.investisseurs / r.inscrits) * 100 : null;
+            return (
+              <tr key={r.code}>
+                <Td left bold>
+                  {r.code}
+                </Td>
+                <Td left>
+                  <SourceTag source={r.source} />
+                </Td>
+                <Td>{int(r.inscrits)}</Td>
+                <Td>{int(r.complets)}</Td>
+                <Td>{int(r.investisseurs)}</Td>
+                <Td>{eur(r.collecte)}</Td>
+                <Td>{eur(ticket, 0)}</Td>
+                <Td>{conv === null ? '—' : `${conv.toFixed(0)} %`}</Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -272,18 +444,15 @@ export default async function AdsPage({
   const user = await getAuthenticatedUser();
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
-  const [overview, trends, roi] = await Promise.all([
+  const [overview, trends, roi, codeRows] = await Promise.all([
     getAdsOverview(period),
     getAdsTrends(period),
     getCampaignRoi(),
+    getCodeTracking(periodToRange(period)),
   ]);
   const { totals, platforms, campaigns, byPlatform } = overview;
   const spendByPlatform = Object.fromEntries(byPlatform.map((b) => [b.platform, b.raw.spend]));
   const blended = await getBlendedAcquisition(period, spendByPlatform);
-  const globalRoas =
-    roi.hasAttribution && totals.spend > 0 ? roi.totalInvested / totals.spend : null;
-  const costPerInvestor =
-    roi.hasAttribution && roi.totalInvestors > 0 ? totals.spend / roi.totalInvestors : null;
   const alerts = buildAdsAlerts(campaigns, totals.cpa);
   const ranking = rankCampaigns(campaigns);
   const canReco = user.role === 'admin' || user.role === 'executive';
@@ -405,108 +574,47 @@ export default async function AdsPage({
           </div>
           <div
             className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
           >
-            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>
-              Chaque inscrit est rattaché à sa source via son <strong>code bonus</strong> :{' '}
-              <strong>SEVEN-BREACH → Meta</strong>, <strong>BREACH-VIP → Google</strong>. On{' '}
-              <strong>ignore les conversions déclarées par les régies</strong> (gonflées) et on
-              divise leur dépense par les <strong>vrais inscrits SAH</strong> de ce code. C'est ce
-              qui corrige le « Meta dit 600 inscrits, il y en a 180 ».
+            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
+              Dépense de chaque régie ÷ les <strong>vrais inscrits SAH</strong> du code
+              correspondant (SEVEN-BREACH → Meta, BREACH-VIP → Google). On ignore les conversions
+              gonflées du pixel. <strong>Rentabilité</strong> = ticket moyen ÷ coût par investisseur
+              (×&gt;1 = rentable).
             </div>
-
-            {blended.platforms.length > 1 && blended.total ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: 'var(--text-2)',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  Total ads (Meta + Google)
-                </div>
-                <AcqMetrics
-                  spend={blended.total.spend}
-                  counts={blended.total.counts}
-                  metrics={blended.total.metrics}
-                />
-              </div>
-            ) : null}
-
-            {blended.platforms.map((p) => (
-              <div key={p.platform} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="badge badge-neutral">{p.platform}</span>
-                  <span
-                    style={{ fontSize: 12, color: 'var(--text-4)', fontFamily: 'var(--font-mono)' }}
-                  >
-                    code {p.code}
-                  </span>
-                </div>
-                <AcqMetrics spend={p.spend} counts={p.counts} metrics={p.metrics} />
-              </div>
-            ))}
-
+            <CostTable blended={blended} />
             <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5 }}>
-              « complet » = profil renseigné + KYC validé · investisseurs &amp; collecte =
-              souscriptions signées sur la période par ces inscrits · une période récente est encore
-              partielle (le closing prend plusieurs semaines). Mapping codes : SEVEN-BREACH* → Meta,
-              *VIP* → Google — dis-moi si tu ajoutes d'autres codes pub.
+              « Complets » = profil + KYC · investisseurs &amp; collecte = souscriptions signées sur
+              la période · une période récente est partielle (le closing prend plusieurs semaines).
             </div>
           </div>
         </div>
       )}
 
-      {/* ROI réel : pub -> investisseurs */}
-      <div
-        className="view-card"
-        style={{ borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' }}
-      >
-        <div className="view-card-header">
-          <div className="view-card-title">ROI réel · pub → investisseurs</div>
-          {roi.hasAttribution ? (
-            <span className="badge badge-success badge-dot">données SAH</span>
-          ) : (
-            <span className="badge badge-neutral">en attente SAH</span>
-          )}
-        </div>
-        <div className="view-card-body">
-          {roi.hasAttribution ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                gap: 10,
-              }}
-            >
-              <StatTile
-                label="Investisseurs"
-                value={int(roi.totalInvestors)}
-                hint="réels générés"
-              />
-              <StatTile label="Capital investi" value={eur(roi.totalInvested)} />
-              <StatTile
-                label="ROAS réel"
-                value={globalRoas === null ? '—' : `×${globalRoas.toFixed(1)}`}
-                hint="investi / dépensé"
-              />
-              <StatTile label="Coût / investisseur" value={eur(costPerInvestor, 0)} />
+      {/* Tracking par code bonus : d'où viennent réellement les inscrits (toutes sources) */}
+      {codeRows.length > 0 && (
+        <div className="view-card">
+          <div className="view-card-header">
+            <div className="view-card-title">Tracking par code bonus</div>
+            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
+              top {codeRows.length} · {period.label}
+            </span>
+          </div>
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
+              Chaque code saisi à l'inscription, du clic à la souscription.{' '}
+              <span style={{ color: SOURCE_COLOR.Meta }}>●</span> Meta ·{' '}
+              <span style={{ color: SOURCE_COLOR.Google }}>●</span> Google ·{' '}
+              <span style={{ color: SOURCE_COLOR.Partenaire }}>●</span> partenaire/CGP. Trié par
+              collecte.
             </div>
-          ) : (
-            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
-              La tuyauterie est prête : dès que SAH renseigne l'
-              <strong>origine d'acquisition</strong> de chaque inscrit (la campagne d'où il vient),
-              THE PILOT reliera automatiquement la dépense pub aux{' '}
-              <strong>investisseurs réels</strong> et au <strong>capital investi</strong> — pour
-              calculer le coût par investisseur et le ROAS réel, par campagne. (À voir lors de
-              l'appel SAH.)
-            </div>
-          )}
+            <CodeTable rows={codeRows} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Évolution + comparaison période précédente */}
       {trends.available && (
