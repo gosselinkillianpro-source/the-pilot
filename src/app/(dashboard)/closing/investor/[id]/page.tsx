@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarPlus, Phone } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Mail, MapPin, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getInvestorScored } from '@/lib/db/queries/call-queue';
@@ -228,6 +228,32 @@ export default async function InvestorPage({ params }: Props) {
             }}
           >
             SAH #{investor.sahId} · {investor.email}
+          </div>
+          {/* Coordonnées en accès direct sous le nom (dupliquées du bloc plus bas) */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px 16px',
+              marginBottom: 8,
+              fontSize: 12.5,
+              color: 'var(--text-2)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Phone size={13} style={{ color: 'var(--text-4)' }} />
+              {investor.phone ?? '—'}
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Mail size={13} style={{ color: 'var(--text-4)' }} />
+              {investor.email}
+            </span>
+            {fullAddress(investor) !== '—' && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <MapPin size={13} style={{ color: 'var(--text-4)' }} />
+                {fullAddress(investor)}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(() => {
@@ -559,6 +585,14 @@ export default async function InvestorPage({ params }: Props) {
           {/* Notes libres (persistées) — en haut, accès immédiat */}
           <InvestorNotes investorId={investor.id} initialNote={investor.internalNote ?? ''} />
 
+          {/* Coordonnées — remontées juste sous les Notes */}
+          <Card title="Coordonnées">
+            <Row label="Email" value={investor.email} />
+            <Row label="Téléphone" value={investor.phone ?? '—'} />
+            <Row label="Adresse" value={fullAddress(investor)} />
+            <Row label="Résidence fiscale" value={investor.taxResidencyCountry ?? '—'} />
+          </Card>
+
           {/* Suivi closing : assignation */}
           <Card title="Suivi closing">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -616,14 +650,6 @@ export default async function InvestorPage({ params }: Props) {
             <Row label="Civilité" value={civ || '—'} />
             <Row label="Date de naissance" value={fmtBirthdate(investor.dateOfBirth)} />
             <Row label="Nationalité" value={investor.nationality ?? '—'} />
-          </Card>
-
-          {/* Coordonnées */}
-          <Card title="Coordonnées">
-            <Row label="Email" value={investor.email} />
-            <Row label="Téléphone" value={investor.phone ?? '—'} />
-            <Row label="Adresse" value={fullAddress(investor)} />
-            <Row label="Résidence fiscale" value={investor.taxResidencyCountry ?? '—'} />
           </Card>
 
           {/* Apporteur d'affaires */}
