@@ -10,6 +10,7 @@ import {
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
 import { Sparkline } from '@/components/shared/sparkline';
 import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
+import { getBlendedAcquisition } from '@/lib/ads/blended';
 import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
 import { resolveAdsPeriod } from '@/lib/ads/period';
 import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
@@ -30,7 +31,21 @@ function pct(n: number): string {
   return `${n.toFixed(2)} %`;
 }
 
-function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function StatTile({
+  label,
+  value,
+  hint,
+  valueColor,
+  deltaPct,
+  deltaTone = 'down-good',
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  valueColor?: string;
+  deltaPct?: number | null;
+  deltaTone?: 'up-good' | 'down-good' | 'neutral';
+}) {
   return (
     <div
       style={{
@@ -55,7 +70,7 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
         style={{
           fontSize: 20,
           fontWeight: 700,
-          color: 'var(--text-1)',
+          color: valueColor ?? 'var(--text-1)',
           fontFamily: 'var(--font-mono)',
           marginTop: 2,
           whiteSpace: 'nowrap',
@@ -67,6 +82,11 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
       </div>
       {hint ? (
         <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 2 }}>{hint}</div>
+      ) : null}
+      {deltaPct !== undefined ? (
+        <div style={{ marginTop: 3 }}>
+          <DeltaBadge pct={deltaPct} tone={deltaTone} />
+        </div>
       ) : null}
     </div>
   );
@@ -218,6 +238,7 @@ export default async function AdsPage({
     getCampaignRoi(),
   ]);
   const { totals, platforms, campaigns, byPlatform } = overview;
+  const blended = await getBlendedAcquisition(period, totals.spend, trends.previous.spend);
   const globalRoas =
     roi.hasAttribution && totals.spend > 0 ? roi.totalInvested / totals.spend : null;
   const costPerInvestor =
@@ -330,6 +351,104 @@ export default async function AdsPage({
         <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
+
+      {/* Coût réel d'acquisition : dépense pub croisée avec les vrais chiffres SAH */}
+      {blended.spend > 0 && (
+        <div
+          className="view-card"
+          style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
+        >
+          <div className="view-card-header">
+            <div className="view-card-title">Coût réel d'acquisition · croisé SAH</div>
+            <span className="badge badge-success badge-dot">chiffres SAH réels</span>
+          </div>
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.55 }}>
+              On <strong>ignore les conversions déclarées par Meta/Google</strong> (gonflées,
+              dédoublées) et on divise la dépense pub par les{' '}
+              <strong>vrais comptages Seven At Home</strong> de la période. C'est ce qui corrige le
+              « Meta dit 600 inscrits, il y en a 180 ».
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                gap: 10,
+              }}
+            >
+              <StatTile label="Dépense ads" value={eur(blended.spend)} hint="Meta + Google" />
+              <StatTile
+                label="Nouveaux inscrits"
+                value={int(blended.counts.inscrits)}
+                hint="comptes créés (SAH)"
+              />
+              <StatTile
+                label="CPA réel"
+                value={eur(blended.metrics.cpa, 2)}
+                hint="coût / inscrit"
+                deltaPct={blended.deltaPct.cpa}
+              />
+              <StatTile
+                label="Inscrits complets"
+                value={int(blended.counts.complets)}
+                hint="profil + KYC"
+              />
+              <StatTile
+                label="CPI réel"
+                value={eur(blended.metrics.cpi, 2)}
+                hint="coût / inscrit complet"
+                deltaPct={blended.deltaPct.cpi}
+              />
+              <StatTile
+                label="Investisseurs"
+                value={int(blended.counts.investisseurs)}
+                hint="ont signé sur la période"
+              />
+              <StatTile
+                label="Coût / investisseur"
+                value={eur(blended.metrics.costPerInvestor, 0)}
+                hint="dépense / investisseur"
+                deltaPct={blended.deltaPct.costPerInvestor}
+              />
+              <StatTile
+                label="Investissement moyen"
+                value={eur(blended.metrics.avgTicket, 0)}
+                hint="ticket moyen"
+              />
+              <StatTile
+                label="Rentabilité"
+                value={
+                  blended.metrics.profitRatio === null
+                    ? '—'
+                    : `×${blended.metrics.profitRatio.toFixed(1)}`
+                }
+                valueColor={
+                  blended.metrics.profitRatio === null
+                    ? undefined
+                    : blended.metrics.profitRatio >= 1
+                      ? 'var(--success)'
+                      : 'var(--danger)'
+                }
+                hint={
+                  blended.metrics.profitRatio === null
+                    ? 'invest. moyen / coût'
+                    : blended.metrics.profitRatio >= 1
+                      ? 'rentable ✓'
+                      : 'pas encore rentable'
+                }
+              />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5 }}>
+              Tout compté (ads + parrainage + SEO) · « complet » = profil renseigné + KYC validé ·
+              les investissements d'une période récente sont encore partiels (le closing prend
+              plusieurs semaines). Deltas comparés à la période précédente (baisse de coût = vert).
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ROI réel : pub -> investisseurs */}
       <div
