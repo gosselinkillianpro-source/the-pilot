@@ -23,7 +23,10 @@ import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel, type SavedEmail } from './investor-email-panel';
 import { InvestorNotes } from './investor-notes';
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+};
 
 const TIMELINE_LABEL: Record<string, string> = {
   call_outbound: 'Appel sortant',
@@ -135,8 +138,17 @@ const SUB_STATUS: Record<string, { label: string; cls: string }> = {
   cancelled: { label: 'Annulée', cls: 'badge badge-neutral' },
 };
 
-export default async function InvestorPage({ params }: Props) {
+export default async function InvestorPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const { from } = await searchParams;
+  // Retour contextuel : on revient à la liste d'où l'on vient (file d'appels, suivi…).
+  // Validation anti-redirection : uniquement une route interne /closing/.
+  const backHref = from?.startsWith('/closing/') ? from : '/closing/pipeline';
+  const backLabel = backHref.startsWith('/closing/queue')
+    ? "Retour à la file d'appels"
+    : backHref.startsWith('/closing/suivi')
+      ? 'Retour au suivi'
+      : 'Retour aux investisseurs';
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
@@ -182,7 +194,7 @@ export default async function InvestorPage({ params }: Props) {
   return (
     <>
       <Link
-        href="/closing/pipeline"
+        href={backHref}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -193,7 +205,7 @@ export default async function InvestorPage({ params }: Props) {
         }}
       >
         <ArrowLeft size={14} />
-        Retour aux investisseurs
+        {backLabel}
       </Link>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 8 }}>

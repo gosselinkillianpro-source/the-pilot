@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Clock,
   Flame,
+  MessageSquare,
   Phone,
   PhoneCall,
   Target,
@@ -59,6 +60,43 @@ function statusClass(s: QueueRow['scored']['status']): string {
   return 'badge badge-neutral';
 }
 
+const OUTCOME_LABEL: Record<string, string> = {
+  reached: 'Joint',
+  no_answer: 'Pas de réponse',
+  voicemail: 'Répondeur',
+  wrong_number: 'Faux numéro',
+  callback_scheduled: 'Rappel programmé',
+};
+const TYPE_LABEL: Record<string, string> = {
+  call_outbound: 'Appel',
+  call_inbound: 'Appel entrant',
+  email_sent: 'Email envoyé',
+  email_opened: 'Email ouvert',
+  email_clicked: 'Email cliqué',
+  note_added: 'Note',
+};
+
+/** Libellé court de la dernière activité (résultat d'appel, email, ou note). */
+function lastActivityLabel(la: NonNullable<QueueRow['lastActivity']>): string {
+  if (la.outcome) {
+    const o = OUTCOME_LABEL[la.outcome];
+    if (o) return o;
+  }
+  if (la.note?.trim()) return la.note.trim();
+  return TYPE_LABEL[la.type] ?? la.type;
+}
+
+/** « il y a 2 j / 3 h / 12 min ». */
+function relativeTime(d: Date | null): string {
+  if (!d) return '';
+  const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `il y a ${h} h`;
+  return `il y a ${Math.floor(h / 24)} j`;
+}
+
 export default async function CallQueuePage({
   searchParams,
 }: {
@@ -75,6 +113,8 @@ export default async function CallQueuePage({
     getAuthenticatedUser(),
   ]);
   const groups = groupByBucket(queue);
+  // Lien de la liste courante : sert au bouton « Retour » de la fiche (revenir ici).
+  const listHref = source === 'breach' ? '/closing/queue' : `/closing/queue?source=${source}`;
   // Rang global (#1, #2, …) dans l'ordre de la file, pour descendre de haut en bas.
   const rankById = new Map(queue.map((q, i) => [q.id, i + 1]));
 
@@ -194,6 +234,7 @@ export default async function CallQueuePage({
                   row={row}
                   rank={rankById.get(row.id) ?? 0}
                   myId={user.id}
+                  backHref={listHref}
                   last={idx === Math.min(g.rows.length, PER_BUCKET) - 1}
                 />
               ))}
@@ -240,11 +281,13 @@ function QueueRowItem({
   row,
   rank,
   myId,
+  backHref,
   last,
 }: {
   row: QueueRow;
   rank: number;
   myId: string;
+  backHref: string;
   last: boolean;
 }) {
   const s = row.scored;
@@ -275,7 +318,7 @@ function QueueRowItem({
         style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}
       >
         <Link
-          href={`/closing/investor/${row.id}`}
+          href={`/closing/investor/${row.id}?from=${encodeURIComponent(backHref)}`}
           style={{
             fontSize: 13,
             fontWeight: 600,
@@ -356,12 +399,40 @@ function QueueRowItem({
         ) : null}
       </div>
 
-      {/* Facteurs (transparence) */}
+      {/* Facteurs (transparence) + dernière activité */}
       <div
         className="queue-factors"
         style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}
       >
         {s.factors.join(' · ')}
+        {row.lastActivity ? (
+          <div
+            style={{
+              marginTop: 4,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              maxWidth: '100%',
+              fontSize: 11,
+              color: 'var(--text-2)',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '2px 7px',
+            }}
+            title={`Dernière activité : ${lastActivityLabel(row.lastActivity)}`}
+          >
+            <MessageSquare size={11} style={{ color: 'var(--text-4)', flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {lastActivityLabel(row.lastActivity)}
+            </span>
+            {row.lastActivity.at ? (
+              <span style={{ color: 'var(--text-4)', flexShrink: 0 }}>
+                · {relativeTime(row.lastActivity.at)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Priorité + température */}

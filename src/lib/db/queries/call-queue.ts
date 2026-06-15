@@ -3,8 +3,9 @@ import { sql } from 'drizzle-orm';
 import { compareForQueue, type ScoredInvestor, scoreInvestor } from '@/lib/closing/scoring';
 import { db } from '@/lib/db';
 
-/** Au-delà de ce délai (minutes), un verrou « en cours » est considéré expiré. */
-export const CLAIM_TTL_MIN = 30;
+/** Au-delà de ce délai (minutes), un verrou « en cours » est considéré expiré.
+ *  4 h : un lead « pris » reste réservé au closer le temps de sa session d'appels. */
+export const CLAIM_TTL_MIN = 240;
 
 export type QueueRow = {
   id: string;
@@ -27,6 +28,13 @@ export type QueueRow = {
   claimerName: string | null;
   /** Closer attitré (propriété collante) : son correspondant permanent. */
   assignedCloserName: string | null;
+  /** Dernière interaction (appel/note/email) — aperçu sur la ligne de file. */
+  lastActivity: {
+    type: string;
+    outcome: string | null;
+    note: string | null;
+    at: Date | null;
+  } | null;
   scored: ScoredInvestor;
 };
 
@@ -52,6 +60,10 @@ type RawRow = {
   claimed_at: string | Date | null;
   claimer_name: string | null;
   assigned_closer_name: string | null;
+  last_type: string | null;
+  last_outcome: string | null;
+  last_note: string | null;
+  last_at: string | Date | null;
 };
 
 /** Un code bonus "BREACH" (SEVEN-BREACH, BREACH-VIP…) = lead venant des pubs de Killian. */
@@ -132,19 +144,30 @@ export async function getCallQueue(opts?: {
           then p.repayment_date
         end
       ) as nearest_repayment,
-      min(s.signed_at) filter (where s.status <> 'cancelled') as first_sub_at
+      min(s.signed_at) filter (where s.status <> 'cancelled') as first_sub_at,
+      li.type as last_type,
+      li.outcome as last_outcome,
+      left(li.note, 80) as last_note,
+      li.created_at as last_at
     from investors i
     left join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
     left join users cu on cu.id = i.claimed_by_id
     left join users au on au.id = i.assigned_closer_id
+    left join lateral (
+      select x.type, x.outcome, x.note, x.created_at
+      from interactions x
+      where x.investor_id = i.id
+      order by x.created_at desc
+      limit 1
+    ) li on true
     where i.deleted_at is null
     ${closerFilter}
     ${oneFilter}
     ${stageFilter}
     ${sourceFilter}
     ${recentCallFilter}
-    group by i.id, cu.full_name, au.full_name
+    group by i.id, cu.full_name, au.full_name, li.type, li.outcome, li.note, li.created_at
   `);
 
   const rows = result as unknown as RawRow[];
@@ -191,6 +214,14 @@ export async function getCallQueue(opts?: {
       claimedById: claimActive ? r.claimed_by_id : null,
       claimerName: claimActive ? r.claimer_name : null,
       assignedCloserName: r.assigned_closer_name,
+      lastActivity: r.last_type
+        ? {
+            type: r.last_type,
+            outcome: r.last_outcome,
+            note: r.last_note,
+            at: r.last_at ? new Date(r.last_at) : null,
+          }
+        : null,
       scored,
     };
   });
