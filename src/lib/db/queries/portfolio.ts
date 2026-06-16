@@ -95,13 +95,12 @@ export async function getCloserPortfolio(opts?: { closerId?: string }): Promise<
       nextActionType: r.next_action_type,
     }))
     .sort((a, b) => {
-      // Prochaine action la plus proche d'abord (les "à faire" remontent), nulls en dernier.
-      const an = a.nextActionAt?.getTime() ?? Number.POSITIVE_INFINITY;
-      const bn = b.nextActionAt?.getTime() ?? Number.POSITIVE_INFINITY;
-      if (an !== bn) return an - bn;
-      // Sinon, dernier contact le plus récent d'abord.
-      const al = a.lastCallAt?.getTime() ?? 0;
-      const bl = b.lastCallAt?.getTime() ?? 0;
+      // Du plus récemment appelé au plus ancien ; jamais appelés (null) en dernier.
+      const al = a.lastCallAt?.getTime() ?? null;
+      const bl = b.lastCallAt?.getTime() ?? null;
+      if (al === null && bl === null) return 0;
+      if (al === null) return 1;
+      if (bl === null) return -1;
       return bl - al;
     });
 }
