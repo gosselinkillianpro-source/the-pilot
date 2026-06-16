@@ -18,7 +18,7 @@ import { classifyFreshness, formatAgo, type SourceHealth } from './freshness';
  * Règle : jamais présenter une donnée figée comme fraîche. Une source en échec → état affiché.
  */
 
-async function probeSahDb(now: number): Promise<SourceHealth> {
+export async function probeSahDb(now: number = Date.now()): Promise<SourceHealth> {
   try {
     const rows = await db
       .select({

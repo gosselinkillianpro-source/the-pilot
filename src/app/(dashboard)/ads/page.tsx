@@ -470,7 +470,8 @@ export default async function AdsPage({
         <div>
           <h1 className="page-title">Ads Control</h1>
           <div className="page-desc">
-            Vue consolidée Meta + Google Ads (lecture seule) · période : {period.label}
+            <strong>Quel canal me coûte le moins par investisseur réel ?</strong> · Meta + Google
+            croisés SAH (lecture seule) · {period.label}
           </div>
         </div>
         <AdsPeriodFilter />

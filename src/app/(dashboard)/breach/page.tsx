@@ -40,8 +40,8 @@ export default async function BreachPage({
           BREACH — mes leads
         </h1>
         <div className="page-desc">
-          Tout ce qu'on sait des personnes venues de tes pubs (code bonus contenant « BREACH »). Du
-          clic à la souscription, pour piloter tes décisions.
+          <strong>Mes pubs ramènent-elles des investisseurs rentables ?</strong> · du clic à la
+          souscription, pour les leads au code « BREACH ».
         </div>
       </div>
 

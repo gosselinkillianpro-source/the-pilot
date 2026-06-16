@@ -40,8 +40,8 @@ export default async function PerformancePage({
       <div>
         <h1 className="page-title">Performance Lab</h1>
         <div className="page-desc">
-          Vraies données : collecte, ROI par action et le Pilote (IA) — période {report.periodLabel}
-          .
+          <strong>Quelle action de closing rapporte le plus ?</strong> · vraies données : collecte,
+          ROI par action, le Pilote (IA) — {report.periodLabel}
         </div>
       </div>
 

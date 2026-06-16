@@ -4,6 +4,7 @@ import {
   Building2,
   LayoutGrid,
   Mail,
+  Radio,
   Share2,
   Sparkles,
   Target,
@@ -58,6 +59,10 @@ export function NavContent({ role }: { role: string }) {
         <SidebarLink href="/performance">
           <BarChart3 />
           Performance
+        </SidebarLink>
+        <SidebarLink href="/sources">
+          <Radio />
+          État des sources
         </SidebarLink>
       </div>
 

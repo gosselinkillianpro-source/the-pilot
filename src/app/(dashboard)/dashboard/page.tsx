@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { Building2, Target, TrendingUp, Users } from 'lucide-react';
 import Link from 'next/link';
+import { FreshnessBadge } from '@/components/shared/freshness-badge';
+import { MetricInfo } from '@/components/shared/metric-info';
 import { PeriodFilter } from '@/components/shared/period-filter';
 import { StatCard } from '@/components/shared/stat-card';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -8,6 +10,7 @@ import { db } from '@/lib/db';
 import { getGlobalStats } from '@/lib/db/queries/dashboard';
 import { users } from '@/lib/db/schema';
 import { resolvePeriod } from '@/lib/period';
+import { probeSahDb } from '@/lib/sources/health';
 import { CollecteChart } from './collecte-chart';
 
 export const dynamic = 'force-dynamic';
@@ -45,9 +48,10 @@ export default async function DashboardPage({
 }) {
   const user = await getAuthenticatedUser();
   const period = resolvePeriod(await searchParams);
-  const [stats, firstName] = await Promise.all([
+  const [stats, firstName, sah] = await Promise.all([
     getGlobalStats(period),
     getFirstName(user.id, user.email),
+    probeSahDb(),
   ]);
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
@@ -73,19 +77,38 @@ export default async function DashboardPage({
             {stats.investors.total.toLocaleString('fr-FR')} investisseurs ·{' '}
             {money(stats.collecte.total)} collectés
           </div>
+          <div style={{ marginTop: 6 }}>
+            <FreshnessBadge
+              status={sah.status}
+              freshness={sah.freshness}
+              sourceLabel="Seven At Home"
+            />
+          </div>
         </div>
       </div>
 
       {/* KPIs — données réelles SAH */}
       <div className="kpi-grid">
-        <Kpi label="Collecte totale" value={money(stats.collecte.total)} sub="hors annulées" />
-        <Kpi label="Collecte ce mois" value={money(stats.collecte.month)} sub="mois en cours" />
         <Kpi
+          metricId="collecte_totale"
+          label="Collecte totale"
+          value={money(stats.collecte.total)}
+          sub="hors annulées"
+        />
+        <Kpi
+          metricId="collecte_mois"
+          label="Collecte ce mois"
+          value={money(stats.collecte.month)}
+          sub="mois en cours"
+        />
+        <Kpi
+          metricId="investisseurs_total"
           label="Investisseurs"
           value={stats.investors.total.toLocaleString('fr-FR')}
           sub={`${stats.collecte.investors} ont investi`}
         />
         <Kpi
+          metricId="taux_onboarding_kyc"
           label="Onboardés (KYC)"
           value={`${onbRate} %`}
           sub={`${stats.investors.onboarded} pers.`}
@@ -93,11 +116,13 @@ export default async function DashboardPage({
       </div>
       <div className="kpi-grid">
         <Kpi
+          metricId="souscriptions_total"
           label="Souscriptions"
           value={stats.collecte.subs.toLocaleString('fr-FR')}
           sub="hors annulées"
         />
         <Kpi
+          metricId="ticket_moyen_investisseur"
           label="Ticket moyen / inv."
           value={money(stats.collecte.avgTicket)}
           sub="cumulé par personne"
@@ -108,6 +133,7 @@ export default async function DashboardPage({
           sub="en collecte / total"
         />
         <Kpi
+          metricId="breach_leads"
           label="Leads BREACH"
           value={stats.breachLeads.toLocaleString('fr-FR')}
           sub={`${money(stats.breachCollecte)} collectés`}
@@ -291,10 +317,23 @@ export default async function DashboardPage({
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Kpi({
+  label,
+  value,
+  sub,
+  metricId,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  /** id du catalogue → active la provenance au clic (ⓘ). */
+  metricId?: string;
+}) {
   return (
     <div className="kpi-hero">
-      <div className="kpi-hero-label">{label}</div>
+      <div className="kpi-hero-label">
+        {metricId ? <MetricInfo id={metricId}>{label}</MetricInfo> : label}
+      </div>
       <div className="kpi-hero-value">{value}</div>
       {sub ? <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{sub}</div> : null}
     </div>
