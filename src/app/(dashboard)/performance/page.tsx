@@ -1,6 +1,5 @@
 import { Link as LinkIcon, Phone, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
-import { PerformanceTabs } from '@/components/shared/performance-tabs';
 import { PeriodFilter } from '@/components/shared/period-filter';
 import { StatCard } from '@/components/shared/stat-card';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -44,7 +43,6 @@ export default async function PerformancePage({
           Vraies données : collecte, ROI par action et le Pilote (IA) — période {report.periodLabel}
           .
         </div>
-        <PerformanceTabs active="/performance" />
       </div>
 
       <PeriodFilter />
@@ -125,10 +123,6 @@ export default async function PerformancePage({
               l'outil, suivis d'une souscription sous 30 jours).
             </div>
           )}
-          <div style={{ padding: '12px 20px', fontSize: 12, color: 'var(--text-4)' }}>
-            L'attribution Email (ouvertures / clics) s'activera dès que le webhook Brevo enverra les
-            événements — la ligne Email se remplira alors automatiquement.
-          </div>
         </div>
       </div>
 

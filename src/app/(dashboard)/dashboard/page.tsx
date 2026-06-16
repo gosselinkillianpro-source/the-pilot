@@ -283,7 +283,6 @@ export default async function DashboardPage({
               href="/closing/performance"
               icon={<TrendingUp size={15} />}
               label="Performance closers"
-              hint="appels & conversions"
             />
           </div>
         </div>
@@ -357,7 +356,7 @@ function QuickLink({
   href: string;
   icon: React.ReactNode;
   label: string;
-  hint: string;
+  hint?: string;
 }) {
   return (
     <Link
@@ -377,7 +376,7 @@ function QuickLink({
       <span style={{ flex: 1, fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>
         {label}
       </span>
-      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{hint}</span>
+      {hint ? <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{hint}</span> : null}
     </Link>
   );
 }

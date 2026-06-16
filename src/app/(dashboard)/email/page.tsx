@@ -53,7 +53,6 @@ export default async function EmailPage() {
   }
 
   const emailCredits = account.plan?.find((p) => p.type === 'subscription')?.credits ?? null;
-  const smsCredits = account.plan?.find((p) => p.type === 'sms')?.credits ?? null;
   const txOpenRate = tx.delivered > 0 ? Math.round((tx.opens / tx.delivered) * 1000) / 10 : 0;
   const txClickRate = tx.delivered > 0 ? Math.round((tx.clicks / tx.delivered) * 1000) / 10 : 0;
   const activeLists = lists.filter((l) => l.uniqueSubscribers > 0);
@@ -77,9 +76,6 @@ export default async function EmailPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {emailCredits !== null && (
             <span className="badge badge-brand">{nb(emailCredits)} crédits email</span>
-          )}
-          {smsCredits !== null && (
-            <span className="badge badge-neutral">{nb(smsCredits)} crédits SMS</span>
           )}
           <Link href="/email/relances" className="btn btn-secondary btn-sm">
             <RotateCw size={13} />
@@ -120,9 +116,9 @@ export default async function EmailPage() {
         />
         <Kpi
           icon={<Send size={14} />}
-          label="Campagnes envoyées"
+          label="Campagnes récentes"
           value={nb(campaigns.length)}
-          sub="récentes"
+          sub="30 dernières (pas le total)"
         />
         <Kpi
           icon={<Mail size={14} />}

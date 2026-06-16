@@ -22,7 +22,6 @@ export type RelanceCandidate = {
   firstName: string;
   fullName: string | null;
   totalInvested: number;
-  score: number | null;
   /** Rebond : date de remboursement la plus proche + montant concerné + projet. */
   repaymentDate: string | null;
   reboundAmount: number | null;
@@ -52,7 +51,6 @@ function mapRow(r: Row): RelanceCandidate {
     firstName: str(r.first_name) || 'Investisseur',
     fullName: r.full_name ? str(r.full_name) : null,
     totalInvested: num(r.total_invested),
-    score: r.score == null ? null : num(r.score),
     repaymentDate: isoOrNull(r.repayment_date),
     reboundAmount: r.rebound_amount == null ? null : num(r.rebound_amount),
     onboardedSince: isoOrNull(r.onboarded_since),
@@ -65,7 +63,7 @@ export async function getReboundCandidates(): Promise<RelanceCandidate[]> {
     const res = await db.execute(sql`
       select i.id, i.email,
              coalesce(nullif(i.first_name, ''), split_part(coalesce(i.full_name, ''), ' ', 1)) as first_name,
-             i.full_name, i.total_invested, i.score,
+             i.full_name, i.total_invested,
              min(coalesce(s.expected_repayment_at, p.repayment_date)) as repayment_date,
              sum(s.amount) as rebound_amount
       from subscriptions s
@@ -100,7 +98,7 @@ export async function getDormantCandidates(): Promise<RelanceCandidate[]> {
     const res = await db.execute(sql`
       select i.id, i.email,
              coalesce(nullif(i.first_name, ''), split_part(coalesce(i.full_name, ''), ' ', 1)) as first_name,
-             i.full_name, i.total_invested, i.score,
+             i.full_name, i.total_invested,
              i.sah_created_at as onboarded_since
       from investors i
       where i.deleted_at is null

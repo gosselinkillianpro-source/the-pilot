@@ -194,7 +194,6 @@ function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
         >
           <StatTile label="Dépense" value={eur(c.spend)} />
           <StatTile label="Impressions" value={int(c.impressions)} />
-          {c.reach !== null ? <StatTile label="Portée" value={int(c.reach)} /> : null}
           <StatTile label="Clics" value={int(c.clicks)} />
           <StatTile label="CTR" value={pct(d.ctr)} />
           <StatTile label="CPC" value={eur(d.cpc, 2)} />
@@ -550,9 +549,6 @@ export default async function AdsPage({
       >
         <StatTile label="Dépense" value={eur(totals.spend)} hint="Meta + Google" />
         <StatTile label="Impressions" value={int(totals.impressions)} />
-        {totals.hasReach ? (
-          <StatTile label="Portée" value={int(totals.reach)} hint="cumul (approx.)" />
-        ) : null}
         <StatTile label="Clics" value={int(totals.clicks)} />
         <StatTile label="CTR" value={pct(totals.ctr)} />
         <StatTile label="CPC" value={eur(totals.cpc, 2)} hint="coût / clic" />
