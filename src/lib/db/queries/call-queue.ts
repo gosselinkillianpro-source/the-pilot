@@ -23,6 +23,8 @@ export type QueueRow = {
   /** Code bonus (apporteur). BREACH = vient des pubs de Killian. */
   bonusCode: string | null;
   isBreach: boolean;
+  /** Note libre du closer (internal_note), tronquée — aperçu directement sur la ligne de file. */
+  internalNote: string | null;
   /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
   claimedById: string | null;
   claimerName: string | null;
@@ -60,6 +62,7 @@ type RawRow = {
   claimed_at: string | Date | null;
   claimer_name: string | null;
   assigned_closer_name: string | null;
+  internal_note: string | null;
   last_type: string | null;
   last_outcome: string | null;
   last_note: string | null;
@@ -126,6 +129,7 @@ export async function getCallQueue(opts?: {
       i.sah_created_at,
       i.breach_level,
       i.bonus_code,
+      left(i.internal_note, 200) as internal_note,
       i.claimed_by_id::text as claimed_by_id,
       i.claimed_at,
       cu.full_name as claimer_name,
@@ -211,6 +215,7 @@ export async function getCallQueue(opts?: {
       totalInvested,
       bonusCode: r.bonus_code,
       isBreach: r.breach_level != null || isBreachCode(r.bonus_code),
+      internalNote: r.internal_note?.trim() ? r.internal_note.trim() : null,
       claimedById: claimActive ? r.claimed_by_id : null,
       claimerName: claimActive ? r.claimer_name : null,
       assignedCloserName: r.assigned_closer_name,

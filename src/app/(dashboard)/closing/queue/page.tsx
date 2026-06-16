@@ -1,15 +1,16 @@
 import {
-  ChevronDown,
   Clock,
   Flame,
   MessageSquare,
   Phone,
   PhoneCall,
+  StickyNote,
   Target,
   TrendingUp,
   UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
+import { QueueAccordion, QueueSection } from '@/components/closing/call-queue-accordion';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { MarkCalledButton } from '@/components/closing/mark-called-button';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -212,31 +213,15 @@ export default async function CallQueuePage({
           </div>
         </div>
       ) : (
-        groups.map((g, gi) => (
-          // Accordéon natif (name partagé) : une seule file ouverte à la fois.
-          // Ouvrir une file ferme les autres → on arrive en haut de la liste choisie
-          // (et plus au bas des longues listes restées ouvertes au-dessus).
-          <details
-            key={g.bucket}
-            name="call-queue"
-            className="view-card"
-            open={gi === 0}
-            style={{ scrollMarginTop: 16 }}
-          >
-            <summary
-              className="view-card-header"
-              style={{ cursor: 'pointer', listStyle: 'none', alignItems: 'center' }}
+        <QueueAccordion source={source} firstBucket={groups[0]?.bucket ?? null}>
+          {groups.map((g) => (
+            <QueueSection
+              key={g.bucket}
+              bucket={g.bucket}
+              label={g.label}
+              goal={g.goal}
+              count={g.rows.length}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                <ChevronDown size={16} style={{ color: 'var(--text-4)', flexShrink: 0 }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                  <div className="view-card-title">{g.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{g.goal}</div>
-                </div>
-              </div>
-              <span className="badge badge-neutral">{nb(g.rows.length)}</span>
-            </summary>
-            <div className="view-card-body" style={{ padding: 0 }}>
               {g.rows.slice(0, PER_BUCKET).map((row, idx) => (
                 <QueueRowItem
                   key={row.id}
@@ -252,9 +237,9 @@ export default async function CallQueuePage({
                   + {nb(g.rows.length - PER_BUCKET)} autres dans cette file (plus bas dans l'ordre).
                 </div>
               )}
-            </div>
-          </details>
-        ))
+            </QueueSection>
+          ))}
+        </QueueAccordion>
       )}
     </>
   );
@@ -408,12 +393,46 @@ function QueueRowItem({
         ) : null}
       </div>
 
-      {/* Facteurs (transparence) + dernière activité */}
+      {/* Facteurs (transparence) + note libre + dernière activité */}
       <div
         className="queue-factors"
         style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}
       >
         {s.factors.join(' · ')}
+        {row.internalNote ? (
+          <div
+            style={{
+              marginTop: 4,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 5,
+              maxWidth: '100%',
+              fontSize: 11,
+              color: 'var(--text-1)',
+              background: 'var(--warning-bg, #fdf6e3)',
+              border: '1px solid color-mix(in srgb, var(--warning) 45%, transparent)',
+              borderRadius: 6,
+              padding: '3px 7px',
+            }}
+            title={row.internalNote}
+          >
+            <StickyNote
+              size={11}
+              style={{ color: 'var(--warning)', flexShrink: 0, marginTop: 2 }}
+            />
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
+              {row.internalNote}
+            </span>
+          </div>
+        ) : null}
         {row.lastActivity ? (
           <div
             style={{
