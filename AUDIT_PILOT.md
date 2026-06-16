@@ -419,3 +419,25 @@ Les 6 métriques validées ont été retirées du code (typecheck + build verts)
 
 ### 8.4 Bilan verdicts après arbitrage
 GARDER 125 (+3 oubliées à intégrer +3 reclassées de QUARANTAINE) · DÉPLACER 37 (+1 « Campagnes ») · SUPPRIMER 6 (faits) · QUARANTAINE restante 4.
+
+---
+
+## 9. Phase 1 — Réconciliation des chiffres de référence (2026-06-16)
+
+**Source faisant foi : base Seven At Home en temps réel** (jamais un export CSV figé). Chiffres canoniques recalculés et garde-fous vérifiés sur données réelles :
+
+| Chiffre canonique | Valeur |
+|---|---|
+| Investisseurs (base totale) | 2 837 |
+| dont profil complété | 2 154 |
+| dont onboardés (KYC) | 1 834 |
+| dont ont investi | 1 357 |
+| Collecte totale (non annulée) | 25 859 893 € |
+| Annulées (exclues) | 3 566 274 € |
+| Ticket moyen / investisseur | 19 057 € |
+
+**Garde-fous (réels) :** somme collecte par projet = total → **écart 0 €** · funnel monotone (2 837 ≥ 2 154 ≥ 1 834 ≥ 1 357) · ont investi ≤ base totale. ✅
+
+**Écarts historiques expliqués :** (a) Meta ~600 « inscrits » (pixel) vs ~180 réels SAH → on ne compte que les vrais inscrits SAH ; (b) BREACH-VIP ~100 k€ brut (dont 50 k€ annulés) vs 51,5 k€ encaissé. Un seul chiffre par métrique, depuis la base SAH.
+
+**Livré Phase 1 :** catalogue (`src/lib/metrics/catalogue.ts` + `CATALOGUE_METRIQUES.md`), couche état des sources temps réel (`src/lib/sources/`), garde-fous (`src/lib/metrics/guardrails.ts`), 35 tests verts (lignée + cohérence + fraîcheur). **Reste Phase 2/3** : brancher chaque écran sur le catalogue (provenance au clic) + page « État des sources » + badges de fraîcheur partout.
