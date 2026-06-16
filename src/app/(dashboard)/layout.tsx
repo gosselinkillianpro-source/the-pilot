@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { MobileNav } from '@/components/shared/mobile-nav';
 import { NavContent } from '@/components/shared/nav-content';
+import { SyncButton } from '@/components/shared/sync-button';
 import { ToastProvider } from '@/components/shared/toast';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -128,6 +129,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                   Données {freshness}
                 </div>
               )}
+              <SyncButton />
               <div className="view-topbar-search">
                 <Search size={14} />
                 <span style={{ flex: 1 }}>Rechercher</span>
