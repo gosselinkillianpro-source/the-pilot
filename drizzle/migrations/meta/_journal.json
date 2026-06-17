@@ -71,6 +71,13 @@
       "when": 1781169237031,
       "tag": "0009_lean_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781683898266,
+      "tag": "0010_boring_ego",
+      "breakpoints": true
     }
   ]
 }

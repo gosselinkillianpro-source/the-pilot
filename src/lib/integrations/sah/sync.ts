@@ -1,5 +1,5 @@
 import 'server-only';
-import { sql } from 'drizzle-orm';
+import { and, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { investors, projects, subscriptions } from '@/lib/db/schema';
 import { getSahClient } from './client';
@@ -244,8 +244,36 @@ async function syncInvestors(): Promise<number> {
     };
   });
 
-  // Insertion par lots (limite de paramètres SQL).
+  // État ACTUEL (avant upsert) par sah_id, pour détecter les bascules de statut false→true.
   const CHUNK = 500;
+  const prevState = new Map<
+    string,
+    { onboarding: boolean; registration: boolean; kycDone: boolean; regDone: boolean }
+  >();
+  const sahIds = values.map((v) => v.sahId);
+  for (let i = 0; i < sahIds.length; i += CHUNK) {
+    const slice = sahIds.slice(i, i + CHUNK);
+    const existing = await db
+      .select({
+        sahId: investors.sahId,
+        onboarding: investors.onboardingComplete,
+        registration: investors.registrationComplete,
+        kycDone: sql<boolean>`${investors.kycCompletedAt} is not null`,
+        regDone: sql<boolean>`${investors.registrationCompletedAt} is not null`,
+      })
+      .from(investors)
+      .where(inArray(investors.sahId, slice));
+    for (const e of existing) {
+      prevState.set(e.sahId, {
+        onboarding: e.onboarding,
+        registration: e.registration,
+        kycDone: e.kycDone,
+        regDone: e.regDone,
+      });
+    }
+  }
+
+  // Insertion par lots (limite de paramètres SQL).
   for (let i = 0; i < values.length; i += CHUNK) {
     const batch = values.slice(i, i + CHUNK);
     await db
@@ -286,6 +314,41 @@ async function syncInvestors(): Promise<number> {
           updatedAt: sql`excluded.updated_at`,
         },
       });
+  }
+
+  // Bascules de statut détectées (false→true) sur des comptes DÉJÀ connus → on horodate
+  // (write-once) afin d'attribuer la finalisation au closer qui a appelé avant (fenêtre 30 j).
+  // Les nouveaux comptes (absents de prevState) ne comptent pas : on n'a pas observé la bascule.
+  const kycFlips: string[] = [];
+  const regFlips: string[] = [];
+  for (const v of values) {
+    const p = prevState.get(v.sahId);
+    if (!p) continue;
+    if (!p.onboarding && v.onboardingComplete && !p.kycDone) kycFlips.push(v.sahId);
+    if (!p.registration && v.registrationComplete && !p.regDone) regFlips.push(v.sahId);
+  }
+  const detectedAt = new Date();
+  for (let i = 0; i < kycFlips.length; i += CHUNK) {
+    await db
+      .update(investors)
+      .set({ kycCompletedAt: detectedAt })
+      .where(
+        and(
+          inArray(investors.sahId, kycFlips.slice(i, i + CHUNK)),
+          isNull(investors.kycCompletedAt),
+        ),
+      );
+  }
+  for (let i = 0; i < regFlips.length; i += CHUNK) {
+    await db
+      .update(investors)
+      .set({ registrationCompletedAt: detectedAt })
+      .where(
+        and(
+          inArray(investors.sahId, regFlips.slice(i, i + CHUNK)),
+          isNull(investors.registrationCompletedAt),
+        ),
+      );
   }
 
   await recomputeBreachLevels();

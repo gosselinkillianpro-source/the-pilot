@@ -290,6 +290,10 @@ export type CloserPerf = {
   assigned: number;
   attributedSubs: number;
   attributedAmount: number;
+  /** Profils complétés (période) attribués à ce closer (appel < 30 j avant la détection). */
+  attributedRegistration: number;
+  /** KYC débloqués / inscriptions finalisées (période) attribués à ce closer (appel < 30 j avant). */
+  attributedKyc: number;
 };
 export type PerformanceReport = {
   closers: CloserPerf[];
@@ -398,6 +402,38 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
     }
   }
 
+  // Attribution des PROGRESSIONS d'inscription de la période (profil complété, KYC débloqué)
+  // au closer qui a appelé avant (même règle : appel prime, fenêtre 30 j). Les dates viennent
+  // de la détection de bascule au sync (kyc_completed_at / registration_completed_at).
+  const progressRows = await db
+    .select({
+      investorId: investors.id,
+      kycAt: investors.kycCompletedAt,
+      regAt: investors.registrationCompletedAt,
+    })
+    .from(investors)
+    .where(
+      sql`${investors.deletedAt} is null and (
+        (${investors.kycCompletedAt} >= ${period.fromISO}::timestamptz and ${investors.kycCompletedAt} < ${period.toISO}::timestamptz)
+        or (${investors.registrationCompletedAt} >= ${period.fromISO}::timestamptz and ${investors.registrationCompletedAt} < ${period.toISO}::timestamptz)
+      )`,
+    );
+  const kycByUser = new Map<string, number>();
+  const regByUser = new Map<string, number>();
+  for (const p of progressRows) {
+    const contacts = contactsByInvestor.get(p.investorId) ?? [];
+    if (p.kycAt) {
+      const res = attributeAction(p.kycAt, contacts);
+      if (res.attributed && res.via === 'call' && res.userId)
+        kycByUser.set(res.userId, (kycByUser.get(res.userId) ?? 0) + 1);
+    }
+    if (p.regAt) {
+      const res = attributeAction(p.regAt, contacts);
+      if (res.attributed && res.via === 'call' && res.userId)
+        regByUser.set(res.userId, (regByUser.get(res.userId) ?? 0) + 1);
+    }
+  }
+
   const closerPerf: CloserPerf[] = closers.map((c) => {
     const call = callByUser.get(c.id);
     const attr = attributedByUser.get(c.id);
@@ -410,6 +446,8 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
       assigned: assignByUser.get(c.id) ?? 0,
       attributedSubs: attr?.subs ?? 0,
       attributedAmount: attr?.amount ?? 0,
+      attributedRegistration: regByUser.get(c.id) ?? 0,
+      attributedKyc: kycByUser.get(c.id) ?? 0,
     };
   });
 

@@ -213,6 +213,11 @@ export const investors = pgTable('investors', {
   // Statut SAH : 2 booléens, pas de KYC détaillé
   registrationComplete: boolean('registration_complete').notNull().default(false),
   onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+  // Dates de PROGRESSION détectées par THE PILOT au moment où le booléen bascule false→true
+  // (SAH ne fournit pas ces dates). Write-once, jamais écrasées par le sync. Servent à
+  // attribuer la finalisation au closer qui a appelé avant (fenêtre 30 j).
+  kycCompletedAt: timestamp('kyc_completed_at', { withTimezone: true }),
+  registrationCompletedAt: timestamp('registration_completed_at', { withTimezone: true }),
   acquisitionSource: acquisitionSourceEnum('acquisition_source'),
   acquisitionCampaignId: text('acquisition_campaign_id'),
   // Parrainage BREACH multi-niveaux — reconstruit depuis SAH (users.invited_by_id).

@@ -58,7 +58,7 @@ export default async function ClosingPerformancePage({
             className="r-stack r-head"
             style={{
               display: 'grid',
-              gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.8fr 1fr 1.2fr',
+              gridTemplateColumns: '1.3fr 0.6fr 0.6fr 0.6fr 0.7fr 0.7fr 0.8fr 1fr',
               gap: 8,
               padding: '10px 20px',
               borderBottom: '1px solid var(--border)',
@@ -72,6 +72,18 @@ export default async function ClosingPerformancePage({
             <span style={{ textAlign: 'right' }}>Appels</span>
             <span style={{ textAlign: 'right' }}>Joints</span>
             <span style={{ textAlign: 'right' }}>Leads</span>
+            <span
+              style={{ textAlign: 'right' }}
+              title="Profils complétés après son appel (détecté au sync)"
+            >
+              Profil compl.
+            </span>
+            <span
+              style={{ textAlign: 'right' }}
+              title="Inscriptions finalisées / KYC débloqués après son appel"
+            >
+              KYC débloq.
+            </span>
             <span style={{ textAlign: 'right' }}>Souscr. attr.</span>
             <span style={{ textAlign: 'right' }}>€ attribués</span>
           </div>
@@ -86,7 +98,7 @@ export default async function ClosingPerformancePage({
                 className="r-stack"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.8fr 1fr 1.2fr',
+                  gridTemplateColumns: '1.3fr 0.6fr 0.6fr 0.6fr 0.7fr 0.7fr 0.8fr 1fr',
                   gap: 8,
                   padding: '12px 20px',
                   borderBottom:
@@ -105,6 +117,12 @@ export default async function ClosingPerformancePage({
                 <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>{c.calls}</span>
                 <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>{c.reached}</span>
                 <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>{c.assigned}</span>
+                <span style={{ textAlign: 'right', color: 'var(--text-2)' }}>
+                  {c.attributedRegistration}
+                </span>
+                <span style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 600 }}>
+                  {c.attributedKyc}
+                </span>
                 <span style={{ textAlign: 'right', color: 'var(--text-1)', fontWeight: 600 }}>
                   {c.attributedSubs}
                 </span>
