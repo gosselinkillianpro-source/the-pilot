@@ -2,7 +2,32 @@
 
 > Journal de bord pour reprendre le dev d'une session à l'autre.
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
-> Dernière mise à jour : 2026-06-05 (refonte UX du module closing — branche `feat/closing-ameliorations`).
+> Dernière mise à jour : 2026-06-19.
+
+> ## 🟢 SESSION 2026-06-15 → 19 — tout sur `main` + déployé Render
+>
+> **ADS — coût réel d'acquisition croisé SAH** (`/ads`) : on jette les conversions gonflées des régies, on garde la dépense, on divise par les VRAIS inscrits SAH. **Attribution par code bonus** : `SEVEN-BREACH*` → Meta, `BREACH-VIP`/`*VIP*` → Google (codes partenaires `Seven-club-deal-*`/`SEVEN-CD-*` exclus). Métriques par régie + total en **tableaux** : CPA, CPI (profil+KYC), coût/investisseur, invest. moyen, rentabilité. + **tableau « Tracking par code bonus »** (funnel par code, marche sans dépense). `src/lib/ads/blended.ts` + `src/lib/db/queries/ads-acquisition.ts`. ⚠️ bloc coût visible seulement si dépense>0 (donc invisible tant que Meta non reconnecté — token à régénérer). Vieux bloc « ROI en attente SAH » retiré.
+>
+> **CLOSING** (le module N'EST PAS exclu des demandes directes, seulement du chantier confiance) :
+> - **File d'appels accordéon réécrit en React contrôlé** (`call-queue-accordion.tsx`, `QueueAccordion`/`QueueSection` via contexte, corps masqué par `display`) : garde la section ouverte + le scroll au retour depuis une fiche (sessionStorage). Corps passés en `children` (sinon hydratation SSR casse).
+> - **Note libre affichée dans la file** (internal_note par ligne).
+> - **Vue Souscriptions** `/closing/souscriptions` (`queries/subscriptions.ts`) : dernières + liste déployable (60→200→1000), filtre Toutes/BREACH, statut visible (annulées barrées, exclues du total). Comptage clarifié : statut dérivé des dates SAH (`canceled_at`→cancelled), collecte = non-annulées.
+> - **Recherche de lead** sur TOUTES les pages closing (barre dans `closing/layout.tsx`, `lead-search.ts` + `.tsx`) : nom/prénom/email/téléphone (tolérant aux formats, 9 derniers chiffres → 06… ↔ +336…).
+> - **Portefeuille** trié du plus récemment appelé au plus ancien.
+> - **Attribution des finalisations d'inscription aux closers** (profil + KYC) : SAH ne donne pas la date → THE PILOT détecte la bascule false→true au sync et l'horodate write-once (**migration 0010** : `investors.kyc_completed_at` / `registration_completed_at`, APPLIQUÉE en prod). Attribution appel-prime 30j. Colonnes sur `/closing/performance`. Non rétroactif.
+> - **Fiche investisseur** : Historique remonté tout en haut (sous Priorité d'appel, avant Briefing IA).
+>
+> **SYNC** : bouton **« Sync »** dans la barre du haut (`sync-button.tsx` + `lib/sync/actions.ts`) → `runSahSync('full')` à la demande (ne marche que déployé : SAH joignable seulement depuis l'IP Render).
+>
+> **CHANTIER CONFIANCE** (refonte lisibilité/confiance/actionnabilité, hors closing — voir [[project-refonte-confiance]]) :
+> - **Phase 0** : `AUDIT_PILOT.md` (179 métriques auditées) + 6 SUPPRIMER exécutés (dont page mock « Performance Lab » /performance/actions supprimée).
+> - **Phase 1** : `src/lib/metrics/catalogue.ts` (registre unique) + `CATALOGUE_METRIQUES.md` ; `src/lib/sources/` (état réel des sources) ; `src/lib/metrics/guardrails.ts` ; **35 tests** (`tests/unit/`).
+> - **Phases 2&3** : page **`/sources`** (« État des sources »), composant **`MetricInfo`** (provenance au clic ⓘ, modale centrée), **`FreshnessBadge`**, titres-questions (/ads /breach /performance), provenance appliquée au Dashboard.
+> - ⚠️ **GA4 et Calendly = NON branchés** (annoncés seulement). Reste : dérouler provenance+fraîcheur sur les écrans restants.
+>
+> **Chiffres canoniques (base SAH = fait foi, 17/06)** : 2 837 investisseurs (2 154 profil / 1 834 KYC / 1 357 ont investi), collecte 25 859 893 €, annulées 3 566 274 €, ticket moyen 19 057 €.
+>
+> **DoD à chaque livraison** : `pnpm typecheck` + `pnpm build` (+ `pnpm test:run` si tests touchés). Push sur `main` → Render auto-deploy. Migration prod : `$env:DATABASE_URL` à charger manuellement (drizzle-kit ne lit pas .env.local) + autorisation explicite Killian requise.
 
 > ## 🟢 CLOSING — refonte UX + suivi / attribution / sauvegarde (2026-06-05)
 > Sur la branche `feat/closing-ameliorations` (pas encore mergée sur `main`). 11 améliorations :
