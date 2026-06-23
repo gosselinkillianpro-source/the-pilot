@@ -7,6 +7,7 @@ import {
   getSahBreachSubDiag,
   getSahBreachTreeDiag,
   getSahDiagnostics,
+  getSahDistributorTreeDiag,
   getSahReferralDeepDiag,
   getSahReferralDiag,
   getSahSchema,
@@ -17,6 +18,7 @@ import {
   type SahBreachTreeDiag,
   type SahColumn,
   type SahDiagnostics,
+  type SahDistributorTreeDiag,
   type SahReferralDeepDiag,
   type SahReferralDiag,
 } from '@/lib/integrations/sah/client';
@@ -62,20 +64,32 @@ export default async function SahExplorerPage() {
   let treeDiag: SahBreachTreeDiag | null = null;
   let deepDiag: SahReferralDeepDiag | null = null;
   let affiliateTree: SahAffiliateTreeDiag | null = null;
+  let distributorTree: SahDistributorTreeDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag, deepDiag, affiliateTree] =
-      await Promise.all([
-        getSahSchema(),
-        getSahDiagnostics(),
-        getProfilCompletDiagnostic(),
-        getSahBreachSubDiag(),
-        getRegFieldDiagnostic(),
-        getSahReferralDiag(),
-        getSahBreachTreeDiag(),
-        getSahReferralDeepDiag(),
-        getSahAffiliateTreeDiag(),
-      ]);
+    [
+      schema,
+      diag,
+      profilDiag,
+      subDiag,
+      regDiag,
+      referralDiag,
+      treeDiag,
+      deepDiag,
+      affiliateTree,
+      distributorTree,
+    ] = await Promise.all([
+      getSahSchema(),
+      getSahDiagnostics(),
+      getProfilCompletDiagnostic(),
+      getSahBreachSubDiag(),
+      getRegFieldDiagnostic(),
+      getSahReferralDiag(),
+      getSahBreachTreeDiag(),
+      getSahReferralDeepDiag(),
+      getSahAffiliateTreeDiag(),
+      getSahDistributorTreeDiag(),
+    ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
   }
@@ -532,6 +546,122 @@ export default async function SahExplorerPage() {
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
                   Copie ce bloc à Claude : il s'en sert pour câbler l'arbre d'affiliation par code
                   (BREACH + comptes admins) et valider l'isolation par réseau.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {distributorTree && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div
+                  className="view-card-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Network size={15} />
+                  Arbre via distributor_id (le vrai lien)
+                </div>
+                {(() => {
+                  const up = distributorTree.treeViaUsersProfiles.total;
+                  const dd = distributorTree.treeViaDdle.total;
+                  const best = Math.max(up, dd);
+                  return (
+                    <span className={`badge ${best > 0 ? 'badge-success' : 'badge-warning'}`}>
+                      {best > 0 ? `${best} pers. dans ton réseau` : 'lien à confirmer'}
+                    </span>
+                  );
+                })()}
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 }}
+              >
+                <div style={{ color: 'var(--text-3)', fontSize: 12 }}>
+                  <strong>Toi</strong> — user id <code>{distributorTree.rootUserId ?? '∅'}</code> ·
+                  tes profils{' '}
+                  <code>{distributorTree.rootProfiles.map((p) => p.id).join(', ') || '∅'}</code> ·
+                  distributor_id de ton code{' '}
+                  <code>{distributorTree.rootCodeDistributorId ?? '∅'}</code>
+                </div>
+
+                {/* Résolution du propriétaire */}
+                <div>
+                  <strong style={{ fontSize: 12 }}>
+                    À qui remonte le distributor_id {distributorTree.rootCodeDistributorId} de ton
+                    code ?
+                  </strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                      via <code>users_profiles</code> → user{' '}
+                      <code>{distributorTree.ownerViaUsersProfiles?.userId ?? '∅'}</code>{' '}
+                      {distributorTree.ownerViaUsersProfiles?.matchesRoot ? (
+                        <span className="badge badge-success">= toi ✓</span>
+                      ) : null}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                      via <code>distributor_distributor_legal_entities</code> → user{' '}
+                      <code>{distributorTree.ownerViaDdle?.userId ?? '∅'}</code>{' '}
+                      {distributorTree.ownerViaDdle?.matchesRoot ? (
+                        <span className="badge badge-success">= toi ✓</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Les deux arbres */}
+                {(
+                  [
+                    ['via users_profiles', distributorTree.treeViaUsersProfiles] as const,
+                    ['via distributor_legal_entities', distributorTree.treeViaDdle] as const,
+                  ] as const
+                ).map(([label, res]) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 600 }}>
+                      Arbre {label}{' '}
+                      {res.error ? (
+                        <span style={{ color: 'var(--danger, #c0392b)' }}>— {res.error}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-3)' }}>
+                          — {res.total} pers. (niveaux ≥ 1)
+                        </span>
+                      )}
+                    </div>
+                    {res.byDepth.length > 0 && (
+                      <div
+                        style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}
+                      >
+                        {res.byDepth.map((d) => (
+                          <div
+                            key={d.depth}
+                            style={{
+                              fontSize: 12,
+                              fontFamily: 'var(--font-mono)',
+                              color: 'var(--text-2)',
+                            }}
+                          >
+                            {d.depth === 0 ? 'toi (N)' : `N+${d.depth}`} : {d.users} pers. ·{' '}
+                            {money(d.collecte)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                <div style={{ fontSize: 11, color: 'var(--text-4)' }}>
+                  <div>
+                    <strong>users_profiles</strong> :{' '}
+                    {distributorTree.usersProfilesColumns.join(', ')}
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    <strong>distributor_distributor_legal_entities</strong> :{' '}
+                    {distributorTree.ddleColumns.join(', ')}
+                  </div>
+                </div>
+
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
+                  Copie ce bloc à Claude : la branche qui affiche tes 9 au niveau N+1 est le bon
+                  lien → je câble le calcul des niveaux par là (répare BREACH + comptes admins).
                 </p>
               </div>
             </div>

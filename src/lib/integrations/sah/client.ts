@@ -839,3 +839,201 @@ export async function getSahAffiliateTreeDiag(opts?: {
     treeAttempts,
   };
 }
+
+/* ============================================================
+   DIAGNOSTIC ARBRE PAR distributor_id — le VRAI lien d'affiliation SAH.
+   Constat (2026-06-23) : bonus_codes.distributor_id = profil Admin/CGP qui
+   possède le code ; users.distributor_id = profil Admin/CGP auquel l'inscrit
+   est rattaché (= son parrain). On résout distributor_id -> user propriétaire
+   (via users_profiles, ou via distributor_distributor_legal_entities) puis on
+   remonte l'arbre. 100% lecture seule. Pas de KYC.
+   ============================================================ */
+export type DistributorTreeResult = {
+  byDepth: AffiliateTreeLevel[];
+  total: number; // personnes hors racine (niveaux >= 1)
+  error: string | null;
+};
+export type SahDistributorTreeDiag = {
+  rootEmail: string;
+  rootCode: string;
+  rootUserId: string | null;
+  rootProfiles: { id: string; userId: string | null }[];
+  rootCodeDistributorId: string | null;
+  usersProfilesColumns: string[];
+  ddleColumns: string[];
+  ownerViaUsersProfiles: { profileId: string; userId: string | null; matchesRoot: boolean } | null;
+  ownerViaDdle: {
+    ddleId: string;
+    usersProfileId: string | null;
+    userId: string | null;
+    matchesRoot: boolean;
+  } | null;
+  treeViaUsersProfiles: DistributorTreeResult;
+  treeViaDdle: DistributorTreeResult;
+};
+
+export async function getSahDistributorTreeDiag(opts?: {
+  rootEmail?: string;
+  rootCode?: string;
+}): Promise<SahDistributorTreeDiag> {
+  const sql = getSahClient();
+  const rootEmail = opts?.rootEmail ?? 'gosselinkillian.pro@gmail.com';
+  const rootCode = opts?.rootCode ?? 'Seven-club-deal-KG';
+
+  const empty: DistributorTreeResult = { byDepth: [], total: 0, error: null };
+
+  const rootUserId = await sql<{ id: string }[]>`
+    select u.id::text as id from users u where lower(u.email) = lower(${rootEmail}) limit 1
+  `
+    .then((r) => r[0]?.id ?? null)
+    .catch(() => null);
+
+  const rootProfiles = rootUserId
+    ? await sql<{ id: string; user_id: string | null }[]>`
+        select up.id::text as id, up.user_id::text as user_id
+        from users_profiles up where up.user_id::text = ${rootUserId}
+        order by up.id
+      `
+        .then((r) => r.map((x) => ({ id: x.id, userId: x.user_id })))
+        .catch(() => [] as { id: string; userId: string | null }[])
+    : [];
+
+  const rootCodeDistributorId = await sql<{ d: string | null }[]>`
+    select distributor_id::text as d from bonus_codes where code = ${rootCode} limit 1
+  `
+    .then((r) => r[0]?.d ?? null)
+    .catch(() => null);
+
+  const usersProfilesColumns = await colsOf(sql, 'users_profiles');
+  const ddleColumns = await colsOf(sql, 'distributor_distributor_legal_entities');
+
+  // Résolution du propriétaire du code racine (distributor_id) -> user.
+  const ownerViaUsersProfiles =
+    rootCodeDistributorId != null
+      ? await sql<{ user_id: string | null }[]>`
+          select user_id::text as user_id from users_profiles where id::text = ${rootCodeDistributorId} limit 1
+        `
+          .then((r) =>
+            r[0]
+              ? {
+                  profileId: rootCodeDistributorId,
+                  userId: r[0].user_id,
+                  matchesRoot: r[0].user_id != null && r[0].user_id === rootUserId,
+                }
+              : null,
+          )
+          .catch(() => null)
+      : null;
+
+  const ownerViaDdle =
+    rootCodeDistributorId != null
+      ? await sql<{ users_profile_id: string | null; user_id: string | null }[]>`
+          select d.users_profile_id::text as users_profile_id, up.user_id::text as user_id
+          from distributor_distributor_legal_entities d
+          left join users_profiles up on up.id = d.users_profile_id
+          where d.id::text = ${rootCodeDistributorId} limit 1
+        `
+          .then((r) =>
+            r[0]
+              ? {
+                  ddleId: rootCodeDistributorId,
+                  usersProfileId: r[0].users_profile_id,
+                  userId: r[0].user_id,
+                  matchesRoot: r[0].user_id != null && r[0].user_id === rootUserId,
+                }
+              : null,
+          )
+          .catch(() => null)
+      : null;
+
+  // Arbre via users.distributor_id -> users_profiles.id -> users_profiles.user_id.
+  const treeViaUsersProfiles: DistributorTreeResult = !rootUserId
+    ? empty
+    : await sql<{ depth: number; users: number; collecte: number }[]>`
+        with recursive tree as (
+          select u.id as uid, 0 as depth from users u where u.id::text = ${rootUserId}
+          union all
+          select c.id, t.depth + 1
+          from users c
+          join users_profiles op on op.id = c.distributor_id
+          join tree t on op.user_id = t.uid
+          where t.depth < 12
+        )
+        select t.depth::int as depth, count(distinct t.uid)::int as users,
+               coalesce(sum(case when s.canceled_at is null then s.amount else 0 end),0)::bigint as collecte
+        from tree t
+        left join users_profiles up on up.user_id = t.uid
+        left join subscriptions s on s.users_profile_id = up.id
+        group by t.depth order by t.depth
+      `
+        .then((rows) => {
+          const byDepth = rows.map((r) => ({
+            depth: Number(r.depth),
+            users: Number(r.users),
+            collecte: Number(r.collecte),
+          }));
+          return {
+            byDepth,
+            total: byDepth.filter((d) => d.depth >= 1).reduce((s, d) => s + d.users, 0),
+            error: null as string | null,
+          };
+        })
+        .catch((e: unknown) => ({
+          byDepth: [],
+          total: 0,
+          error: e instanceof Error ? e.message : 'erreur requête',
+        }));
+
+  // Arbre via users.distributor_id -> distributor_distributor_legal_entities -> users_profile -> user.
+  const treeViaDdle: DistributorTreeResult = !rootUserId
+    ? empty
+    : await sql<{ depth: number; users: number; collecte: number }[]>`
+        with recursive tree as (
+          select u.id as uid, 0 as depth from users u where u.id::text = ${rootUserId}
+          union all
+          select c.id, t.depth + 1
+          from users c
+          join distributor_distributor_legal_entities d on d.id = c.distributor_id
+          join users_profiles op on op.id = d.users_profile_id
+          join tree t on op.user_id = t.uid
+          where t.depth < 12
+        )
+        select t.depth::int as depth, count(distinct t.uid)::int as users,
+               coalesce(sum(case when s.canceled_at is null then s.amount else 0 end),0)::bigint as collecte
+        from tree t
+        left join users_profiles up on up.user_id = t.uid
+        left join subscriptions s on s.users_profile_id = up.id
+        group by t.depth order by t.depth
+      `
+        .then((rows) => {
+          const byDepth = rows.map((r) => ({
+            depth: Number(r.depth),
+            users: Number(r.users),
+            collecte: Number(r.collecte),
+          }));
+          return {
+            byDepth,
+            total: byDepth.filter((d) => d.depth >= 1).reduce((s, d) => s + d.users, 0),
+            error: null as string | null,
+          };
+        })
+        .catch((e: unknown) => ({
+          byDepth: [],
+          total: 0,
+          error: e instanceof Error ? e.message : 'erreur requête',
+        }));
+
+  return {
+    rootEmail,
+    rootCode,
+    rootUserId,
+    rootProfiles,
+    rootCodeDistributorId,
+    usersProfilesColumns,
+    ddleColumns,
+    ownerViaUsersProfiles,
+    ownerViaDdle,
+    treeViaUsersProfiles,
+    treeViaDdle,
+  };
+}
