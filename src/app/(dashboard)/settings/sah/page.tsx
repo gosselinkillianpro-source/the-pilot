@@ -3,6 +3,7 @@ import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import {
   getProfilCompletDiagnostic,
   getRegFieldDiagnostic,
+  getSahAffiliateTreeDiag,
   getSahBreachSubDiag,
   getSahBreachTreeDiag,
   getSahDiagnostics,
@@ -11,6 +12,7 @@ import {
   getSahSchema,
   type ProfilCompletDiagnostic,
   type RegFieldDiagnostic,
+  type SahAffiliateTreeDiag,
   type SahBreachSubDiag,
   type SahBreachTreeDiag,
   type SahColumn,
@@ -22,6 +24,12 @@ import { SyncButton } from './sync-button';
 
 function money(n: number): string {
   return `${n.toLocaleString('fr-FR')} €`;
+}
+
+function fmtVal(v: unknown): string {
+  if (v === null || v === undefined) return '∅';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
 }
 
 export const dynamic = 'force-dynamic';
@@ -53,9 +61,10 @@ export default async function SahExplorerPage() {
   let referralDiag: SahReferralDiag | null = null;
   let treeDiag: SahBreachTreeDiag | null = null;
   let deepDiag: SahReferralDeepDiag | null = null;
+  let affiliateTree: SahAffiliateTreeDiag | null = null;
   let error: string | null = null;
   try {
-    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag, deepDiag] =
+    [schema, diag, profilDiag, subDiag, regDiag, referralDiag, treeDiag, deepDiag, affiliateTree] =
       await Promise.all([
         getSahSchema(),
         getSahDiagnostics(),
@@ -65,6 +74,7 @@ export default async function SahExplorerPage() {
         getSahReferralDiag(),
         getSahBreachTreeDiag(),
         getSahReferralDeepDiag(),
+        getSahAffiliateTreeDiag(),
       ]);
   } catch (e) {
     error = e instanceof Error ? e.message : 'Erreur inconnue';
@@ -330,6 +340,198 @@ export default async function SahExplorerPage() {
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
                   Copie ce bloc à Claude : il s'en sert pour savoir si le sous-parrainage passe par
                   les invitations email, par un code propre, ou par les programmes d'affiliation.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {affiliateTree && (
+            <div className="view-card">
+              <div className="view-card-header">
+                <div
+                  className="view-card-title"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Network size={15} />
+                  Ton arbre d'affiliation (par code) — vérification
+                </div>
+                {(() => {
+                  const best = affiliateTree.treeAttempts.find((a) => a.total > 0);
+                  return (
+                    <span className={`badge ${best ? 'badge-success' : 'badge-warning'}`}>
+                      {best
+                        ? `${best.total} pers. sous toi (via ${best.column})`
+                        : 'arbre via code à confirmer'}
+                    </span>
+                  );
+                })()}
+              </div>
+              <div
+                className="view-card-body"
+                style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13 }}
+              >
+                <p style={{ margin: 0, color: 'var(--text-2)' }}>
+                  Racine : <code>{affiliateTree.rootEmail}</code> · code{' '}
+                  <strong>{affiliateTree.rootCode}</strong>
+                  {affiliateTree.parentCode ? (
+                    <>
+                      {' '}
+                      · code parrain <strong>{affiliateTree.parentCode}</strong>
+                    </>
+                  ) : null}
+                  .
+                </p>
+
+                {/* Compte racine */}
+                {affiliateTree.rootUser ? (
+                  <div style={{ color: 'var(--text-3)', fontSize: 12 }}>
+                    <strong>Ton compte SAH</strong> — id <code>{affiliateTree.rootUser.id}</code> ·
+                    bonus_code_id <code>{affiliateTree.rootUser.bonusCodeId ?? '∅'}</code> ·
+                    invited_by <code>{affiliateTree.rootUser.invitedById ?? '∅'}</code> (
+                    {affiliateTree.rootUser.invitedByType ?? '∅'}) · distributor_id{' '}
+                    <code>{affiliateTree.rootUser.distributorId ?? '∅'}</code>
+                  </div>
+                ) : (
+                  <div className="alert alert-warning" style={{ fontSize: 12 }}>
+                    Compte introuvable via l'email racine — vérifie l'email.
+                  </div>
+                )}
+
+                {/* Niveau 1 via code */}
+                <div>
+                  <strong style={{ fontSize: 12 }}>
+                    Niveau 1 (via le code {affiliateTree.rootCode}) :{' '}
+                    {affiliateTree.level1ViaCode.count} personne(s)
+                  </strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                    {affiliateTree.level1ViaCode.sample.map((s) => (
+                      <div
+                        key={s.email}
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--text-2)',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        {s.name} · {s.email} · {s.createdAt?.slice(0, 10) ?? '—'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Lignes complètes des codes (révèle la colonne propriétaire) */}
+                <div>
+                  <strong style={{ fontSize: 12 }}>
+                    Colonnes pointant vers TOI sur ton code :{' '}
+                  </strong>
+                  {affiliateTree.ownerColumnsMatchingRoot.length > 0 ? (
+                    affiliateTree.ownerColumnsMatchingRoot.map((c) => (
+                      <span key={c} className="badge badge-success" style={{ marginLeft: 4 }}>
+                        {c}
+                      </span>
+                    ))
+                  ) : (
+                    <span style={{ color: 'var(--text-4)', fontSize: 12 }}>
+                      aucune (le propriétaire est ailleurs — voir tables admin plus bas)
+                    </span>
+                  )}
+                </div>
+                {affiliateTree.codeRows.map((cr) => (
+                  <div key={cr.code}>
+                    <strong style={{ fontSize: 12 }}>Ligne `bonus_codes` — {cr.code}</strong>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 6,
+                        marginTop: 4,
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 11,
+                      }}
+                    >
+                      {Object.entries(cr.row).map(([k, v]) => (
+                        <span key={k} className="badge badge-neutral">
+                          {k}: {fmtVal(v)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Arbre multi-niveaux par colonne candidate */}
+                <div>
+                  <strong style={{ fontSize: 12 }}>
+                    Arbre multi-niveaux (chaîne des codes) — essais par colonne
+                  </strong>
+                  {affiliateTree.treeAttempts.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
+                      Aucune colonne propriétaire candidate sur `bonus_codes` — le lien passe par
+                      une table admin (voir ci-dessous), je câblerai l'arbre par là.
+                    </div>
+                  ) : (
+                    affiliateTree.treeAttempts.map((a) => (
+                      <div key={a.column} style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 600 }}>
+                          via <code>bonus_codes.{a.column}</code>{' '}
+                          {a.error ? (
+                            <span style={{ color: 'var(--danger, #c0392b)' }}>— {a.error}</span>
+                          ) : (
+                            <span style={{ color: 'var(--text-3)' }}>
+                              — {a.total} pers. (niveaux ≥ 1)
+                            </span>
+                          )}
+                        </div>
+                        {a.byDepth.length > 0 && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2,
+                              marginTop: 2,
+                            }}
+                          >
+                            {a.byDepth.map((d) => (
+                              <div
+                                key={d.depth}
+                                style={{
+                                  fontSize: 12,
+                                  fontFamily: 'var(--font-mono)',
+                                  color: 'var(--text-2)',
+                                }}
+                              >
+                                {d.depth === 0 ? 'toi (N)' : `N+${d.depth}`} : {d.users} pers. ·{' '}
+                                {money(d.collecte)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Tables admin/affilié candidates */}
+                <div>
+                  <strong style={{ fontSize: 12 }}>
+                    Tables « admin / affilié / cgp » détectées
+                  </strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                    {affiliateTree.adminTables.length === 0 ? (
+                      <span style={{ fontSize: 12, color: 'var(--text-4)' }}>— aucune —</span>
+                    ) : (
+                      affiliateTree.adminTables.map((t) => (
+                        <div key={t.table} style={{ fontSize: 11 }}>
+                          <code style={{ color: 'var(--text-1)' }}>{t.table}</code>{' '}
+                          <span style={{ color: 'var(--text-3)' }}>: {t.columns.join(', ')}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-4)' }}>
+                  Copie ce bloc à Claude : il s'en sert pour câbler l'arbre d'affiliation par code
+                  (BREACH + comptes admins) et valider l'isolation par réseau.
                 </p>
               </div>
             </div>

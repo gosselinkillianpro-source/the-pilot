@@ -647,3 +647,195 @@ export async function getSahReferralDeepDiag(): Promise<SahReferralDeepDiag> {
     breachCodes,
   };
 }
+
+/* ============================================================
+   DIAGNOSTIC ARBRE D'AFFILIATION (par CODE) — remonte le réseau d'UN admin
+   à partir de SON code d'affiliation, via la chaîne des codes bonus
+   (et non via invited_by_id, qui est quasi vide chez SAH).
+
+   Auto-découvrant : dump les lignes complètes de bonus_codes + les tables
+   "admin/affilié" pour identifier le lien "code -> propriétaire", puis tente
+   l'arbre multi-niveaux pour chaque colonne propriétaire candidate.
+
+   100% LECTURE SEULE. Pas de KYC (jamais de RIB/IBAN/pièce d'identité).
+   Le réseau remonté est celui de l'admin lui-même (sa propre donnée).
+   ============================================================ */
+export type AffiliateTreeLevel = { depth: number; users: number; collecte: number };
+export type AffiliateOwnerColResult = {
+  column: string;
+  byDepth: AffiliateTreeLevel[];
+  total: number; // personnes hors racine (niveaux >= 1)
+  error: string | null;
+};
+export type SahAffiliateTreeDiag = {
+  rootEmail: string;
+  rootCode: string;
+  parentCode: string | null;
+  rootUser: {
+    id: string;
+    bonusCodeId: string | null;
+    invitedById: string | null;
+    invitedByType: string | null;
+    distributorId: string | null;
+  } | null;
+  codeRows: { code: string; row: Record<string, unknown> }[];
+  bonusCodeColumns: string[];
+  ownerColumnsMatchingRoot: string[]; // colonnes de bonus_codes dont la valeur == id racine
+  ownerCandidateColumns: string[]; // colonnes "propriétaire" probables (regex)
+  level1ViaCode: {
+    count: number;
+    sample: { name: string; email: string; createdAt: string | null }[];
+  };
+  adminTables: { table: string; columns: string[] }[];
+  treeAttempts: AffiliateOwnerColResult[];
+};
+
+export async function getSahAffiliateTreeDiag(opts?: {
+  rootEmail?: string;
+  rootCode?: string;
+  parentCode?: string;
+}): Promise<SahAffiliateTreeDiag> {
+  const sql = getSahClient();
+  const rootEmail = opts?.rootEmail ?? 'gosselinkillian.pro@gmail.com';
+  const rootCode = opts?.rootCode ?? 'Seven-club-deal-KG';
+  const parentCode = opts?.parentCode ?? 'Seven-club-deal';
+
+  // A) Utilisateur racine (l'admin) — champs non sensibles uniquement.
+  const rootUser = await sql<
+    {
+      id: string;
+      bonus_code_id: string | null;
+      invited_by_id: string | null;
+      invited_by_type: string | null;
+      distributor_id: string | null;
+    }[]
+  >`
+    select u.id::text as id, u.bonus_code_id::text as bonus_code_id,
+           u.invited_by_id::text as invited_by_id, u.invited_by_type as invited_by_type,
+           u.distributor_id::text as distributor_id
+    from users u where lower(u.email) = lower(${rootEmail}) limit 1
+  `
+    .then((r) =>
+      r[0]
+        ? {
+            id: r[0].id,
+            bonusCodeId: r[0].bonus_code_id,
+            invitedById: r[0].invited_by_id,
+            invitedByType: r[0].invited_by_type,
+            distributorId: r[0].distributor_id,
+          }
+        : null,
+    )
+    .catch(() => null);
+
+  // B) Lignes complètes de bonus_codes pour les 2 codes (révèle la colonne propriétaire).
+  const codes = [rootCode, parentCode].filter((c): c is string => Boolean(c));
+  const codeRows = await sql<{ code: string; data: Record<string, unknown> }[]>`
+    select bc.code as code, to_jsonb(bc) as data from bonus_codes bc where bc.code in ${sql(codes)}
+  `
+    .then((r) => r.map((x) => ({ code: x.code, row: x.data })))
+    .catch(() => [] as { code: string; row: Record<string, unknown> }[]);
+
+  const bonusCodeColumns = await colsOf(sql, 'bonus_codes');
+
+  // Colonnes de bonus_codes (sur la ligne du code racine) dont la valeur == id de la racine.
+  const kgRow = codeRows.find((c) => c.code === rootCode)?.row ?? null;
+  const ownerColumnsMatchingRoot =
+    kgRow && rootUser
+      ? Object.keys(kgRow).filter((k) => kgRow[k] != null && String(kgRow[k]) === rootUser.id)
+      : [];
+  const ownerCandidateColumns = bonusCodeColumns.filter((c) => OWNER_COL.test(c));
+
+  // C) Niveau 1 via le code (les affiliés directs).
+  const level1Count = await sql<{ c: number }[]>`
+    select count(*)::int as c from users u
+    join bonus_codes bc on bc.id = u.bonus_code_id where bc.code = ${rootCode}
+  `
+    .then((r) => r[0]?.c ?? -1)
+    .catch(() => -1);
+  const level1Sample = await sql<
+    { name: string | null; email: string; created_at: string | null }[]
+  >`
+    select nullif(trim(concat(coalesce(u.first_name,''),' ',left(coalesce(u.last_name,''),1))),'') as name,
+           u.email as email, u.created_at::text as created_at
+    from users u join bonus_codes bc on bc.id = u.bonus_code_id
+    where bc.code = ${rootCode} order by u.created_at desc nulls last limit 15
+  `
+    .then((r) =>
+      r.map((x) => ({ name: x.name ?? '(sans nom)', email: x.email, createdAt: x.created_at })),
+    )
+    .catch(() => [] as { name: string; email: string; createdAt: string | null }[]);
+
+  // D) Tables candidates "admin / affilié / cgp / distributeur".
+  const adminTableNames = await sql<{ table_name: string }[]>`
+    select table_name from information_schema.tables
+    where table_schema not in ('pg_catalog','information_schema')
+      and (table_name ilike '%admin%' or table_name ilike '%collab%'
+        or table_name ilike '%affili%' or table_name ilike '%cgp%'
+        or table_name ilike '%ambassad%' or table_name ilike '%distributor%')
+    order by table_name
+  `
+    .then((r) => r.map((x) => x.table_name))
+    .catch(() => [] as string[]);
+  const adminTables: { table: string; columns: string[] }[] = [];
+  for (const t of adminTableNames.slice(0, 25)) {
+    adminTables.push({ table: t, columns: await colsOf(sql, t) });
+  }
+
+  // E) Arbre multi-niveaux via la chaîne des codes — un essai par colonne propriétaire candidate.
+  // Lien : enfant.bonus_code_id -> code ; code.<colonne propriétaire> = ancêtre.id.
+  const candidateCols = Array.from(
+    new Set([...ownerColumnsMatchingRoot, ...ownerCandidateColumns]),
+  ).slice(0, 6);
+  const treeAttempts: AffiliateOwnerColResult[] = [];
+  if (rootUser) {
+    for (const col of candidateCols) {
+      if (!bonusCodeColumns.includes(col)) continue; // garde-fou : colonne réelle
+      const res = await sql<{ depth: number; users: number; collecte: number }[]>`
+        with recursive tree as (
+          select u.id as id, 0 as depth from users u where u.id::text = ${rootUser.id}
+          union all
+          select c.id, t.depth + 1
+          from users c
+          join bonus_codes bc on bc.id = c.bonus_code_id
+          join tree t on bc.${sql(col)} = t.id
+          where t.depth < 12
+        )
+        select t.depth::int as depth, count(distinct t.id)::int as users,
+               coalesce(sum(case when s.canceled_at is null then s.amount else 0 end),0)::bigint as collecte
+        from tree t
+        left join users_profiles up on up.user_id = t.id
+        left join subscriptions s on s.users_profile_id = up.id
+        group by t.depth order by t.depth
+      `
+        .then((rows) => ({
+          byDepth: rows.map((r) => ({
+            depth: Number(r.depth),
+            users: Number(r.users),
+            collecte: Number(r.collecte),
+          })),
+          error: null as string | null,
+        }))
+        .catch((e: unknown) => ({
+          byDepth: [] as AffiliateTreeLevel[],
+          error: e instanceof Error ? e.message : 'erreur requête',
+        }));
+      const total = res.byDepth.filter((d) => d.depth >= 1).reduce((s, d) => s + d.users, 0);
+      treeAttempts.push({ column: col, byDepth: res.byDepth, total, error: res.error });
+    }
+  }
+
+  return {
+    rootEmail,
+    rootCode,
+    parentCode,
+    rootUser,
+    codeRows,
+    bonusCodeColumns,
+    ownerColumnsMatchingRoot,
+    ownerCandidateColumns,
+    level1ViaCode: { count: level1Count, sample: level1Sample },
+    adminTables,
+    treeAttempts,
+  };
+}
