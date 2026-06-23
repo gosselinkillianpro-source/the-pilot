@@ -170,9 +170,17 @@ async function syncInvestors(): Promise<number> {
       bc.code as bonus_code,
       bc.ambassador_name as cgp_name,
       dle.name as cgp_network,
-      -- Parrainage : le vrai lien SAH est invited_by_id (type 'User'), pas parent_id.
-      case when u.invited_by_type = 'User' then u.invited_by_id::text end as parent_sah_id,
-      nullif(trim(concat(coalesce(inv.first_name, ''), ' ', coalesce(inv.last_name, ''))), '') as parrain_name,
+      -- Parrainage : le vrai lien = le PROPRIÉTAIRE du code utilisé
+      -- (bonus_codes.distributor_id -> users_profiles -> user_id). invited_by_id est
+      -- quasi vide, gardé en repli seulement. Garde-fou anti auto-parrainage (<> u.id).
+      coalesce(
+        case when parent_u.id is not null and parent_u.id <> u.id then parent_u.id::text end,
+        case when u.invited_by_type = 'User' and u.invited_by_id <> u.id then u.invited_by_id::text end
+      ) as parent_sah_id,
+      coalesce(
+        nullif(trim(concat(coalesce(parent_u.first_name, ''), ' ', coalesce(parent_u.last_name, ''))), ''),
+        nullif(trim(concat(coalesce(inv.first_name, ''), ' ', coalesce(inv.last_name, ''))), '')
+      ) as parrain_name,
       u.created_at as sah_created_at,
       u.updated_at as sah_updated_at,
       max(p.kyc_validated_at) as kyc_validated_at,
@@ -196,6 +204,8 @@ async function syncInvestors(): Promise<number> {
     from users u
     left join users_profiles p on p.user_id = u.id
     left join bonus_codes bc on bc.id = u.bonus_code_id
+    left join users_profiles owner_p on owner_p.id = bc.distributor_id
+    left join users parent_u on parent_u.id = owner_p.user_id
     left join distributor_legal_entities dle on dle.id = u.distributor_id
     left join users inv on inv.id = u.invited_by_id and u.invited_by_type = 'User'
     where u.email is not null
@@ -203,7 +213,8 @@ async function syncInvestors(): Promise<number> {
              u.birthdate, u.nationality, u.country, u.street_address_and_number,
              u.additional_address, u.city, u.zip_code, u.tax_residency_country,
              u.cached_wallet_balance_in_cents, u.created_at, u.updated_at,
-             bc.code, bc.ambassador_name, dle.name, inv.first_name, inv.last_name
+             bc.code, bc.ambassador_name, dle.name, inv.first_name, inv.last_name,
+             parent_u.id, parent_u.first_name, parent_u.last_name
   `;
   if (rows.length === 0) return 0;
 
