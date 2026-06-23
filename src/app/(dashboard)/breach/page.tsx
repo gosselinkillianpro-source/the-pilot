@@ -165,6 +165,30 @@ export default async function BreachPage({
         </div>
       </div>
 
+      {/* Par niveau de parrainage (N / N-1 / N-2…) */}
+      <Card title="Par niveau de parrainage (réseau SEVEN-BREACH)">
+        {stats.byLevel.length === 0 ? (
+          <Empty />
+        ) : (
+          <>
+            <Table
+              head={['Niveau', 'Leads', 'Onb.', 'Collecte']}
+              rows={stats.byLevel.map((l) => [
+                l.label,
+                String(l.total),
+                `${l.onboarded} (${pct(l.onboarded, l.total)})`,
+                money(l.invested),
+              ])}
+            />
+            <p style={{ padding: '8px 16px', fontSize: 11, color: 'var(--text-4)', margin: 0 }}>
+              N = inscrits directs via une pub « breach » · N-1 / N-2 = leurs filleuls. Reflète le
+              dernier re-sync (Réglages → SAH). Si seul « Direct (N) » apparaît, c'est que cette
+              population n'a pas de sous-réseau.
+            </p>
+          </>
+        )}
+      </Card>
+
       {/* Nouveaux par mois */}
       {stats.byMonth.length > 0 && (
         <div className="view-card">

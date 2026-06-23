@@ -497,6 +497,8 @@ export type BreachStats = {
   avgPerSub: number;
   avgDaysToFirstSub: number | null; // délai moyen inscription → 1re souscription
   byCode: { code: string; total: number; onboarded: number; invested: number }[];
+  // Découpage par niveau de parrainage (0 = direct/N, 1 = N-1, 2 = N-2…)
+  byLevel: { level: number; label: string; total: number; onboarded: number; invested: number }[];
   byCity: { city: string; total: number }[];
   byMonth: { month: string; signups: number }[];
   topProjects: { name: string; investors: number; collected: number }[];
@@ -533,6 +535,7 @@ type CodeRow = {
   onboarded: number;
   invested: string | number;
 };
+type LevelRow = { level: number; total: number; onboarded: number; invested: string | number };
 type OtherRow = {
   total: number;
   onboarded: number;
@@ -583,6 +586,21 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
     group by i.bonus_code
     order by total desc
   `)) as unknown as CodeRow[];
+
+  // Découpage par niveau de parrainage (0 = direct/N, 1 = N-1, 2 = N-2…).
+  // coalesce(0) : les inscrits avec un code « breach » mais sans niveau calculé = racines (N).
+  const byLevel = (await db.execute(sql`
+    select
+      coalesce(i.breach_level, 0)::int as level,
+      count(distinct i.id)::int as total,
+      count(distinct i.id) filter (where i.onboarding_complete)::int as onboarded,
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as invested
+    from investors i
+    left join subscriptions s on s.investor_id = i.id
+    where i.deleted_at is null and (i.breach_level is not null or i.bonus_code ilike '%breach%')
+    group by coalesce(i.breach_level, 0)
+    order by level
+  `)) as unknown as LevelRow[];
 
   const byCity = (await db.execute(sql`
     select address_city, count(*)::int as total
@@ -733,6 +751,16 @@ export async function getBreachStats(period: ResolvedPeriod): Promise<BreachStat
       onboarded: Number(c.onboarded),
       invested: Number(c.invested) || 0,
     })),
+    byLevel: byLevel.map((l) => {
+      const level = Number(l.level);
+      return {
+        level,
+        label: level === 0 ? 'Direct (N)' : `N-${level}`,
+        total: Number(l.total),
+        onboarded: Number(l.onboarded),
+        invested: Number(l.invested) || 0,
+      };
+    }),
     byCity: byCity.map((c) => ({ city: c.address_city ?? '—', total: Number(c.total) })),
     byMonth: byMonth.map((m) => ({ month: m.month, signups: Number(m.signups) })).reverse(),
     topProjects: topProjects.map((p) => ({
