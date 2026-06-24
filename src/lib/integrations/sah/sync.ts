@@ -363,6 +363,7 @@ async function syncInvestors(): Promise<number> {
   }
 
   await recomputeBreachLevels();
+  await recomputeAffiliateNetwork();
   return rows.length;
 }
 
@@ -388,6 +389,33 @@ async function recomputeBreachLevels(): Promise<void> {
     update investors i set breach_level = ranked.lvl
     from ranked
     where ranked.id = i.id
+  `);
+}
+
+/**
+ * Appartenance réseau pour l'ISOLATION des comptes "admin affilié".
+ * Pour chaque investisseur, enregistre TOUS ses ancêtres (chaîne parent_sah_id)
+ * avec la profondeur (1 = parrain direct, 2 = grand-parrain…). Reset complet à
+ * chaque sync. Un admin (owner_sah_id) ne pourra voir que les lignes sous son sah_id.
+ */
+async function recomputeAffiliateNetwork(): Promise<void> {
+  await db.execute(sql`delete from affiliate_network`);
+  await db.execute(sql`
+    insert into affiliate_network (investor_id, owner_sah_id, depth)
+    with recursive chain as (
+      select i.id as investor_id, i.parent_sah_id as owner_sah_id, 1 as depth
+      from investors i
+      where i.deleted_at is null and i.parent_sah_id is not null
+      union all
+      select c.investor_id, p.parent_sah_id, c.depth + 1
+      from chain c
+      join investors p on p.sah_id = c.owner_sah_id
+      where p.parent_sah_id is not null and p.deleted_at is null and c.depth < 12
+    )
+    select investor_id, owner_sah_id, min(depth) as depth
+    from chain
+    where owner_sah_id is not null
+    group by investor_id, owner_sah_id
   `);
 }
 

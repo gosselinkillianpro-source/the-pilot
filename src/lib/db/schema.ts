@@ -8,12 +8,14 @@
 
 import {
   boolean,
+  index,
   inet,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -22,7 +24,13 @@ import {
 /* ============================================================
    ENUMS
    ============================================================ */
-export const userRoleEnum = pgEnum('user_role', ['admin', 'closer', 'closer_junior', 'executive']);
+export const userRoleEnum = pgEnum('user_role', [
+  'admin',
+  'closer',
+  'closer_junior',
+  'executive',
+  'admin_affiliate', // affilié SAH : accès restreint à son seul sous-réseau (espace dédié)
+]);
 
 export const profileSegmentEnum = pgEnum('profile_segment', [
   'junior',
@@ -163,6 +171,9 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   fullName: text('full_name'),
   role: userRoleEnum('role').notNull().default('executive'),
+  // Comptes "admin affilié" uniquement : sah_id de la personne SAH représentée par ce
+  // compte. Sert à scoper l'accès à son seul sous-réseau. NULL pour le staff interne.
+  sahUserId: text('sah_user_id'),
   avatarUrl: text('avatar_url'),
   phone: text('phone'),
   active: boolean('active').notNull().default(true),
@@ -242,6 +253,28 @@ export const investors = pgTable('investors', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 });
+
+/* ============================================================
+   AFFILIATE_NETWORK — appartenance réseau (multi-niveaux) pour l'ISOLATION des
+   comptes "admin affilié". Une ligne par (investisseur, ancêtre, profondeur).
+   Recalculé à chaque sync depuis parent_sah_id : un investisseur appartient au
+   réseau de CHACUN de ses ancêtres (parrain direct = depth 1, grand-parrain = 2…).
+   Un admin (owner_sah_id) ne voit QUE les investisseurs présents ici sous son sah_id.
+   ============================================================ */
+export const affiliateNetwork = pgTable(
+  'affiliate_network',
+  {
+    investorId: uuid('investor_id')
+      .notNull()
+      .references(() => investors.id, { onDelete: 'cascade' }),
+    ownerSahId: text('owner_sah_id').notNull(), // sah_id d'un ancêtre (l'admin propriétaire du réseau)
+    depth: integer('depth').notNull(), // 1 = filleul direct, 2 = N-2…
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.investorId, t.ownerSahId] }),
+    ownerIdx: index('affiliate_network_owner_idx').on(t.ownerSahId),
+  }),
+);
 
 /* ============================================================
    PROJECTS — miroir read-only depuis SAH

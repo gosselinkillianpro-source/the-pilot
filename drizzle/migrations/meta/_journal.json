@@ -78,6 +78,13 @@
       "when": 1781683898266,
       "tag": "0010_boring_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782283472885,
+      "tag": "0011_sudden_silvermane",
+      "breakpoints": true
     }
   ]
 }
