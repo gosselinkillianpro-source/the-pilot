@@ -80,6 +80,12 @@ export default async function ClosingPage() {
                 <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
                   {q.scored.queueLabel} · {q.scored.statusLabel}
                   {q.phone ? <span style={{ color: 'var(--text-4)' }}> · {q.phone}</span> : null}
+                  {q.walletBalanceCents != null && q.walletBalanceCents >= 10000 ? (
+                    <span style={{ color: 'var(--success)', fontWeight: 700 }}>
+                      {' '}
+                      · 💰 {Math.round(q.walletBalanceCents / 100).toLocaleString('fr-FR')} € dispo
+                    </span>
+                  ) : null}
                 </div>
                 {q.scored.callGoal ? (
                   <div style={{ fontSize: 12, color: 'var(--text-3)' }}>🎯 {q.scored.callGoal}</div>

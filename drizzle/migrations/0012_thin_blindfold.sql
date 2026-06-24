@@ -1,0 +1,1 @@
+ALTER TABLE "investors" ADD COLUMN "wallet_funded_at" timestamp with time zone;

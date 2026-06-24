@@ -85,6 +85,13 @@
       "when": 1782283472885,
       "tag": "0011_sudden_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782288895149,
+      "tag": "0012_thin_blindfold",
+      "breakpoints": true
     }
   ]
 }

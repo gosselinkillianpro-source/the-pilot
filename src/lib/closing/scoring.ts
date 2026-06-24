@@ -34,6 +34,11 @@ export type ScoringInput = {
   worriedSavContact?: boolean;
   /** Jours depuis la dernière action e-mail (pour le refroidissement), null si aucune. */
   emailDaysSinceLastAction?: number | null;
+  /** Solde du wallet en cents (argent disponible, non investi). */
+  walletBalanceCents?: number | null;
+  /** Jours depuis que le wallet est alimenté sans avoir été investi (null si non alimenté).
+   *  Plus c'est ancien, plus le signal est fort : argent qui dort = hésitation → à appeler. */
+  walletDaysSitting?: number | null;
   /** Date de référence (injectée pour testabilité). */
   now: Date;
 };
@@ -53,6 +58,8 @@ export type ScoredInvestor = {
   nearestRepaymentDays: number | null;
   /** Jours depuis le 1er investissement (statut E), null sinon. */
   firstInvestmentDays: number | null;
+  /** Jours que l'argent dort dans le wallet sans être investi (null si non alimenté). */
+  walletDaysSitting: number | null;
   queueBucket: number; // ordre de traitement de la journée
   queueLabel: string;
   callGoal: string;
@@ -74,6 +81,10 @@ const STATUS_LABEL: Record<InvestorStatus, string> = {
 const NEW_LEAD_WINDOW_DAYS = 7;
 /** Fenêtre d'appel "nouvel investisseur" après le tout premier investissement. */
 const NEW_INVESTOR_WINDOW_DAYS = 15;
+/** Solde min (€) pour considérer un wallet « alimenté » (anti-bruit sur les petits restes). */
+const WALLET_MIN_EUROS = 100;
+/** Sous ce nombre de jours, on laisse l'investisseur placer son argent seul (pas de file dédiée). */
+const WALLET_SELF_SERVE_DAYS = 2;
 
 const BUCKET: Record<number, { label: string; goal: string }> = {
   1: {
@@ -85,26 +96,30 @@ const BUCKET: Record<number, { label: string; goal: string }> = {
     goal: 'Appel de bienvenue : créer le lien, vérifier que tout s’est bien passé, répondre aux questions, recueillir un retour.',
   },
   3: {
+    label: 'Argent à placer (wallet alimenté, non investi)',
+    goal: 'Argent disponible dans le wallet qui dort : accompagner pour le placer maintenant — le moment idéal.',
+  },
+  4: {
     label: 'Réinvestissement — échéance proche',
     goal: 'Proposer le réinvestissement avant le remboursement (le moment roi).',
   },
-  4: {
+  5: {
     label: 'Déblocage KYC',
     goal: 'Faire valider la pièce d’identité pour débloquer la capacité à investir.',
   },
-  5: {
+  6: {
     label: 'Déblocage inscription',
     goal: 'Comprendre le blocage et accompagner la finalisation. Pas de vente.',
   },
-  6: {
+  7: {
     label: 'Bienvenue / 1er investissement',
     goal: 'Créer le lien, répondre aux questions, présenter un projet (jamais investi).',
   },
-  7: {
+  8: {
     label: 'Réactivation',
     goal: 'Réengager — surtout s’il y a un signal d’intérêt récent.',
   },
-  8: {
+  9: {
     label: 'Relationnel',
     goal: 'Entretenir la relation / rétention. Créneau dédié, jamais au détriment de la conversion.',
   },
@@ -184,6 +199,25 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
   // Signal négatif SAV
   if (input.worriedSavContact) urgency -= 12;
 
+  // Argent qui dort dans le wallet (non investi) : signal d'achat fort, qui MONTE avec le temps.
+  // Récent (≤2j) : faible boost (il le placera sûrement seul en autonomie).
+  // Ancien (10j+) : fort boost (il a de l'argent et n'agit pas → hésitation → à appeler).
+  const walletEuros = (input.walletBalanceCents ?? 0) / 100;
+  const walletDays = input.walletDaysSitting ?? null;
+  const hasIdleCash = walletEuros >= WALLET_MIN_EUROS && walletDays != null;
+  if (hasIdleCash && walletDays != null) {
+    let boost: number;
+    if (walletDays >= 21) boost = 48;
+    else if (walletDays >= 10) boost = 40;
+    else if (walletDays >= 7) boost = 28;
+    else if (walletDays >= 3) boost = 16;
+    else boost = 6;
+    // léger facteur montant (plus gros wallet = plus gros enjeu)
+    if (walletEuros >= 5000) boost += 8;
+    else if (walletEuros >= 1000) boost += 4;
+    urgency += boost;
+  }
+
   urgency = clamp0to100(urgency);
 
   // --- Multiplicateur de valeur (section 6) ---
@@ -208,18 +242,27 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
   const isNewInvestor = status === 'E' && first != null && first <= NEW_INVESTOR_WINDOW_DAYS;
 
   // --- File / bucket (ordre de traitement, section 9) ---
+  // Argent à placer : wallet alimenté depuis assez longtemps pour qu'on ne compte plus
+  // sur l'autonomie de l'investisseur → file dédiée à haute priorité.
+  const idleCashReady = hasIdleCash && walletDays != null && walletDays >= WALLET_SELF_SERVE_DAYS;
   let queueBucket: number;
   if (isNewLead) queueBucket = 1;
   else if (isNewInvestor) queueBucket = 2;
-  else if (status === 'E' && repay != null && repay <= 30) queueBucket = 3;
-  else if (status === 'B') queueBucket = 4;
-  else if (status === 'A') queueBucket = 5;
-  else if (status === 'C') queueBucket = 6;
-  else if (status === 'D') queueBucket = 7;
-  else queueBucket = 8;
+  else if (idleCashReady) queueBucket = 3;
+  else if (status === 'E' && repay != null && repay <= 30) queueBucket = 4;
+  else if (status === 'B') queueBucket = 5;
+  else if (status === 'A') queueBucket = 6;
+  else if (status === 'C') queueBucket = 7;
+  else if (status === 'D') queueBucket = 8;
+  else queueBucket = 9;
 
   // --- Facteurs explicatifs (top 3) ---
   const factors: string[] = [];
+  if (hasIdleCash && walletDays != null) {
+    factors.push(
+      `💰 ${Math.round(walletEuros).toLocaleString('fr-FR')} € dispo depuis ${walletDays}j (non investi)`,
+    );
+  }
   if (isNewInvestor && first != null) {
     factors.push(first === 0 ? '1er invest. aujourd’hui' : `1er invest. il y a ${first}j`);
   }
@@ -253,6 +296,7 @@ export function scoreInvestor(input: ScoringInput): ScoredInvestor {
     daysSinceSignup,
     nearestRepaymentDays: repay,
     firstInvestmentDays: first,
+    walletDaysSitting: walletDays,
     queueBucket,
     queueLabel: bucketInfo.label,
     callGoal: bucketInfo.goal,
@@ -283,6 +327,11 @@ export function compareForQueue(a: ScoredInvestor, b: ScoredInvestor): number {
     const byFirst = ascNullsLast(a.firstInvestmentDays, b.firstInvestmentDays);
     if (byFirst !== 0) return byFirst;
   } else if (a.queueBucket === 3) {
+    // Argent à placer : argent qui dort depuis LE PLUS LONGTEMPS d'abord (desc).
+    const aw = a.walletDaysSitting ?? -1;
+    const bw = b.walletDaysSitting ?? -1;
+    if (aw !== bw) return bw - aw;
+  } else if (a.queueBucket === 4) {
     // Réinvestissement : échéance la plus proche d'abord (2j avant +2j).
     const byRepay = ascNullsLast(a.nearestRepaymentDays, b.nearestRepaymentDays);
     if (byRepay !== 0) return byRepay;

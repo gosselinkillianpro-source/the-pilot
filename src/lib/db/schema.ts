@@ -208,6 +208,9 @@ export const investors = pgTable('investors', {
   cgpNetwork: text('cgp_network'),
   // Lemonway / portefeuille (jamais d'IBAN/BIC : KYC bancaire interdit chez nous)
   walletBalanceCents: integer('wallet_balance_cents'),
+  // Date détectée (par THE PILOT) où le wallet est devenu alimenté (≥ seuil) sans être
+  // investi ; remise à null quand il se vide. Alimente le scoring « argent à placer ».
+  walletFundedAt: timestamp('wallet_funded_at', { withTimezone: true }),
   walletStatus: text('wallet_status'),
   lwOnboardingStatus: text('lw_onboarding_status'),
   lwOnboardingId: text('lw_onboarding_id'),

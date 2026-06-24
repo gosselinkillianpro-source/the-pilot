@@ -52,6 +52,7 @@ export type AffiliateStats = {
   avgTicketPerInvestor: number;
   avgPerSub: number;
   new30d: number; // inscrits dans les 30 derniers jours
+  walletAvailable: number; // € cumulés dans les wallets du réseau (argent à placer)
   byLevel: AffiliateLevel[];
   topProjects: { name: string; investors: number; collected: number }[];
 };
@@ -63,7 +64,8 @@ export async function getAffiliateStats(ownerSahId: string): Promise<AffiliateSt
       count(distinct i.id)::int as total,
       count(distinct i.id) filter (where i.registration_complete)::int as registered,
       count(distinct i.id) filter (where i.onboarding_complete)::int as onboarded,
-      count(distinct i.id) filter (where i.sah_created_at >= now() - interval '30 days')::int as new30d
+      count(distinct i.id) filter (where i.sah_created_at >= now() - interval '30 days')::int as new30d,
+      coalesce(sum(i.wallet_balance_cents), 0) as wallet_cents
     from affiliate_network an
     join investors i on i.id = an.investor_id and i.deleted_at is null
     where an.owner_sah_id = ${ownerSahId}
@@ -72,6 +74,7 @@ export async function getAffiliateStats(ownerSahId: string): Promise<AffiliateSt
     registered: number;
     onboarded: number;
     new30d: number;
+    wallet_cents: string | number;
   }[];
 
   const invested = (await db.execute(sql`
@@ -123,7 +126,7 @@ export async function getAffiliateStats(ownerSahId: string): Promise<AffiliateSt
     limit 8
   `)) as unknown as { name: string | null; investors: number; collected: string | number }[];
 
-  const f = funnel[0] ?? { total: 0, registered: 0, onboarded: 0, new30d: 0 };
+  const f = funnel[0] ?? { total: 0, registered: 0, onboarded: 0, new30d: 0, wallet_cents: 0 };
   const inv = invested[0] ?? { investors: 0, total_invested: 0, sub_count: 0 };
   const totalInvested = Number(inv.total_invested) || 0;
   const investors = Number(inv.investors) || 0;
@@ -139,6 +142,7 @@ export async function getAffiliateStats(ownerSahId: string): Promise<AffiliateSt
     avgTicketPerInvestor: investors > 0 ? Math.round(totalInvested / investors) : 0,
     avgPerSub: subCount > 0 ? Math.round(totalInvested / subCount) : 0,
     new30d: Number(f.new30d),
+    walletAvailable: Math.round((Number(f.wallet_cents) || 0) / 100),
     byLevel: levels.map((l) => ({
       depth: Number(l.depth),
       label: `N+${Number(l.depth)}`,
@@ -165,6 +169,7 @@ export type AffiliateMember = {
   onboardingComplete: boolean;
   pipelineStage: string;
   invested: number;
+  walletBalanceCents: number | null;
   lastActivityAt: string | null;
 };
 
@@ -176,6 +181,7 @@ export async function getAffiliateMembers(ownerSahId: string): Promise<Affiliate
     select
       i.id::text as id, i.full_name, i.email, i.phone, i.address_city as city,
       an.depth::int as depth, i.registration_complete, i.onboarding_complete, i.pipeline_stage,
+      i.wallet_balance_cents,
       coalesce((
         select sum(s.amount) from subscriptions s
         where s.investor_id = i.id and s.status <> 'cancelled'
@@ -197,6 +203,7 @@ export async function getAffiliateMembers(ownerSahId: string): Promise<Affiliate
     onboardingComplete: Boolean(r.onboarding_complete),
     pipelineStage: String(r.pipeline_stage ?? 'new'),
     invested: Number(r.invested) || 0,
+    walletBalanceCents: r.wallet_balance_cents != null ? Number(r.wallet_balance_cents) : null,
     lastActivityAt: (r.last_activity_at as string | null) ?? null,
   }));
 }

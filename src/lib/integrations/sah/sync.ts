@@ -362,6 +362,22 @@ async function syncInvestors(): Promise<number> {
       );
   }
 
+  // « Argent à placer » : on marque la date à laquelle le wallet est devenu alimenté
+  // (≥ seuil) pour mesurer depuis combien de temps l'argent dort sans être investi.
+  // Remis à null dès que le wallet repasse sous le seuil (investi ou retiré). L'upsert
+  // n'écrit jamais wallet_funded_at → la date d'origine est préservée tant qu'il reste alimenté.
+  const WALLET_MIN_CENTS = 10_000; // 100 €
+  await db.execute(sql`
+    update investors set wallet_funded_at = now()
+    where deleted_at is null and wallet_funded_at is null
+      and wallet_balance_cents is not null and wallet_balance_cents >= ${WALLET_MIN_CENTS}
+  `);
+  await db.execute(sql`
+    update investors set wallet_funded_at = null
+    where wallet_funded_at is not null
+      and (wallet_balance_cents is null or wallet_balance_cents < ${WALLET_MIN_CENTS})
+  `);
+
   await recomputeBreachLevels();
   await recomputeAffiliateNetwork();
   return rows.length;

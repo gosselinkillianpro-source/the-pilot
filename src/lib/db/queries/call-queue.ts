@@ -20,6 +20,8 @@ export type QueueRow = {
   assignedCloserId: string | null;
   pipelineStage: string;
   totalInvested: number;
+  /** Solde du wallet en cents (argent disponible, non investi). */
+  walletBalanceCents: number | null;
   /** Code bonus (apporteur). BREACH = vient des pubs de Killian. */
   bonusCode: string | null;
   isBreach: boolean;
@@ -53,6 +55,8 @@ type RawRow = {
   sah_created_at: string | Date | null;
   breach_level: number | null;
   total_invested: string | number | null;
+  wallet_balance_cents: string | number | null;
+  wallet_funded_at: string | Date | null;
   active_subscriptions: string | number | null;
   active_projects: string | number | null;
   nearest_repayment: string | Date | null;
@@ -146,6 +150,8 @@ export async function getCallQueue(opts?: {
       i.sah_created_at,
       i.breach_level,
       i.bonus_code,
+      i.wallet_balance_cents,
+      i.wallet_funded_at,
       left(i.internal_note, 200) as internal_note,
       i.claimed_by_id::text as claimed_by_id,
       i.claimed_at,
@@ -208,6 +214,12 @@ export async function getCallQueue(opts?: {
       r.claimed_by_id != null &&
       r.claimed_at != null &&
       new Date(r.claimed_at).getTime() >= claimCutoff;
+    const walletBalanceCents =
+      r.wallet_balance_cents != null ? Number(r.wallet_balance_cents) : null;
+    const walletFundedAt = r.wallet_funded_at ? new Date(r.wallet_funded_at) : null;
+    const walletDaysSitting = walletFundedAt
+      ? Math.floor((now.getTime() - walletFundedAt.getTime()) / DAY_MS)
+      : null;
     const scored = scoreInvestor({
       registrationComplete: r.registration_complete,
       onboardingComplete: r.onboarding_complete,
@@ -217,6 +229,8 @@ export async function getCallQueue(opts?: {
       activeProjectsCount: Number(r.active_projects) || 0,
       nearestRepaymentDays,
       firstInvestmentDays,
+      walletBalanceCents,
+      walletDaysSitting,
       now,
     });
     return {
@@ -231,6 +245,7 @@ export async function getCallQueue(opts?: {
       assignedCloserId: r.assigned_closer_id,
       pipelineStage: r.pipeline_stage,
       totalInvested,
+      walletBalanceCents,
       bonusCode: r.bonus_code,
       isBreach: r.breach_level != null || isBreachCode(r.bonus_code),
       internalNote: r.internal_note?.trim() ? r.internal_note.trim() : null,

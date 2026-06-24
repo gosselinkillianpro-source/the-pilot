@@ -32,6 +32,11 @@ export default async function VueEnsemblePage() {
         <Kpi label="Onboardés" value={`${s.onboarded} · ${pct(s.onboarded, s.totalMembers)}`} />
         <Kpi label="Investisseurs" value={String(s.investors)} />
         <Kpi label="Collecte du réseau" value={money(s.totalInvested)} accent="var(--success)" />
+        <Kpi
+          label="Argent à placer (wallets)"
+          value={money(s.walletAvailable)}
+          accent="var(--ai)"
+        />
       </div>
 
       <div className="kpi-grid">

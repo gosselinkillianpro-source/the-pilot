@@ -47,8 +47,8 @@ export default async function MembresPage() {
           <Empty label="Aucun filleul pour l'instant." />
         ) : (
           <Table
-            head={['Membre', 'Niveau', 'Statut', 'Étape', 'Investi', 'Dernière activité']}
-            cols="2fr 0.7fr 1.1fr 1fr 1fr 1.1fr"
+            head={['Membre', 'Niveau', 'Statut', 'Étape', 'Investi', 'Dispo', 'Dern. activité']}
+            cols="2fr 0.6fr 1.1fr 0.9fr 1fr 1fr 1fr"
             rows={members.map((m) => [
               <Link
                 key={m.id}
@@ -62,6 +62,13 @@ export default async function MembresPage() {
               statusLabel(m),
               stageLabel(m.pipelineStage),
               money(m.invested),
+              m.walletBalanceCents != null && m.walletBalanceCents >= 10000 ? (
+                <span key={`w-${m.id}`} style={{ color: 'var(--success)', fontWeight: 600 }}>
+                  {money(m.walletBalanceCents / 100)}
+                </span>
+              ) : (
+                '—'
+              ),
               fmtDate(m.lastActivityAt),
             ])}
           />

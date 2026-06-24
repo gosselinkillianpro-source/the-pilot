@@ -8,6 +8,7 @@ import {
   Target,
   TrendingUp,
   UserPlus,
+  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { QueueAccordion, QueueSection } from '@/components/closing/call-queue-accordion';
@@ -122,7 +123,8 @@ export default async function CallQueuePage({
   const total = queue.length;
   const newLeads = queue.filter((q) => q.scored.isNewLead).length;
   const newInvestors = queue.filter((q) => q.scored.queueBucket === 2).length;
-  const echeance = queue.filter((q) => q.scored.queueBucket === 3).length;
+  const idleCash = queue.filter((q) => q.scored.queueBucket === 3).length;
+  const echeance = queue.filter((q) => q.scored.queueBucket === 4).length;
   const hot = queue.filter((q) => q.scored.temperature === 'hot').length;
 
   return (
@@ -179,6 +181,12 @@ export default async function CallQueuePage({
           label="Nouv. investisseurs"
           value={nb(newInvestors)}
           accent="var(--ai)"
+        />
+        <Kpi
+          icon={<Wallet size={15} />}
+          label="Argent à placer"
+          value={nb(idleCash)}
+          accent="var(--success)"
         />
         <Kpi
           icon={<TrendingUp size={15} />}
@@ -374,6 +382,20 @@ function QueueRowItem({
           ) : null}
           {row.city ? (
             <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
+          ) : null}
+          {row.walletBalanceCents != null && row.walletBalanceCents >= 10000 ? (
+            <span
+              className="badge"
+              style={{
+                fontSize: 10,
+                background: 'var(--success-bg, #e6f6ec)',
+                color: 'var(--success)',
+                fontWeight: 700,
+              }}
+              title="Argent disponible dans le wallet, non investi"
+            >
+              💰 {nb(Math.round(row.walletBalanceCents / 100))} € dispo
+            </span>
           ) : null}
         </div>
         {row.sahCreatedAt ? (
