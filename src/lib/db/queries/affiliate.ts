@@ -173,8 +173,16 @@ export type AffiliateMember = {
   lastActivityAt: string | null;
 };
 
-/** Liste de tous les membres du réseau (avec niveau, statut, collecte). */
-export async function getAffiliateMembers(ownerSahId: string): Promise<AffiliateMember[]> {
+/** Liste de tous les membres du réseau (avec niveau, statut, collecte). `q` = recherche nom/email/tél. */
+export async function getAffiliateMembers(
+  ownerSahId: string,
+  q?: string,
+): Promise<AffiliateMember[]> {
+  const search = q?.trim();
+  const searchFilter =
+    search && search.length >= 1
+      ? sql`and (i.full_name ilike ${`%${search}%`} or i.email ilike ${`%${search}%`} or i.phone ilike ${`%${search}%`})`
+      : sql``;
   // Sous-requêtes scalaires (pas de double left join) : sinon le produit cartésien
   // souscriptions × interactions gonflerait le montant investi.
   const rows = (await db.execute(sql`
@@ -190,6 +198,7 @@ export async function getAffiliateMembers(ownerSahId: string): Promise<Affiliate
     from affiliate_network an
     join investors i on i.id = an.investor_id and i.deleted_at is null
     where an.owner_sah_id = ${ownerSahId}
+    ${searchFilter}
     order by invested desc, i.sah_created_at desc nulls last
   `)) as unknown as Array<Record<string, unknown>>;
   return rows.map((r) => ({
@@ -218,10 +227,15 @@ export type AffiliateSubscription = {
   date: string | null;
 };
 
-/** Souscriptions du réseau (les plus récentes d'abord). */
+/** Souscriptions du réseau (les plus récentes d'abord). `q` = recherche investisseur/projet. */
 export async function getAffiliateSubscriptions(
   ownerSahId: string,
+  q?: string,
 ): Promise<AffiliateSubscription[]> {
+  const search = q?.trim();
+  const searchFilter = search
+    ? sql`and (i.full_name ilike ${`%${search}%`} or p.name ilike ${`%${search}%`})`
+    : sql``;
   const rows = (await db.execute(sql`
     select
       s.id::text as id, s.amount, s.status,
@@ -233,6 +247,7 @@ export async function getAffiliateSubscriptions(
     join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
     where an.owner_sah_id = ${ownerSahId}
+    ${searchFilter}
     order by coalesce(s.signed_at, s.created_at) desc nulls last
     limit 300
   `)) as unknown as Array<Record<string, unknown>>;

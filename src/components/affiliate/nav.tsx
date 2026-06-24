@@ -6,9 +6,9 @@ import { usePathname } from 'next/navigation';
 
 const ITEMS = [
   { href: '/reseau', label: "Vue d'ensemble", icon: BarChart3, exact: true },
-  { href: '/reseau/closing', label: 'Closing', icon: PhoneCall, exact: false },
+  { href: '/reseau/closing', label: 'À appeler', icon: PhoneCall, exact: false },
   { href: '/reseau/membres', label: 'Mon réseau', icon: Users2, exact: false },
-  { href: '/reseau/souscriptions', label: 'Souscriptions', icon: Receipt, exact: false },
+  { href: '/reseau/souscriptions', label: 'Investissements', icon: Receipt, exact: false },
   { href: '/reseau/projets', label: 'Projets', icon: FolderKanban, exact: false },
 ] as const;
 

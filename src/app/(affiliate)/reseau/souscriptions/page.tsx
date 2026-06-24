@@ -1,4 +1,4 @@
-import { Receipt } from 'lucide-react';
+import { Receipt, Search } from 'lucide-react';
 import Link from 'next/link';
 import { Card, Empty, Kpi, money, NotLinked, Table } from '@/components/affiliate/ui';
 import { getAffiliateSubscriptions, resolveAffiliateScope } from '@/lib/db/queries/affiliate';
@@ -17,10 +17,16 @@ function fmtDate(s: string | null): string {
   return s ? s.slice(0, 10) : '—';
 }
 
-export default async function SouscriptionsPage() {
+export default async function SouscriptionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const scope = await resolveAffiliateScope();
   if (!scope) return <NotLinked title="Souscriptions" />;
-  const subs = await getAffiliateSubscriptions(scope.sahId);
+  const { q } = await searchParams;
+  const query = q?.trim() ?? '';
+  const subs = await getAffiliateSubscriptions(scope.sahId, query);
 
   const collected = subs
     .filter((s) => s.status !== 'cancelled')
@@ -35,6 +41,37 @@ export default async function SouscriptionsPage() {
         </h1>
         <div className="page-desc">Toutes les souscriptions de ton réseau.</div>
       </div>
+
+      <form method="get" style={{ display: 'flex', gap: 8 }}>
+        <div
+          className="view-topbar-search"
+          style={{ flex: 1, maxWidth: 420, display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Search size={14} style={{ color: 'var(--text-4)', flexShrink: 0 }} />
+          <input
+            type="search"
+            name="q"
+            defaultValue={query}
+            placeholder="Rechercher (investisseur ou projet)…"
+            style={{
+              flex: 1,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--text-1)',
+              fontSize: 13,
+              outline: 'none',
+            }}
+          />
+        </div>
+        <button type="submit" className="btn btn-secondary btn-sm">
+          Rechercher
+        </button>
+        {query ? (
+          <Link href="/reseau/souscriptions" className="btn btn-secondary btn-sm">
+            Effacer
+          </Link>
+        ) : null}
+      </form>
 
       <div className="kpi-grid">
         <Kpi label="Souscriptions" value={String(subs.length)} />

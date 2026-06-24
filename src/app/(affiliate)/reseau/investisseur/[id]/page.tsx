@@ -1,6 +1,7 @@
-import { ArrowLeft, Mail, MapPin, Phone } from 'lucide-react';
+import { ArrowLeft, Mail, MapPin, MessageCircle, MessageSquare, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CopyButton } from '@/components/affiliate/copy-button';
 import { NotLinked } from '@/components/affiliate/ui';
 import { getAffiliateInvestorDetail, resolveAffiliateScope } from '@/lib/db/queries/affiliate';
 import { getInvestorStage } from '@/lib/investor-stage';
@@ -46,6 +47,12 @@ const SUB_STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: 'Active', cls: 'badge badge-success' },
   repaid: { label: 'Remboursée', cls: 'badge badge-success' },
   cancelled: { label: 'Annulée', cls: 'badge badge-neutral' },
+};
+
+const TEMP_COLOR: Record<string, string> = {
+  hot: 'var(--danger, #c0392b)',
+  warm: 'var(--warning, #d97706)',
+  cold: 'var(--text-3)',
 };
 
 function tempClass(t: string): string {
@@ -119,6 +126,27 @@ export default async function FicheInvestisseurPage({ params, searchParams }: Pr
   const { investor, depth, scored, subs, timeline, callImpact } = detail;
   const civ = civilityLabel(investor.civility);
   const displayName = [civ, investor.fullName].filter(Boolean).join(' ') || investor.email;
+  const sc = scored?.scored ?? null;
+  // Numéro WhatsApp : chiffres seuls, 0 initial français → 33.
+  const waNum = investor.phone ? investor.phone.replace(/\D/g, '').replace(/^0/, '33') : null;
+  const repayDays = sc?.nearestRepaymentDays ?? null;
+  const walletEuros =
+    investor.walletBalanceCents != null ? Math.round(investor.walletBalanceCents / 100) : 0;
+  // Résumé une ligne « qui est cette personne ».
+  const summary: string[] = [];
+  if (sc) summary.push(sc.statusLabel);
+  if (subs.totalAmount > 0)
+    summary.push(
+      `${subs.totalAmount.toLocaleString('fr-FR')} € sur ${subs.activeCount} projet${subs.activeCount > 1 ? 's' : ''}`,
+    );
+  if (walletEuros >= 100) summary.push(`💰 ${walletEuros.toLocaleString('fr-FR')} € à placer`);
+  if (callImpact?.lastCallAt) summary.push(`dernier appel le ${fmtDate(callImpact.lastCallAt)}`);
+  // Blocage funnel (objectif d'appel clair).
+  const funnelBlock = !investor.registrationComplete
+    ? "Inscription non finalisée — objectif de l'appel : l'aider à terminer son inscription."
+    : !investor.onboardingComplete
+      ? "KYC non validé — objectif : débloquer la validation d'identité pour qu'il puisse investir."
+      : null;
 
   return (
     <>
@@ -193,15 +221,100 @@ export default async function FicheInvestisseurPage({ params, searchParams }: Pr
               </span>
             )}
           </div>
+          {summary.length > 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 8 }}>
+              {summary.join(' · ')}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(() => {
               const stage = getInvestorStage(investor);
               return <span className={stage.badgeClass}>{stage.label}</span>;
             })()}
             {depth != null && <span className="badge badge-ai">Réseau N+{depth}</span>}
+            {repayDays != null && (
+              <span
+                className={`badge ${repayDays <= 14 ? 'badge-danger' : repayDays <= 30 ? 'badge-warning' : 'badge-neutral'}`}
+                title="Jours avant le prochain remboursement (moment idéal pour réinvestir)"
+              >
+                Remboursement J-{repayDays}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {investor.phone ? (
+              <a href={`tel:${investor.phone}`} className="btn btn-primary btn-sm">
+                <Phone size={13} /> Appeler
+              </a>
+            ) : null}
+            {investor.phone ? (
+              <a href={`sms:${investor.phone}`} className="btn btn-secondary btn-sm">
+                <MessageSquare size={13} /> SMS
+              </a>
+            ) : null}
+            {waNum ? (
+              <a
+                href={`https://wa.me/${waNum}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+              >
+                <MessageCircle size={13} /> WhatsApp
+              </a>
+            ) : null}
+            <a href={`mailto:${investor.email}`} className="btn btn-secondary btn-sm">
+              <Mail size={13} /> Email
+            </a>
+            {investor.phone ? <CopyButton value={investor.phone} label="n°" /> : null}
           </div>
         </div>
       </div>
+
+      {funnelBlock && (
+        <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+          <div className="alert-body">
+            <div className="alert-title">À débloquer</div>
+            <div className="alert-description">{funnelBlock}</div>
+          </div>
+        </div>
+      )}
+
+      {sc?.callGoal && (
+        <div
+          className="view-card"
+          style={{
+            marginBottom: 12,
+            borderLeft: `3px solid ${TEMP_COLOR[sc.temperature] ?? 'var(--text-3)'}`,
+          }}
+        >
+          <div
+            className="view-card-body"
+            style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+          >
+            <span style={{ fontSize: 18 }}>👉</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-4)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Prochaine action
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--text-1)', fontWeight: 600 }}>
+                {sc.callGoal}
+              </div>
+            </div>
+            {investor.phone ? (
+              <a href={`tel:${investor.phone}`} className="btn btn-primary btn-sm">
+                <Phone size={13} /> Appeler
+              </a>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       <div className="split-2col">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
