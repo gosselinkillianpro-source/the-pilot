@@ -2,7 +2,9 @@ import { eq, sql } from 'drizzle-orm';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
-import { getCallQueue, type QueueRow } from './call-queue';
+import { getInvestorScored } from './call-queue';
+import { getCallImpact, getInvestorTimeline } from './closing';
+import { getInvestorById, getInvestorSubscriptions } from './investors';
 
 /**
  * Requêtes de l'espace "admin affilié" — TOUJOURS scopées au sous-réseau de la
@@ -238,107 +240,40 @@ export async function getAffiliateSubscriptions(
   }));
 }
 
-export type AffiliateProject = {
-  id: string;
-  name: string;
-  status: string;
-  yieldAnnual: number | null;
-  city: string | null;
-  networkInvestors: number;
-  networkCollected: number;
-};
-
-/** Projets dans lesquels le réseau a investi (avec collecte du réseau). */
-export async function getAffiliateProjects(ownerSahId: string): Promise<AffiliateProject[]> {
-  const rows = (await db.execute(sql`
-    select
-      p.id::text as id, p.name, p.status, p.target_yield_annual as yield_annual, p.location_city as city,
-      count(distinct i.id)::int as network_investors,
-      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as network_collected
-    from affiliate_network an
-    join investors i on i.id = an.investor_id and i.deleted_at is null
-    join subscriptions s on s.investor_id = i.id and s.status <> 'cancelled'
-    join projects p on p.id = s.project_id
-    where an.owner_sah_id = ${ownerSahId}
-    group by p.id
-    order by network_collected desc
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows.map((r) => ({
-    id: String(r.id),
-    name: String(r.name ?? '—'),
-    status: String(r.status ?? ''),
-    yieldAnnual: r.yield_annual != null ? Number(r.yield_annual) : null,
-    city: (r.city as string | null) ?? null,
-    networkInvestors: Number(r.network_investors) || 0,
-    networkCollected: Number(r.network_collected) || 0,
-  }));
-}
-
 export type AffiliateInvestorDetail = {
-  investor: QueueRow;
+  investor: NonNullable<Awaited<ReturnType<typeof getInvestorById>>>;
   depth: number | null;
-  subscriptions: {
-    projectName: string | null;
-    amount: number;
-    status: string;
-    date: string | null;
-  }[];
-  interactions: { type: string; outcome: string | null; note: string | null; at: string | null }[];
+  scored: Awaited<ReturnType<typeof getInvestorScored>>;
+  subs: Awaited<ReturnType<typeof getInvestorSubscriptions>>;
+  timeline: Awaited<ReturnType<typeof getInvestorTimeline>>;
+  callImpact: Awaited<ReturnType<typeof getCallImpact>>;
 };
 
 /**
- * Fiche d'un investisseur — UNIQUEMENT s'il appartient au réseau de l'affilié.
- * CONTRÔLE D'APPARTENANCE OBLIGATOIRE : on passe par getCallQueue scopé (ownerSahId),
- * qui ne renvoie l'investisseur que s'il est bien dans le réseau. Sinon → null (404).
+ * Fiche complète d'un investisseur — IDENTIQUE à la fiche staff (réutilise les MÊMES
+ * requêtes : investor, souscriptions, scoring, historique, impact appel), mais
+ * accessible UNIQUEMENT si l'investisseur appartient au réseau de l'affilié.
+ * CONTRÔLE D'APPARTENANCE OBLIGATOIRE avant toute lecture : hors réseau → null (404).
  */
 export async function getAffiliateInvestorDetail(
   investorId: string,
   ownerSahId: string,
 ): Promise<AffiliateInvestorDetail | null> {
-  const rows = await getCallQueue({ ownerSahId, investorId });
-  const investor = rows[0];
-  if (!investor) return null; // hors réseau ou inexistant → pas d'accès
+  const investor = await getInvestorById(investorId); // valide aussi le format d'id
+  if (!investor) return null;
 
-  const depthRow = (await db.execute(sql`
+  const owns = (await db.execute(sql`
     select depth::int as depth from affiliate_network
-    where owner_sah_id = ${ownerSahId} and investor_id = ${investorId} limit 1
+    where owner_sah_id = ${ownerSahId} and investor_id = ${investor.id} limit 1
   `)) as unknown as { depth: number }[];
+  if (owns.length === 0) return null; // hors réseau → pas d'accès
 
-  // Défense en profondeur : ces sous-requêtes re-vérifient l'appartenance réseau (en plus
-  // de la porte d'appartenance ci-dessus) — l'isolation ne dépend pas de l'ordre d'exécution.
-  const subs = (await db.execute(sql`
-    select p.name as project_name, s.amount, s.status, coalesce(s.signed_at, s.created_at)::text as date
-    from subscriptions s
-    left join projects p on p.id = s.project_id
-    where s.investor_id = ${investorId}
-      and exists (select 1 from affiliate_network an
-                  where an.investor_id = ${investorId} and an.owner_sah_id = ${ownerSahId})
-    order by coalesce(s.signed_at, s.created_at) desc nulls last
-  `)) as unknown as Array<Record<string, unknown>>;
+  const [subs, scored, timeline, callImpact] = await Promise.all([
+    getInvestorSubscriptions(investor.id),
+    getInvestorScored(investor.id),
+    getInvestorTimeline(investor.id),
+    getCallImpact(investor.id),
+  ]);
 
-  const acts = (await db.execute(sql`
-    select type, outcome, note, created_at::text as at
-    from interactions
-    where investor_id = ${investorId}
-      and exists (select 1 from affiliate_network an
-                  where an.investor_id = ${investorId} and an.owner_sah_id = ${ownerSahId})
-    order by created_at desc limit 20
-  `)) as unknown as Array<Record<string, unknown>>;
-
-  return {
-    investor,
-    depth: depthRow[0]?.depth ?? null,
-    subscriptions: subs.map((r) => ({
-      projectName: (r.project_name as string | null) ?? null,
-      amount: Number(r.amount) || 0,
-      status: String(r.status ?? ''),
-      date: (r.date as string | null) ?? null,
-    })),
-    interactions: acts.map((r) => ({
-      type: String(r.type ?? ''),
-      outcome: (r.outcome as string | null) ?? null,
-      note: (r.note as string | null) ?? null,
-      at: (r.at as string | null) ?? null,
-    })),
-  };
+  return { investor, depth: owns[0]?.depth ?? null, scored, subs, timeline, callImpact };
 }
