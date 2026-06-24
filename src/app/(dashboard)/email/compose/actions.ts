@@ -3,7 +3,7 @@
 import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { getEmailConfig } from '@/lib/email/config';
 import { renderEmailTemplate, renderPersonalEmail } from '@/lib/email/template';
 import {
@@ -39,16 +39,21 @@ export type SendEmailResult =
   | { ok: false; reason: 'error'; message: string };
 
 export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailResult> {
-  // 1. Auth best-effort (le login arrive plus tard)
+  // 1. Auth + rôle. L'envoi d'email est réservé au staff outreach (admin_affiliate exclu).
+  // Le contrôle de rôle DOIT bloquer → il est hors du catch (qui ne gère que l'absence
+  // de session en dev local).
   let actorId: string | null = null;
   let actorEmail = 'dev-local';
+  let actorUser: Awaited<ReturnType<typeof getAuthenticatedUser>> | null = null;
   try {
-    const user = await getAuthenticatedUser();
-    actorId = user.id;
-    actorEmail = user.email;
-    // TODO (login) : await requireRole(user, ['admin', 'closer'])
+    actorUser = await getAuthenticatedUser();
   } catch {
-    // pas de session encore — en mode test, sans risque
+    // pas de session encore — en mode test (dev local), sans risque
+  }
+  if (actorUser) {
+    actorId = actorUser.id;
+    actorEmail = actorUser.email;
+    await requireRole(actorUser, ['admin', 'closer', 'closer_junior']);
   }
 
   // 2. Validation

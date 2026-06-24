@@ -19,6 +19,20 @@ create or replace function public.is_my_investor(inv uuid) returns boolean
   language sql stable security definer set search_path = public
   as $$ select exists(select 1 from public.investors where id = inv and assigned_closer_id = auth.uid()) $$;
 
+-- Helper : cet investisseur appartient-il au sous-réseau de l'admin affilié courant ?
+-- (le sah_id de l'affilié est sur users.sah_user_id ; affiliate_network liste ses descendants)
+-- Prérequis : migration 0011 appliquée (users.sah_user_id + affiliate_network).
+create or replace function public.is_in_my_affiliate_network(inv uuid) returns boolean
+  language sql stable security definer set search_path = public
+  as $$
+    select exists(
+      select 1
+      from public.affiliate_network an
+      join public.users u on u.id = auth.uid()
+      where an.investor_id = inv and an.owner_sah_id = u.sah_user_id
+    )
+  $$;
+
 -- ============================================================
 -- USERS
 -- ============================================================
@@ -220,3 +234,45 @@ create policy email_events_admin_all on public.email_events for all
 drop policy if exists email_events_team_read on public.email_events;
 create policy email_events_team_read on public.email_events for select
   using (public.auth_role() in ('closer', 'closer_junior', 'executive'));
+
+-- ============================================================
+-- AFFILIATE_NETWORK — appartenance réseau (isolation des comptes affiliés).
+-- admin RW ; un affilié ne lit QUE ses propres lignes (son sah_id).
+-- ============================================================
+alter table public.affiliate_network enable row level security;
+drop policy if exists affiliate_network_admin_all on public.affiliate_network;
+create policy affiliate_network_admin_all on public.affiliate_network for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists affiliate_network_affiliate_read on public.affiliate_network;
+create policy affiliate_network_affiliate_read on public.affiliate_network for select
+  using (
+    public.auth_role() = 'admin_affiliate'
+    and owner_sah_id = (select sah_user_id from public.users where id = auth.uid())
+  );
+
+-- ============================================================
+-- ADMIN_AFFILIATE — affilié SAH : LECTURE SEULE de son SEUL sous-réseau.
+-- ⚠️ FILET DE SÉCURITÉ : la connexion serveur (service) contourne la RLS ;
+-- l'isolation effective est garantie côté CODE (layout (dashboard) qui renvoie
+-- vers /reseau + requêtes scopées par owner_sah_id). Ces policies s'activent le
+-- jour où une connexion liée au JWT utilisateur sera utilisée pour ces lectures.
+-- ============================================================
+drop policy if exists investors_affiliate_read on public.investors;
+create policy investors_affiliate_read on public.investors for select
+  using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(id));
+
+drop policy if exists subscriptions_affiliate_read on public.subscriptions;
+create policy subscriptions_affiliate_read on public.subscriptions for select
+  using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(investor_id));
+
+drop policy if exists interactions_affiliate_read on public.interactions;
+create policy interactions_affiliate_read on public.interactions for select
+  using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(investor_id));
+
+drop policy if exists closer_tasks_affiliate_read on public.closer_tasks;
+create policy closer_tasks_affiliate_read on public.closer_tasks for select
+  using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(investor_id));
+
+drop policy if exists investor_assets_affiliate_read on public.investor_assets;
+create policy investor_assets_affiliate_read on public.investor_assets for select
+  using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(investor_id));

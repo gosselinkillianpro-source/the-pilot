@@ -1,16 +1,18 @@
 'use server';
 
 import { sql } from 'drizzle-orm';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 /**
  * Recherche d'un lead par n'importe quelle info (nom, prénom, email, téléphone, ville).
- * Lecture seule, réservée aux utilisateurs authentifiés. Renvoie au plus 8 résultats.
- * Le téléphone est aussi comparé en chiffres-seuls (insensible aux espaces/formats).
+ * Lecture seule, réservée au STAFF (recherche globale, non scopée). admin_affiliate
+ * en est EXCLU : il ne doit jamais pouvoir chercher hors de son réseau.
+ * Renvoie au plus 8 résultats.
  */
 export async function searchLeadsAction(query: string) {
-  await getAuthenticatedUser(); // exige une session
+  const user = await getAuthenticatedUser(); // exige une session
+  await requireRole(user, ['admin', 'closer', 'closer_junior', 'executive']);
   const q = query.trim();
   if (q.length < 2) return [];
   const like = `%${q}%`;
