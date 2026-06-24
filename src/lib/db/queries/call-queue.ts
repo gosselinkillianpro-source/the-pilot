@@ -99,12 +99,17 @@ export async function getCallQueue(opts?: {
   const closerFilter = opts?.assignedCloserId
     ? sql`and i.assigned_closer_id = ${opts.assignedCloserId}`
     : sql``;
-  const networkFilter = opts?.ownerSahId
-    ? sql`and exists (
+  // `!= null` (et NON un test de vérité) : un sah_id vide '' ne doit JAMAIS faire sauter
+  // le filtre (ce qui renverrait toute la base). Vide → le filtre s'applique quand même
+  // (aucun réseau n'a owner '') → liste vide. Sécurité indépendante de l'appelant.
+  const ownerSahId = opts?.ownerSahId ?? null;
+  const networkFilter =
+    ownerSahId != null
+      ? sql`and exists (
         select 1 from affiliate_network an
-        where an.investor_id = i.id and an.owner_sah_id = ${opts.ownerSahId}
+        where an.investor_id = i.id and an.owner_sah_id = ${ownerSahId}
       )`
-    : sql``;
+      : sql``;
   const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
   // Sort de la file les personnes appelées récemment (≤3 j) → "Appelé" les retire.
   // Non appliqué à la fiche individuelle (on veut toujours son score).

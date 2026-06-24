@@ -1,8 +1,8 @@
-import { Users2 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { AffiliateNav } from '@/components/affiliate/nav';
 import { ToastProvider } from '@/components/shared/toast';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -45,35 +45,7 @@ export default async function AffiliateLayout({ children }: { children: ReactNod
             />
           </Link>
 
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
-            <span
-              style={{
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--text-4)',
-                padding: '8px 12px 4px',
-              }}
-            >
-              Espace affilié
-            </span>
-            <Link
-              href="/reseau"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '8px 12px',
-                borderRadius: 8,
-                color: 'var(--text-1)',
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              <Users2 size={16} />
-              Mon réseau
-            </Link>
-          </nav>
+          <AffiliateNav />
 
           <UserMenu name={name} role={user.role} initials={initials} />
         </aside>
