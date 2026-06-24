@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { Bell, ChevronDown, Search } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { MobileNav } from '@/components/shared/mobile-nav';
 import { NavContent } from '@/components/shared/nav-content';
@@ -47,6 +48,12 @@ function formatAgo(d: Date | null): string | null {
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const user = await getAuthenticatedUser();
+  // BARRIÈRE D'ISOLATION : un compte "admin affilié" n'a JAMAIS accès aux pages staff
+  // (closing, ads, mail, social, perf, équipe…). Ce layout est le point de passage
+  // unique de toutes ces pages → on le renvoie systématiquement vers son espace dédié.
+  if (user.role === 'admin_affiliate') {
+    redirect('/reseau');
+  }
   await touchLastSeen(user.id); // « vu à l'instant » (présence du menu Équipe) — throttlé + best-effort
   const { name, initials } = deriveDisplay(user.email);
   const lastSync = await getLastSyncAt();

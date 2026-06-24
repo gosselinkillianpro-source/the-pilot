@@ -88,10 +88,22 @@ export async function getCallQueue(opts?: {
   excludeWon?: boolean;
   investorId?: string;
   source?: QueueSource;
+  /**
+   * ISOLATION "admin affilié" : ne renvoie QUE les investisseurs du sous-réseau de
+   * cette personne SAH (via affiliate_network). Garde-fou : si fourni mais vide,
+   * la liste sera vide (on ne montre jamais plus que son réseau).
+   */
+  ownerSahId?: string;
 }): Promise<QueueRow[]> {
   const now = new Date();
   const closerFilter = opts?.assignedCloserId
     ? sql`and i.assigned_closer_id = ${opts.assignedCloserId}`
+    : sql``;
+  const networkFilter = opts?.ownerSahId
+    ? sql`and exists (
+        select 1 from affiliate_network an
+        where an.investor_id = i.id and an.owner_sah_id = ${opts.ownerSahId}
+      )`
     : sql``;
   const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
   // Sort de la file les personnes appelées récemment (≤3 j) → "Appelé" les retire.
@@ -167,6 +179,7 @@ export async function getCallQueue(opts?: {
     ) li on true
     where i.deleted_at is null
     ${closerFilter}
+    ${networkFilter}
     ${oneFilter}
     ${stageFilter}
     ${sourceFilter}

@@ -10,7 +10,7 @@ const DEV_LOCAL_USER: AuthenticatedUser = {
   role: 'admin',
 };
 
-export type UserRole = 'admin' | 'closer' | 'closer_junior' | 'executive';
+export type UserRole = 'admin' | 'closer' | 'closer_junior' | 'executive' | 'admin_affiliate';
 
 export type AuthenticatedUser = {
   id: string;
@@ -23,7 +23,12 @@ export type AuthenticatedUser = {
  * Règle de sécurité CLAUDE.md #5. Les `executive` peuvent l'activer mais ne sont
  * pas bloqués sans.
  */
-export const MFA_REQUIRED_ROLES: readonly UserRole[] = ['admin', 'closer', 'closer_junior'];
+export const MFA_REQUIRED_ROLES: readonly UserRole[] = [
+  'admin',
+  'closer',
+  'closer_junior',
+  'admin_affiliate', // accède à des données perso d'investisseurs → 2FA obligatoire
+];
 
 export function roleRequiresMfa(role: UserRole): boolean {
   return MFA_REQUIRED_ROLES.includes(role);

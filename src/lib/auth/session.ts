@@ -4,7 +4,7 @@ import { isAuthDisabled } from './dev-bypass';
 
 // Rôles qui exigent le 2FA (dupliqué ici volontairement : le middleware tourne
 // en edge runtime, on évite d'importer le module auth complet — voir src/lib/auth/index.ts).
-const MFA_REQUIRED_ROLES = ['admin', 'closer', 'closer_junior'];
+const MFA_REQUIRED_ROLES = ['admin', 'closer', 'closer_junior', 'admin_affiliate'];
 
 // Routes accessibles sans être connecté.
 const PUBLIC_PATHS = ['/', '/login', '/mfa', '/mfa/setup'];
