@@ -14,9 +14,7 @@ import Link from 'next/link';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {
   autoAssignRdvLeads,
-  getOwnerPortfolio,
   getRdvBoard,
-  type OwnerPortfolio,
   type RdvAssignResult,
   type RdvReel,
   type RdvStatut,
@@ -148,12 +146,10 @@ export default async function RdvGuillaumePage() {
   const user = await getAuthenticatedUser();
   const board = await getRdvBoard();
 
-  // Assignation auto + portefeuille de Guillaume (total investi par les gens qu'il suit).
+  // Assignation auto : tout lead issu d'un RDV Calendly est rattaché à Guillaume.
   let assign: RdvAssignResult | null = null;
-  let portfolio: OwnerPortfolio | null = null;
   if (board.state === 'ok') {
     assign = await autoAssignRdvLeads(board.board, user);
-    portfolio = await getOwnerPortfolio(board.board);
   }
 
   return (
@@ -201,12 +197,7 @@ export default async function RdvGuillaumePage() {
       ) : null}
 
       {board.state === 'ok' ? (
-        <Board
-          rdvs={board.board.rdvs}
-          userName={board.board.user.name}
-          assign={assign}
-          portfolio={portfolio}
-        />
+        <Board rdvs={board.board.rdvs} userName={board.board.user.name} assign={assign} />
       ) : null}
     </>
   );
@@ -216,13 +207,19 @@ function Board({
   rdvs,
   userName,
   assign,
-  portfolio,
 }: {
   rdvs: RdvReel[];
   userName: string;
   assign: RdvAssignResult | null;
-  portfolio: OwnerPortfolio | null;
 }) {
+  // Total investi par les leads Calendly de Guillaume (1 fois par investisseur, vraies souscriptions).
+  const investiParInvestisseur = new Map<string, number>();
+  for (const r of rdvs) {
+    if (r.investorId) investiParInvestisseur.set(r.investorId, r.montantInvestiEur ?? 0);
+  }
+  const totalInvesti = [...investiParInvestisseur.values()].reduce((a, b) => a + b, 0);
+  const leadsCount = investiParInvestisseur.size;
+  const investedCount = [...investiParInvestisseur.values()].filter((v) => v > 0).length;
   const aVenir = rdvs
     .filter((r) => r.statut === 'a_venir')
     .sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -269,15 +266,13 @@ function Board({
 
       {/* KPIs */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
-        {portfolio ? (
-          <Kpi
-            icon={<TrendingUp size={15} />}
-            label="Total investi — clients de Guillaume"
-            value={EUR.format(portfolio.totalInvestedEur)}
-            hint={`${portfolio.investorsCount} suivis · ${portfolio.investedCount} ont investi`}
-            tone="success"
-          />
-        ) : null}
+        <Kpi
+          icon={<TrendingUp size={15} />}
+          label="Total investi — leads Calendly"
+          value={EUR.format(totalInvesti)}
+          hint={`${leadsCount} leads · ${investedCount} ont investi`}
+          tone="success"
+        />
         <Kpi
           icon={<CalendarClock size={15} />}
           label="RDV à venir"
