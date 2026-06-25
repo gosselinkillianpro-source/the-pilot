@@ -1,7 +1,10 @@
 import 'server-only';
-import { and, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { logAudit } from '@/lib/audit';
+import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { investors } from '@/lib/db/schema';
+import { ensureUserRecord } from '@/lib/db/queries/users';
+import { investors, users } from '@/lib/db/schema';
 import {
   CalendlyError,
   type CalendlyInvitee,
@@ -247,4 +250,91 @@ function errMsg(e: unknown): string {
   if (e instanceof CalendlyError) return e.message;
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+/* ----------------------------- Assignation auto à Guillaume ----------------------------- */
+
+export interface RdvAssignResult {
+  ownerFound: boolean;
+  ownerName: string | null;
+  assigned: number; // nombre de fiches dont le closer a changé lors de cet appel
+}
+
+/**
+ * Retrouve l'utilisateur PILOT propriétaire du Calendly (Guillaume) :
+ * 1) par l'email du compte Calendly (le plus fiable), 2) à défaut par le nom.
+ */
+async function findOwnerUser(
+  calendlyEmail: string,
+  _calendlyName: string,
+): Promise<{ id: string; name: string | null } | null> {
+  if (calendlyEmail) {
+    const byEmail = await db
+      .select({ id: users.id, fullName: users.fullName })
+      .from(users)
+      .where(
+        and(eq(sql`lower(${users.email})`, calendlyEmail.toLowerCase()), eq(users.active, true)),
+      )
+      .limit(1);
+    if (byEmail[0]) return { id: byEmail[0].id, name: byEmail[0].fullName };
+  }
+  const byName = await db
+    .select({ id: users.id, fullName: users.fullName })
+    .from(users)
+    .where(and(ilike(users.fullName, '%gosselin%'), eq(users.active, true)))
+    .limit(1);
+  if (byName[0]) return { id: byName[0].id, name: byName[0].fullName };
+  return null;
+}
+
+/**
+ * Assigne automatiquement à Guillaume TOUS les leads (présents en base) issus d'un
+ * RDV Calendly. Force la propriété : même un lead déjà assigné à un autre closer
+ * bascule vers Guillaume (décision produit — c'est lui qui tient les RDV Funnel B).
+ *
+ * Idempotent : ne touche que les fiches dont le closer diffère déjà de Guillaume,
+ * donc en régime établi l'UPDATE ne modifie 0 ligne. Audit loggé uniquement quand
+ * au moins une fiche change. Best-effort : n'interrompt jamais l'affichage.
+ */
+export async function autoAssignRdvLeads(
+  board: RdvBoard,
+  viewer: AuthenticatedUser,
+): Promise<RdvAssignResult> {
+  const owner = await findOwnerUser(board.user.email, board.user.name);
+  if (!owner) return { ownerFound: false, ownerName: null, assigned: 0 };
+
+  const ids = [
+    ...new Set(board.rdvs.map((r) => r.investorId).filter((x): x is string => Boolean(x))),
+  ];
+  if (ids.length === 0) return { ownerFound: true, ownerName: owner.name, assigned: 0 };
+
+  const changed = await db
+    .update(investors)
+    .set({ assignedCloserId: owner.id })
+    .where(
+      and(
+        inArray(investors.id, ids),
+        or(isNull(investors.assignedCloserId), ne(investors.assignedCloserId, owner.id)),
+      ),
+    )
+    .returning({ id: investors.id });
+
+  if (changed.length > 0) {
+    await ensureUserRecord(viewer); // garantit la FK audit_log.user_id
+    await logAudit({
+      userId: viewer.id,
+      userEmail: viewer.email,
+      userRole: viewer.role,
+      action: 'rdv.calendly_auto_assign',
+      resourceType: 'investor',
+      resourceId: owner.id,
+      metadata: {
+        ownerName: owner.name,
+        count: changed.length,
+        investorIds: changed.map((c) => c.id),
+      },
+    });
+  }
+
+  return { ownerFound: true, ownerName: owner.name, assigned: changed.length };
 }

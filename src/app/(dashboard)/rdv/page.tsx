@@ -11,7 +11,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { getRdvBoard, type RdvReel, type RdvStatut } from '@/lib/integrations/calendly/rdv';
+import {
+  autoAssignRdvLeads,
+  getRdvBoard,
+  type RdvAssignResult,
+  type RdvReel,
+  type RdvStatut,
+} from '@/lib/integrations/calendly/rdv';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,8 +65,14 @@ function etapeBadge(label: string): string {
 }
 
 export default async function RdvGuillaumePage() {
-  await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
   const board = await getRdvBoard();
+
+  // Assignation auto : tout lead issu d'un RDV Calendly est rattaché à Guillaume.
+  let assign: RdvAssignResult | null = null;
+  if (board.state === 'ok') {
+    assign = await autoAssignRdvLeads(board.board, user);
+  }
 
   return (
     <>
@@ -107,13 +119,21 @@ export default async function RdvGuillaumePage() {
       ) : null}
 
       {board.state === 'ok' ? (
-        <Board rdvs={board.board.rdvs} userName={board.board.user.name} />
+        <Board rdvs={board.board.rdvs} userName={board.board.user.name} assign={assign} />
       ) : null}
     </>
   );
 }
 
-function Board({ rdvs, userName }: { rdvs: RdvReel[]; userName: string }) {
+function Board({
+  rdvs,
+  userName,
+  assign,
+}: {
+  rdvs: RdvReel[];
+  userName: string;
+  assign: RdvAssignResult | null;
+}) {
   const aVenir = rdvs
     .filter((r) => r.statut === 'a_venir')
     .sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -150,6 +170,7 @@ function Board({ rdvs, userName }: { rdvs: RdvReel[]; userName: string }) {
           <>
             Données en direct depuis Calendly. {rdvs.length} RDV sur les 45 derniers jours + à
             venir, reliés automatiquement aux fiches investisseurs.
+            <AssignNote assign={assign} />
           </>
         }
       />
@@ -368,6 +389,27 @@ function Board({ rdvs, userName }: { rdvs: RdvReel[]; userName: string }) {
         </div>
       </div>
     </>
+  );
+}
+
+function AssignNote({ assign }: { assign: RdvAssignResult | null }) {
+  if (!assign) return null;
+  if (!assign.ownerFound) {
+    return (
+      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600 }}>
+        ⚠️ Assignation auto impossible : aucun compte utilisateur « Guillaume Gosselin » trouvé dans
+        THE PILOT. Crée-le (ou vérifie son email) pour activer le rattachement.
+      </div>
+    );
+  }
+  const owner = assign.ownerName ?? 'Guillaume';
+  return (
+    <div style={{ marginTop: 8, fontSize: 12 }}>
+      ↳ Leads des RDV Calendly automatiquement assignés à <strong>{owner}</strong>
+      {assign.assigned > 0
+        ? ` — ${assign.assigned} fiche${assign.assigned > 1 ? 's' : ''} mise${assign.assigned > 1 ? 's' : ''} à jour à l'ouverture.`
+        : ' — tout est déjà à jour.'}
+    </div>
   );
 }
 
