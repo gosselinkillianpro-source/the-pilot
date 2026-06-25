@@ -14,7 +14,9 @@ import Link from 'next/link';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {
   autoAssignRdvLeads,
+  getOwnerPortfolio,
   getRdvBoard,
+  type OwnerPortfolio,
   type RdvAssignResult,
   type RdvReel,
   type RdvStatut,
@@ -146,10 +148,12 @@ export default async function RdvGuillaumePage() {
   const user = await getAuthenticatedUser();
   const board = await getRdvBoard();
 
-  // Assignation auto : tout lead issu d'un RDV Calendly est rattaché à Guillaume.
+  // Assignation auto + portefeuille de Guillaume (total investi par les gens qu'il suit).
   let assign: RdvAssignResult | null = null;
+  let portfolio: OwnerPortfolio | null = null;
   if (board.state === 'ok') {
     assign = await autoAssignRdvLeads(board.board, user);
+    portfolio = await getOwnerPortfolio(board.board);
   }
 
   return (
@@ -197,7 +201,12 @@ export default async function RdvGuillaumePage() {
       ) : null}
 
       {board.state === 'ok' ? (
-        <Board rdvs={board.board.rdvs} userName={board.board.user.name} assign={assign} />
+        <Board
+          rdvs={board.board.rdvs}
+          userName={board.board.user.name}
+          assign={assign}
+          portfolio={portfolio}
+        />
       ) : null}
     </>
   );
@@ -207,10 +216,12 @@ function Board({
   rdvs,
   userName,
   assign,
+  portfolio,
 }: {
   rdvs: RdvReel[];
   userName: string;
   assign: RdvAssignResult | null;
+  portfolio: OwnerPortfolio | null;
 }) {
   const aVenir = rdvs
     .filter((r) => r.statut === 'a_venir')
@@ -258,6 +269,15 @@ function Board({
 
       {/* KPIs */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
+        {portfolio ? (
+          <Kpi
+            icon={<TrendingUp size={15} />}
+            label="Total investi — clients de Guillaume"
+            value={EUR.format(portfolio.totalInvestedEur)}
+            hint={`${portfolio.investorsCount} suivis · ${portfolio.investedCount} ont investi`}
+            tone="success"
+          />
+        ) : null}
         <Kpi
           icon={<CalendarClock size={15} />}
           label="RDV à venir"

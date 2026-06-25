@@ -480,3 +480,36 @@ export async function autoAssignRdvLeads(
 
   return { ownerFound: true, ownerName: owner.name, assigned: changed.length };
 }
+
+export interface OwnerPortfolio {
+  ownerName: string | null;
+  totalInvestedEur: number; // total investi par les gens suivis par Guillaume
+  investorsCount: number; // nombre de personnes suivies
+  investedCount: number; // dont ayant investi (> 0 €)
+}
+
+/**
+ * Portefeuille de Guillaume : total investi + effectifs sur TOUTES les fiches qui lui
+ * sont assignées (pas seulement celles d'un RDV de la fenêtre affichée).
+ */
+export async function getOwnerPortfolio(board: RdvBoard): Promise<OwnerPortfolio | null> {
+  const owner = await findOwnerUser(board.user.email, board.user.name);
+  if (!owner) return null;
+
+  const rows = await db
+    .select({
+      total: sql<string>`coalesce(sum(${investors.totalInvested}), 0)`,
+      n: sql<number>`count(*)::int`,
+      invested: sql<number>`(count(*) filter (where ${investors.totalInvested} > 0))::int`,
+    })
+    .from(investors)
+    .where(and(isNull(investors.deletedAt), eq(investors.assignedCloserId, owner.id)));
+
+  const r = rows[0];
+  return {
+    ownerName: owner.name,
+    totalInvestedEur: Number(r?.total ?? 0),
+    investorsCount: Number(r?.n ?? 0),
+    investedCount: Number(r?.invested ?? 0),
+  };
+}
