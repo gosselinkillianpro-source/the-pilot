@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BellRing,
   CalendarClock,
   CalendarX2,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   type RdvReel,
   type RdvStatut,
 } from '@/lib/integrations/calendly/rdv';
+import { SuiviTable } from './rdv-suivi';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,11 +59,87 @@ function statutBadge(s: RdvStatut): { label: string; cls: string } {
   }
 }
 
-function etapeBadge(label: string): string {
-  if (label === 'Souscrit') return 'badge-success';
-  if (label === 'Perdu') return 'badge-danger';
-  if (label === 'Dormant') return 'badge-warning';
-  return 'badge-neutral';
+interface Reminder {
+  investorId: string;
+  lead: string;
+  kind: 'programme' | 'reprogrammer' | 'depot' | 'finaliser';
+  reason: string;
+  when: Date | null;
+  overdue: boolean;
+}
+
+/** Construit les rappels programmés + les relances intelligentes (1 par lead). */
+function computeReminders(rdvs: RdvReel[]): Reminder[] {
+  const now = Date.now();
+  const out: Reminder[] = [];
+  const seen = new Set<string>();
+  // Le plus récent d'abord pour qu'un lead avec plusieurs RDV soit jugé sur le dernier.
+  const ordered = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  for (const r of ordered) {
+    if (!r.investorId || seen.has(r.investorId)) continue;
+
+    // 1. Rappel déjà programmé → prioritaire, on n'ajoute pas de suggestion en plus.
+    if (r.prochainRappel) {
+      seen.add(r.investorId);
+      out.push({
+        investorId: r.investorId,
+        lead: r.lead,
+        kind: 'programme',
+        reason: r.prochainRappel.note?.trim() || 'Rappel programmé',
+        when: r.prochainRappel.dueAt,
+        overdue: new Date(r.prochainRappel.dueAt).getTime() < now,
+      });
+      continue;
+    }
+
+    // 2. Suggestions intelligentes (lead non converti).
+    if (!r.converti) {
+      if (r.statut === 'no_show' || r.statut === 'annule' || r.statut === 'reporte') {
+        seen.add(r.investorId);
+        out.push({
+          investorId: r.investorId,
+          lead: r.lead,
+          kind: 'reprogrammer',
+          reason: `RDV ${statutBadge(r.statut).label.toLowerCase()} — reprogrammer un créneau`,
+          when: null,
+          overdue: false,
+        });
+      } else if (r.depotSouhaite && (r.montantInvestiEur == null || r.montantInvestiEur === 0)) {
+        seen.add(r.investorId);
+        const fourchette =
+          r.depotSouhaite.minEur != null
+            ? `${r.depotSouhaite.minEur.toLocaleString('fr-FR')} €`
+            : 'montant évoqué';
+        out.push({
+          investorId: r.investorId,
+          lead: r.lead,
+          kind: 'depot',
+          reason: `Dépôt souhaité (${fourchette}${r.depotSouhaite.quand ? `, ${r.depotSouhaite.quand}` : ''}) non concrétisé — relancer`,
+          when: null,
+          overdue: false,
+        });
+      } else if (r.statut === 'honore') {
+        seen.add(r.investorId);
+        out.push({
+          investorId: r.investorId,
+          lead: r.lead,
+          kind: 'finaliser',
+          reason: 'RDV honoré — relancer pour finaliser',
+          when: null,
+          overdue: false,
+        });
+      }
+    }
+  }
+
+  // Programmés en retard d'abord, puis programmés à venir, puis suggestions.
+  return out.sort((a, b) => {
+    const rank = (x: Reminder) => (x.kind === 'programme' ? (x.overdue ? 0 : 1) : 2);
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    if (a.when && b.when) return a.when.getTime() - b.when.getTime();
+    return 0;
+  });
 }
 
 export default async function RdvGuillaumePage() {
@@ -150,6 +228,9 @@ function Board({
   // Suivi : on trie du plus récent au plus ancien.
   const suivi = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
 
+  // Rappels programmés + relances intelligentes.
+  const reminders = computeReminders(rdvs);
+
   // Agenda groupé par jour.
   const parJour = new Map<string, RdvReel[]>();
   for (const r of aVenir) {
@@ -204,6 +285,29 @@ function Board({
           hint={`${souscrits} souscription(s)`}
           tone="success"
         />
+      </div>
+
+      {/* Rappels & relances intelligentes */}
+      <div className="view-card" style={{ marginBottom: 16 }}>
+        <div className="view-card-header">
+          <div
+            className="view-card-title"
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <BellRing size={15} style={{ color: 'var(--ai)' }} />
+            Rappels & relances intelligentes
+          </div>
+          <span className="badge badge-neutral">{reminders.length}</span>
+        </div>
+        <div className="view-card-body" style={{ padding: 0 }}>
+          {reminders.length === 0 ? (
+            <Empty>Aucune relance à prévoir pour l'instant.</Empty>
+          ) : (
+            reminders.map((rem, idx) => (
+              <ReminderRow key={rem.investorId} rem={rem} last={idx === reminders.length - 1} />
+            ))
+          )}
+        </div>
       </div>
 
       {/* Agenda à venir */}
@@ -264,9 +368,24 @@ function Board({
                       {fmtHeure(r.date)}
                     </span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <LeadName r={r} />
+                      <span
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+                      >
+                        <LeadName r={r} />
+                        {r.statutInscription ? (
+                          <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                            {r.statutInscription}
+                          </span>
+                        ) : null}
+                        {r.score != null ? (
+                          <span className="badge badge-brand" style={{ fontSize: 10 }}>
+                            score {r.score}
+                          </span>
+                        ) : null}
+                      </span>
                       <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
                         {r.source}
+                        {r.derniereAction ? ` · dernière action : ${r.derniereAction.label}` : ''}
                       </div>
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
@@ -340,55 +459,70 @@ function Board({
           {suivi.length === 0 ? (
             <Empty>Aucun RDV sur la période.</Empty>
           ) : (
-            <div className="table-scroll">
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', color: 'var(--text-4)' }}>
-                    <Th>Lead</Th>
-                    <Th>Source</Th>
-                    <Th>Date RDV</Th>
-                    <Th>RDV</Th>
-                    <Th>Étape pipeline</Th>
-                    <Th align="right">Investi</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {suivi.map((r) => {
-                    const b = statutBadge(r.statut);
-                    return (
-                      <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
-                        <Td>
-                          <LeadName r={r} />
-                          {r.email ? (
-                            <div style={{ fontSize: 11, color: 'var(--text-4)' }}>{r.email}</div>
-                          ) : null}
-                        </Td>
-                        <Td>{r.source}</Td>
-                        <Td>
-                          {r.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}{' '}
-                          · {fmtHeure(r.date)}
-                        </Td>
-                        <Td>
-                          <span className={`badge ${b.cls}`}>{b.label}</span>
-                        </Td>
-                        <Td>
-                          <span className={`badge ${etapeBadge(r.etape)}`}>{r.etape}</span>
-                        </Td>
-                        <Td align="right">
-                          <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>
-                            {r.montantInvestiEur != null ? EUR.format(r.montantInvestiEur) : '—'}
-                          </span>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <SuiviTable rows={suivi} />
           )}
         </div>
       </div>
     </>
+  );
+}
+
+function ReminderRow({ rem, last }: { rem: Reminder; last: boolean }) {
+  const color =
+    rem.kind === 'programme'
+      ? rem.overdue
+        ? 'var(--danger)'
+        : 'var(--brand)'
+      : rem.kind === 'depot'
+        ? 'var(--success)'
+        : 'var(--warning)';
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 20px',
+        borderBottom: last ? 'none' : '1px solid var(--border)',
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: color,
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <Link
+          href={`/closing/investor/${rem.investorId}`}
+          style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand)', textDecoration: 'none' }}
+        >
+          {rem.lead}
+        </Link>
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{rem.reason}</div>
+      </div>
+      {rem.kind === 'programme' && rem.when ? (
+        <span
+          className={`badge ${rem.overdue ? 'badge-danger' : 'badge-brand'}`}
+          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+        >
+          {rem.overdue ? 'En retard · ' : ''}
+          {new Date(rem.when).toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      ) : (
+        <span className="badge badge-neutral" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+          Suggestion
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -516,28 +650,4 @@ function Panel({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: 24, fontSize: 13, color: 'var(--text-3)' }}>{children}</div>;
-}
-
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return (
-    <th
-      style={{
-        padding: '10px 16px',
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 0.3,
-        textAlign: align,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return (
-    <td style={{ padding: '12px 16px', textAlign: align, color: 'var(--text-2)' }}>{children}</td>
-  );
 }

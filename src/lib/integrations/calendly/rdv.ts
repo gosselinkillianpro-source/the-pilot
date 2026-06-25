@@ -1,10 +1,10 @@
 import 'server-only';
-import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
-import { investors, users } from '@/lib/db/schema';
+import { closerTasks, interactions, investors, users } from '@/lib/db/schema';
 import {
   CalendlyError,
   type CalendlyInvitee,
@@ -25,6 +25,12 @@ import {
 
 export type RdvStatut = 'a_venir' | 'honore' | 'no_show' | 'reporte' | 'annule';
 
+export interface DepotSouhaite {
+  minEur: number | null;
+  maxEur: number | null;
+  quand: string | null; // texte libre ou date ISO ("avant le 15/07", "2026-07-15")
+}
+
 export interface RdvReel {
   id: string;
   lead: string;
@@ -36,6 +42,12 @@ export interface RdvReel {
   etape: string;
   montantInvestiEur: number | null;
   converti: boolean;
+  // Enrichissement fiche (null si lead hors base)
+  statutInscription: string | null;
+  score: number | null;
+  derniereAction: { label: string; at: Date } | null;
+  prochainRappel: { dueAt: Date; note: string | null } | null;
+  depotSouhaite: DepotSouhaite | null;
 }
 
 export interface RdvBoard {
@@ -138,6 +150,20 @@ interface InvestorMatch {
   etape: string;
   montantInvestiEur: number | null;
   converti: boolean;
+  statutInscription: string;
+  score: number | null;
+}
+
+/** Libellé « où en est la personne dans l'inscription » à partir des 2 booléens SAH + montant. */
+function statutInscriptionLabel(opts: {
+  registrationComplete: boolean;
+  onboardingComplete: boolean;
+  invested: number | null;
+}): string {
+  if (opts.invested && opts.invested > 0) return 'A déjà investi';
+  if (opts.onboardingComplete) return 'Onboardé (KYC ok)';
+  if (opts.registrationComplete) return 'Profil complété';
+  return 'Inscrit · à compléter';
 }
 
 /** Récupère en une requête les investisseurs correspondant aux emails (insensible à la casse). */
@@ -153,6 +179,9 @@ async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMat
       acquisitionSource: investors.acquisitionSource,
       pipelineStage: investors.pipelineStage,
       totalInvested: investors.totalInvested,
+      registrationComplete: investors.registrationComplete,
+      onboardingComplete: investors.onboardingComplete,
+      score: investors.score,
     })
     .from(investors)
     .where(
@@ -167,8 +196,111 @@ async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMat
       etape: r.pipelineStage ? (STAGE_LABELS[r.pipelineStage] ?? r.pipelineStage) : '—',
       montantInvestiEur: invested && invested > 0 ? invested : null,
       converti: r.pipelineStage === 'closed_won',
+      statutInscription: statutInscriptionLabel({
+        registrationComplete: r.registrationComplete,
+        onboardingComplete: r.onboardingComplete,
+        invested,
+      }),
+      score: r.score,
     });
   }
+  return map;
+}
+
+/* ----------------------------- Activité (dernière action, rappel, dépôt souhaité) ----------------------------- */
+
+const INTERACTION_LABELS: Record<string, string> = {
+  email_sent: 'Email envoyé',
+  email_opened: 'Email ouvert',
+  email_clicked: 'Lien cliqué',
+  page_visit: 'Visite du site',
+  simulator_used: 'Simulateur utilisé',
+  dic_downloaded: 'DIC téléchargé',
+  call_outbound: 'Appel sortant',
+  call_inbound: 'Appel entrant',
+  whatsapp_sent: 'WhatsApp envoyé',
+  whatsapp_received: 'WhatsApp reçu',
+  linkedin_dm: 'Message LinkedIn',
+  sms_sent: 'SMS envoyé',
+  meeting_booked: 'RDV pris',
+  meeting_done: 'RDV fait',
+  proposal_sent: 'Proposition envoyée',
+  note_added: 'Note ajoutée',
+};
+
+interface InvestorActivity {
+  derniereAction: { label: string; at: Date } | null;
+  prochainRappel: { dueAt: Date; note: string | null } | null;
+  depotSouhaite: DepotSouhaite | null;
+}
+
+function readDepot(metadata: unknown, valueNumeric: string | null): DepotSouhaite | null {
+  const meta = isRecord(metadata) ? metadata : null;
+  if (!meta || meta.kind !== 'rdv_outcome') return null;
+  const min =
+    typeof meta.depotMin === 'number' ? meta.depotMin : valueNumeric ? Number(valueNumeric) : null;
+  const max = typeof meta.depotMax === 'number' ? meta.depotMax : null;
+  const quand = typeof meta.depotQuand === 'string' ? meta.depotQuand : null;
+  if (min == null && max == null && !quand) return null;
+  return { minEur: min, maxEur: max, quand };
+}
+
+/** Dernière action, prochain rappel et dépôt souhaité (le plus récent) pour une liste de fiches. */
+async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>> {
+  const map = new Map<string, InvestorActivity>();
+  if (ids.length === 0) return map;
+
+  const [ix, tasks] = await Promise.all([
+    db
+      .select({
+        investorId: interactions.investorId,
+        type: interactions.type,
+        note: interactions.note,
+        valueNumeric: interactions.valueNumeric,
+        metadata: interactions.metadata,
+        createdAt: interactions.createdAt,
+      })
+      .from(interactions)
+      .where(inArray(interactions.investorId, ids))
+      .orderBy(desc(interactions.createdAt)),
+    db
+      .select({
+        investorId: closerTasks.investorId,
+        dueAt: closerTasks.dueAt,
+        note: closerTasks.note,
+      })
+      .from(closerTasks)
+      .where(and(inArray(closerTasks.investorId, ids), eq(closerTasks.status, 'pending')))
+      .orderBy(asc(closerTasks.dueAt)),
+  ]);
+
+  for (const id of ids)
+    map.set(id, { derniereAction: null, prochainRappel: null, depotSouhaite: null });
+
+  // interactions triées du + récent au + ancien → 1ère vue par investisseur = dernière action.
+  for (const row of ix) {
+    const entry = map.get(row.investorId);
+    if (!entry) continue;
+    if (!entry.derniereAction) {
+      entry.derniereAction = {
+        label: INTERACTION_LABELS[row.type] ?? row.type,
+        at: new Date(row.createdAt),
+      };
+    }
+    if (!entry.depotSouhaite) {
+      const d = readDepot(row.metadata, row.valueNumeric);
+      if (d) entry.depotSouhaite = d;
+    }
+  }
+
+  // tasks triées par échéance croissante → 1ère vue = prochain rappel.
+  for (const t of tasks) {
+    const entry = map.get(t.investorId);
+    if (entry && !entry.prochainRappel) {
+      entry.prochainRappel = { dueAt: new Date(t.dueAt), note: t.note };
+    }
+  }
+
   return map;
 }
 
@@ -225,10 +357,15 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
   const emails = invitees.map((i) => i?.email ?? '').filter(Boolean);
   const matches = await matchInvestors(emails);
 
+  // Enrichissement activité pour les fiches reconnues.
+  const matchedIds = [...new Set([...matches.values()].map((m) => m.id))];
+  const activity = await getActivity(matchedIds);
+
   const rdvs: RdvReel[] = events.map((ev, idx) => {
     const inv = invitees[idx] ?? null;
     const email = inv?.email ?? null;
     const m = email ? matches.get(email.toLowerCase()) : undefined;
+    const act = m ? activity.get(m.id) : undefined;
     return {
       id: ev.uri,
       lead: inv?.name || email || 'Invité inconnu',
@@ -240,6 +377,11 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
       etape: m?.etape ?? '—',
       montantInvestiEur: m?.montantInvestiEur ?? null,
       converti: m?.converti ?? false,
+      statutInscription: m?.statutInscription ?? null,
+      score: m?.score ?? null,
+      derniereAction: act?.derniereAction ?? null,
+      prochainRappel: act?.prochainRappel ?? null,
+      depotSouhaite: act?.depotSouhaite ?? null,
     };
   });
 
