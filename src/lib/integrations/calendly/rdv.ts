@@ -4,7 +4,7 @@ import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
-import { closerTasks, interactions, investors, users } from '@/lib/db/schema';
+import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
 import {
   CalendlyError,
   type CalendlyInvitee,
@@ -166,6 +166,22 @@ function statutInscriptionLabel(opts: {
   return 'Inscrit · à compléter';
 }
 
+/** Montant réellement investi par fiche = somme des souscriptions non annulées (table subscriptions). */
+async function getInvestedByInvestor(ids: string[]): Promise<Map<string, number>> {
+  const m = new Map<string, number>();
+  if (ids.length === 0) return m;
+  const rows = await db
+    .select({
+      investorId: subscriptions.investorId,
+      total: sql<string>`coalesce(sum(${subscriptions.amount}), 0)`,
+    })
+    .from(subscriptions)
+    .where(and(inArray(subscriptions.investorId, ids), ne(subscriptions.status, 'cancelled')))
+    .groupBy(subscriptions.investorId);
+  for (const r of rows) m.set(r.investorId, Number(r.total) || 0);
+  return m;
+}
+
 /** Récupère en une requête les investisseurs correspondant aux emails (insensible à la casse). */
 async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMatch>> {
   const wanted = [...new Set(emails.filter(Boolean).map((e) => e.toLowerCase()))];
@@ -178,7 +194,6 @@ async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMat
       email: investors.email,
       acquisitionSource: investors.acquisitionSource,
       pipelineStage: investors.pipelineStage,
-      totalInvested: investors.totalInvested,
       registrationComplete: investors.registrationComplete,
       onboardingComplete: investors.onboardingComplete,
       score: investors.score,
@@ -188,18 +203,21 @@ async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMat
       and(isNull(investors.deletedAt), inArray(sql<string>`lower(${investors.email})`, wanted)),
     );
 
+  // Montant investi = vraies souscriptions (investors.total_invested n'est pas alimenté par le sync).
+  const invested = await getInvestedByInvestor(rows.map((r) => r.id));
+
   for (const r of rows) {
-    const invested = r.totalInvested ? Number(r.totalInvested) : null;
+    const inv = invested.get(r.id) ?? 0;
     map.set(r.email.toLowerCase(), {
       id: r.id,
       source: r.acquisitionSource ? (SOURCE_LABELS[r.acquisitionSource] ?? 'Autre') : 'Inconnue',
       etape: r.pipelineStage ? (STAGE_LABELS[r.pipelineStage] ?? r.pipelineStage) : '—',
-      montantInvestiEur: invested && invested > 0 ? invested : null,
-      converti: r.pipelineStage === 'closed_won',
+      montantInvestiEur: inv > 0 ? inv : null,
+      converti: inv > 0 || r.pipelineStage === 'closed_won',
       statutInscription: statutInscriptionLabel({
         registrationComplete: r.registrationComplete,
         onboardingComplete: r.onboardingComplete,
-        invested,
+        invested: inv,
       }),
       score: r.score,
     });
@@ -488,26 +506,40 @@ export interface OwnerPortfolio {
   investedCount: number; // dont ayant investi (> 0 €)
 }
 
+/** Dernier mot du nom (ex. "Guillaume Gosselin" → "gosselin") pour matcher cgp_name. */
+function lastNameToken(fullName: string): string {
+  const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return parts.at(-1) ?? '';
+}
+
 /**
- * Portefeuille de Guillaume : total investi + effectifs sur TOUTES les fiches qui lui
- * sont assignées (pas seulement celles d'un RDV de la fenêtre affichée).
+ * Portefeuille de Guillaume = total investi + effectifs sur les fiches qu'il SUIT, au sens large :
+ * - clients dont il est le CGP/apporteur côté SAH (investors.cgp_name = Guillaume), ET
+ * - fiches qui lui sont assignées dans PILOT (assigned_closer_id).
+ * Montant = vraies souscriptions non annulées (pas investors.total_invested, non alimenté).
  */
 export async function getOwnerPortfolio(board: RdvBoard): Promise<OwnerPortfolio | null> {
   const owner = await findOwnerUser(board.user.email, board.user.name);
-  if (!owner) return null;
+  const token = lastNameToken(board.user.name || owner?.name || 'gosselin') || 'gosselin';
+  const pattern = `%${token}%`;
+  const ownerClause = owner ? sql`or i.assigned_closer_id = ${owner.id}` : sql``;
 
-  const rows = await db
-    .select({
-      total: sql<string>`coalesce(sum(${investors.totalInvested}), 0)`,
-      n: sql<number>`count(*)::int`,
-      invested: sql<number>`(count(*) filter (where ${investors.totalInvested} > 0))::int`,
-    })
-    .from(investors)
-    .where(and(isNull(investors.deletedAt), eq(investors.assignedCloserId, owner.id)));
+  const rows = (await db.execute(sql`
+    select
+      coalesce(sum(case when s.status <> 'cancelled' then s.amount else 0 end), 0) as total,
+      count(distinct i.id)::int as n,
+      (count(distinct i.id) filter (
+        where s.id is not null and s.status <> 'cancelled'
+      ))::int as invested
+    from investors i
+    left join subscriptions s on s.investor_id = i.id
+    where i.deleted_at is null
+      and (lower(i.cgp_name) like ${pattern} ${ownerClause})
+  `)) as unknown as { total: string | number; n: number; invested: number }[];
 
   const r = rows[0];
   return {
-    ownerName: owner.name,
+    ownerName: owner?.name ?? board.user.name ?? null,
     totalInvestedEur: Number(r?.total ?? 0),
     investorsCount: Number(r?.n ?? 0),
     investedCount: Number(r?.invested ?? 0),
