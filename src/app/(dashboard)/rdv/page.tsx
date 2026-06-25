@@ -4,149 +4,24 @@ import {
   CalendarX2,
   CheckCircle2,
   Clock,
-  Info,
   PlugZap,
   RotateCcw,
   TrendingUp,
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
-import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { type CalendlyDiagnostic, getCalendlyDiagnostic } from '@/lib/integrations/calendly/client';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { getRdvBoard, type RdvReel, type RdvStatut } from '@/lib/integrations/calendly/rdv';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * RDV Guillaume — vision agenda Calendly + suivi des leads issus des RDV.
+ * RDV Guillaume — agenda Calendly réel + suivi des leads issus des RDV.
  *
- * ⚠️ MAQUETTE : données d'exemple. Calendly n'est pas encore branché
- * (cf. page « État des sources » → Calendly « non connecté »). Dès que la clé
- * d'accès Calendly de Guillaume est fournie, ces blocs seront alimentés par les
- * vrais RDV (webhook `invitee.created` + sync). La structure DB est déjà prête
- * (pipeline : meeting_booked / meeting_done).
+ * Données lues à la volée depuis Calendly (read-only) et reliées aux fiches
+ * investisseurs par email. Si Calendly n'est pas joignable, un panneau explicite
+ * l'indique (clé manquante / erreur) au lieu d'afficher de fausses données.
  */
-
-type RdvStatut = 'a_venir' | 'honore' | 'no_show' | 'reporte';
-type EtapePipeline =
-  | 'RDV pris'
-  | 'RDV fait'
-  | 'Proposition envoyée'
-  | 'Souscrit'
-  | 'À relancer'
-  | 'Perdu';
-
-interface Rdv {
-  id: string;
-  lead: string;
-  email: string;
-  investorId: string | null;
-  source: string;
-  date: Date;
-  statut: RdvStatut;
-  etape: EtapePipeline;
-  potentielEur: number;
-  converti: boolean;
-}
-
-// Référentiel maquette — sera remplacé par la sync Calendly.
-const RDVS: Rdv[] = [
-  {
-    id: 'r1',
-    lead: 'CamilleFontaine',
-    email: 'camille.fontaine@example.com',
-    investorId: 'demo-1',
-    source: 'Meta Ads — Funnel B',
-    date: new Date('2026-06-25T11:00:00+02:00'),
-    statut: 'a_venir',
-    etape: 'RDV pris',
-    potentielEur: 25000,
-    converti: false,
-  },
-  {
-    id: 'r2',
-    lead: 'Thomas Berger',
-    email: 'thomas.berger@example.com',
-    investorId: 'demo-2',
-    source: 'Google Ads — Search',
-    date: new Date('2026-06-25T14:30:00+02:00'),
-    statut: 'a_venir',
-    etape: 'RDV pris',
-    potentielEur: 50000,
-    converti: false,
-  },
-  {
-    id: 'r3',
-    lead: 'Sophie Marchand',
-    email: 'sophie.marchand@example.com',
-    investorId: 'demo-3',
-    source: 'LinkedIn Ads',
-    date: new Date('2026-06-26T10:00:00+02:00'),
-    statut: 'a_venir',
-    etape: 'RDV pris',
-    potentielEur: 15000,
-    converti: false,
-  },
-  {
-    id: 'r4',
-    lead: 'Nicolas Faure',
-    email: 'nicolas.faure@example.com',
-    investorId: 'demo-4',
-    source: 'Parrainage',
-    date: new Date('2026-06-27T16:00:00+02:00'),
-    statut: 'a_venir',
-    etape: 'RDV pris',
-    potentielEur: 30000,
-    converti: false,
-  },
-  {
-    id: 'r5',
-    lead: 'Élodie Renard',
-    email: 'elodie.renard@example.com',
-    investorId: 'demo-5',
-    source: 'Meta Ads — Funnel B',
-    date: new Date('2026-06-23T11:00:00+02:00'),
-    statut: 'honore',
-    etape: 'Souscrit',
-    potentielEur: 40000,
-    converti: true,
-  },
-  {
-    id: 'r6',
-    lead: 'Maxime Lacroix',
-    email: 'maxime.lacroix@example.com',
-    investorId: 'demo-6',
-    source: 'Google Ads — Search',
-    date: new Date('2026-06-23T15:00:00+02:00'),
-    statut: 'honore',
-    etape: 'Proposition envoyée',
-    potentielEur: 20000,
-    converti: false,
-  },
-  {
-    id: 'r7',
-    lead: 'Julien Petit',
-    email: 'julien.petit@example.com',
-    investorId: 'demo-7',
-    source: 'Meta Ads — Funnel B',
-    date: new Date('2026-06-22T10:30:00+02:00'),
-    statut: 'no_show',
-    etape: 'À relancer',
-    potentielEur: 18000,
-    converti: false,
-  },
-  {
-    id: 'r8',
-    lead: 'Inès Dubois',
-    email: 'ines.dubois@example.com',
-    investorId: 'demo-8',
-    source: 'LinkedIn Ads',
-    date: new Date('2026-06-24T17:00:00+02:00'),
-    statut: 'reporte',
-    etape: 'À relancer',
-    potentielEur: 35000,
-    converti: false,
-  },
-];
 
 const EUR = new Intl.NumberFormat('fr-FR', {
   style: 'currency',
@@ -157,7 +32,6 @@ const EUR = new Intl.NumberFormat('fr-FR', {
 function fmtJour(d: Date): string {
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
-
 function fmtHeure(d: Date): string {
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
@@ -172,48 +46,21 @@ function statutBadge(s: RdvStatut): { label: string; cls: string } {
       return { label: 'No-show', cls: 'badge-danger' };
     case 'reporte':
       return { label: 'Reporté', cls: 'badge-warning' };
+    case 'annule':
+      return { label: 'Annulé', cls: 'badge-neutral' };
   }
 }
 
-function etapeBadge(e: EtapePipeline): string {
-  if (e === 'Souscrit') return 'badge-success';
-  if (e === 'À relancer') return 'badge-warning';
-  if (e === 'Perdu') return 'badge-danger';
+function etapeBadge(label: string): string {
+  if (label === 'Souscrit') return 'badge-success';
+  if (label === 'Perdu') return 'badge-danger';
+  if (label === 'Dormant') return 'badge-warning';
   return 'badge-neutral';
 }
 
 export default async function RdvGuillaumePage() {
-  const user = await getAuthenticatedUser();
-
-  // Test de connexion Calendly — réservé à l'admin (le panneau peut afficher
-  // l'identité du compte et les vrais RDV ; on ne l'expose pas aux autres rôles).
-  let diag: CalendlyDiagnostic | null = null;
-  if (user.role === 'admin') {
-    await requireRole(user, ['admin']);
-    diag = await getCalendlyDiagnostic();
-  }
-
-  const aVenir = RDVS.filter((r) => r.statut === 'a_venir').sort(
-    (a, b) => a.date.getTime() - b.date.getTime(),
-  );
-  const aRelancer = RDVS.filter((r) => r.statut === 'no_show' || r.statut === 'reporte');
-
-  // KPIs (sur la base maquette).
-  const passes = RDVS.filter((r) => r.statut !== 'a_venir');
-  const honores = passes.filter((r) => r.statut === 'honore').length;
-  const tauxPresence = passes.length > 0 ? Math.round((honores / passes.length) * 100) : 0;
-  const noShows = RDVS.filter((r) => r.statut === 'no_show').length;
-  const souscrits = RDVS.filter((r) => r.converti).length;
-  const tauxConversion = honores > 0 ? Math.round((souscrits / honores) * 100) : 0;
-
-  // Regroupe l'agenda à venir par jour.
-  const parJour = new Map<string, Rdv[]>();
-  for (const r of aVenir) {
-    const key = fmtJour(r.date);
-    const arr = parJour.get(key) ?? [];
-    arr.push(r);
-    parJour.set(key, arr);
-  }
+  await getAuthenticatedUser();
+  const board = await getRdvBoard();
 
   return (
     <>
@@ -226,26 +73,86 @@ export default async function RdvGuillaumePage() {
         </div>
       </div>
 
-      {/* Test de connexion Calendly (admin uniquement) */}
-      {diag ? <CalendlyDiagPanel diag={diag} /> : null}
+      {board.state === 'not_configured' ? (
+        <Panel
+          tone="warning"
+          icon={<PlugZap size={18} />}
+          title="Calendly non connecté"
+          body={
+            <>
+              Aucune clé d'accès détectée. Ajoute la variable <code>CALENDLY_TOKEN</code> dans
+              Render (Environment), puis recharge cette page.
+            </>
+          }
+        />
+      ) : null}
 
-      {/* Bandeau maquette */}
-      <div
-        className="view-card"
-        style={{ marginBottom: 16, borderColor: 'var(--warning)', background: 'var(--warning-bg)' }}
-      >
-        <div
-          className="view-card-body"
-          style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 16 }}
-        >
-          <Info size={18} style={{ color: 'var(--warning-text)', flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: 13, color: 'var(--warning-text)' }}>
-            <strong>Aperçu — données d'exemple.</strong> Les blocs ci-dessous (KPIs, agenda, suivi)
-            sont une maquette. Une fois la connexion Calendly validée (panneau ci-dessus), je
-            remplace ces données d'exemple par les vrais RDV de Guillaume.
-          </div>
-        </div>
-      </div>
+      {board.state === 'error' ? (
+        <Panel
+          tone="danger"
+          icon={<XCircle size={18} />}
+          title="Connexion Calendly en échec"
+          body={
+            <>
+              <div style={{ marginBottom: 6 }}>
+                La clé est présente, mais l'appel à Calendly a échoué :
+              </div>
+              <code style={{ fontSize: 12, wordBreak: 'break-word' }}>{board.message}</code>
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                Pistes : token invalide/expiré, ou forfait Calendly sans accès API (Standard min.).
+              </div>
+            </>
+          }
+        />
+      ) : null}
+
+      {board.state === 'ok' ? (
+        <Board rdvs={board.board.rdvs} userName={board.board.user.name} />
+      ) : null}
+    </>
+  );
+}
+
+function Board({ rdvs, userName }: { rdvs: RdvReel[]; userName: string }) {
+  const aVenir = rdvs
+    .filter((r) => r.statut === 'a_venir')
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const aRelancer = rdvs.filter(
+    (r) => r.statut === 'no_show' || r.statut === 'reporte' || r.statut === 'annule',
+  );
+  const passes = rdvs.filter((r) => r.statut === 'honore' || r.statut === 'no_show');
+  const honores = passes.filter((r) => r.statut === 'honore').length;
+  const tauxPresence = passes.length > 0 ? Math.round((honores / passes.length) * 100) : 0;
+  const noShows = rdvs.filter((r) => r.statut === 'no_show').length;
+  const souscrits = rdvs.filter((r) => r.statut === 'honore' && r.converti).length;
+  const tauxConversion = honores > 0 ? Math.round((souscrits / honores) * 100) : 0;
+
+  // Suivi : on trie du plus récent au plus ancien.
+  const suivi = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  // Agenda groupé par jour.
+  const parJour = new Map<string, RdvReel[]>();
+  for (const r of aVenir) {
+    const key = fmtJour(r.date);
+    const arr = parJour.get(key) ?? [];
+    arr.push(r);
+    parJour.set(key, arr);
+  }
+
+  return (
+    <>
+      {/* Bandeau connexion OK */}
+      <Panel
+        tone="success"
+        icon={<CheckCircle2 size={18} />}
+        title={`Connecté à Calendly — ${userName || 'compte OK'}`}
+        body={
+          <>
+            Données en direct depuis Calendly. {rdvs.length} RDV sur les 45 derniers jours + à
+            venir, reliés automatiquement aux fiches investisseurs.
+          </>
+        }
+      />
 
       {/* KPIs */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
@@ -253,12 +160,12 @@ export default async function RdvGuillaumePage() {
           icon={<CalendarClock size={15} />}
           label="RDV à venir"
           value={String(aVenir.length)}
-          hint="cette semaine"
+          hint="planifiés"
         />
         <Kpi
           icon={<CheckCircle2 size={15} />}
           label="Taux de présentation"
-          value={`${tauxPresence}%`}
+          value={passes.length > 0 ? `${tauxPresence}%` : '—'}
           hint={`${honores}/${passes.length} honorés`}
           tone={tauxPresence >= 70 ? 'success' : 'warning'}
         />
@@ -272,7 +179,7 @@ export default async function RdvGuillaumePage() {
         <Kpi
           icon={<TrendingUp size={15} />}
           label="RDV → souscription"
-          value={`${tauxConversion}%`}
+          value={honores > 0 ? `${tauxConversion}%` : '—'}
           hint={`${souscrits} souscription(s)`}
           tone="success"
         />
@@ -342,7 +249,7 @@ export default async function RdvGuillaumePage() {
                       </div>
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
-                      {EUR.format(r.potentielEur)}
+                      {r.montantInvestiEur != null ? EUR.format(r.montantInvestiEur) : '—'}
                     </span>
                   </div>
                 ))}
@@ -352,15 +259,15 @@ export default async function RdvGuillaumePage() {
         </div>
       </div>
 
-      {/* À relancer (no-show + reportés) */}
+      {/* À relancer */}
       <div className="view-card" style={{ marginBottom: 16 }}>
         <div className="view-card-header">
           <div
             className="view-card-title"
             style={{ display: 'flex', alignItems: 'center', gap: 8 }}
           >
-            <AlertTriangle size={15} style={{ color: 'var(--warning)' }} />À relancer — no-shows &
-            reportés
+            <AlertTriangle size={15} style={{ color: 'var(--warning)' }} />À relancer — no-shows,
+            reportés & annulés
           </div>
           <span className="badge badge-warning">{aRelancer.length}</span>
         </div>
@@ -406,181 +313,65 @@ export default async function RdvGuillaumePage() {
             <TrendingUp size={15} />
             Suivi des leads issus des RDV
           </div>
-          <span className="badge badge-neutral">{RDVS.length}</span>
+          <span className="badge badge-neutral">{suivi.length}</span>
         </div>
         <div className="view-card-body" style={{ padding: 0 }}>
-          <div className="table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: 'var(--text-4)' }}>
-                  <Th>Lead</Th>
-                  <Th>Source</Th>
-                  <Th>Date RDV</Th>
-                  <Th>RDV</Th>
-                  <Th>Étape pipeline</Th>
-                  <Th align="right">Potentiel</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {RDVS.map((r) => {
-                  const b = statutBadge(r.statut);
-                  return (
-                    <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <Td>
-                        <LeadName r={r} />
-                        <div style={{ fontSize: 11, color: 'var(--text-4)' }}>{r.email}</div>
-                      </Td>
-                      <Td>{r.source}</Td>
-                      <Td>
-                        {r.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ·{' '}
-                        {fmtHeure(r.date)}
-                      </Td>
-                      <Td>
-                        <span className={`badge ${b.cls}`}>{b.label}</span>
-                      </Td>
-                      <Td>
-                        <span className={`badge ${etapeBadge(r.etape)}`}>{r.etape}</span>
-                      </Td>
-                      <Td align="right">
-                        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>
-                          {EUR.format(r.potentielEur)}
-                        </span>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {suivi.length === 0 ? (
+            <Empty>Aucun RDV sur la période.</Empty>
+          ) : (
+            <div className="table-scroll">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--text-4)' }}>
+                    <Th>Lead</Th>
+                    <Th>Source</Th>
+                    <Th>Date RDV</Th>
+                    <Th>RDV</Th>
+                    <Th>Étape pipeline</Th>
+                    <Th align="right">Investi</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suivi.map((r) => {
+                    const b = statutBadge(r.statut);
+                    return (
+                      <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                        <Td>
+                          <LeadName r={r} />
+                          {r.email ? (
+                            <div style={{ fontSize: 11, color: 'var(--text-4)' }}>{r.email}</div>
+                          ) : null}
+                        </Td>
+                        <Td>{r.source}</Td>
+                        <Td>
+                          {r.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}{' '}
+                          · {fmtHeure(r.date)}
+                        </Td>
+                        <Td>
+                          <span className={`badge ${b.cls}`}>{b.label}</span>
+                        </Td>
+                        <Td>
+                          <span className={`badge ${etapeBadge(r.etape)}`}>{r.etape}</span>
+                        </Td>
+                        <Td align="right">
+                          <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>
+                            {r.montantInvestiEur != null ? EUR.format(r.montantInvestiEur) : '—'}
+                          </span>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-function CalendlyDiagPanel({ diag }: { diag: CalendlyDiagnostic }) {
-  // Non configuré → bandeau neutre "clé manquante".
-  if (diag.state === 'not_configured') {
-    return (
-      <Panel
-        tone="warning"
-        icon={<PlugZap size={18} />}
-        title="Calendly non connecté"
-        body={
-          <>
-            Aucune clé d'accès détectée. Ajoute la variable <code>CALENDLY_TOKEN</code> dans Render
-            (Environment), puis recharge cette page.
-          </>
-        }
-      />
-    );
-  }
-
-  // Erreur → on affiche le message exact renvoyé par Calendly.
-  if (diag.state === 'error') {
-    return (
-      <Panel
-        tone="danger"
-        icon={<XCircle size={18} />}
-        title="Connexion Calendly en échec"
-        body={
-          <>
-            <div style={{ marginBottom: 6 }}>
-              La clé est bien présente, mais l'appel à Calendly a échoué :
-            </div>
-            <code style={{ fontSize: 12, wordBreak: 'break-word' }}>{diag.message}</code>
-            <div style={{ marginTop: 8, fontSize: 12 }}>
-              Pistes : token invalide/expiré, ou forfait Calendly sans accès API (il faut Standard
-              ou plus).
-            </div>
-          </>
-        }
-      />
-    );
-  }
-
-  // OK → identité du compte + vrais RDV à venir détectés.
-  return (
-    <Panel
-      tone="success"
-      icon={<CheckCircle2 size={18} />}
-      title={`Connecté à Calendly — ${diag.user.name || diag.user.email || 'compte OK'}`}
-      body={
-        <>
-          <div style={{ marginBottom: diag.events.length > 0 ? 10 : 0 }}>
-            Lecture de l'agenda OK. {diag.events.length} RDV à venir détecté
-            {diag.events.length > 1 ? 's' : ''} (aperçu des 5 prochains). Je peux maintenant
-            brancher la vraie page sur ces données.
-          </div>
-          {diag.events.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {diag.events.map((e) => (
-                <div
-                  key={`${e.startTime}-${e.inviteeEmail ?? e.name}`}
-                  style={{ fontSize: 12, color: 'var(--success-text)' }}
-                >
-                  •{' '}
-                  {new Date(e.startTime).toLocaleString('fr-FR', {
-                    weekday: 'short',
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  — {e.invitee ?? 'invité ?'}
-                  {e.inviteeEmail ? ` (${e.inviteeEmail})` : ''}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </>
-      }
-    />
-  );
-}
-
-function Panel({
-  tone,
-  icon,
-  title,
-  body,
-}: {
-  tone: 'success' | 'warning' | 'danger';
-  icon: React.ReactNode;
-  title: string;
-  body: React.ReactNode;
-}) {
-  const border =
-    tone === 'success' ? 'var(--success)' : tone === 'danger' ? 'var(--danger)' : 'var(--warning)';
-  const bg =
-    tone === 'success'
-      ? 'var(--success-bg)'
-      : tone === 'danger'
-        ? 'var(--danger-bg)'
-        : 'var(--warning-bg)';
-  const text =
-    tone === 'success'
-      ? 'var(--success-text)'
-      : tone === 'danger'
-        ? 'var(--danger-text)'
-        : 'var(--warning-text)';
-  return (
-    <div className="view-card" style={{ marginBottom: 16, borderColor: border, background: bg }}>
-      <div
-        className="view-card-body"
-        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 16 }}
-      >
-        <span style={{ color: text, flexShrink: 0, marginTop: 1 }}>{icon}</span>
-        <div style={{ fontSize: 13, color: text, minWidth: 0 }}>
-          <strong style={{ display: 'block', marginBottom: 4 }}>{title}</strong>
-          {body}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LeadName({ r }: { r: Rdv }) {
+function LeadName({ r }: { r: RdvReel }) {
   if (r.investorId) {
     return (
       <Link
@@ -635,6 +426,47 @@ function Kpi({
         </span>
         <span style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>{value}</span>
         <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{hint}</span>
+      </div>
+    </div>
+  );
+}
+
+function Panel({
+  tone,
+  icon,
+  title,
+  body,
+}: {
+  tone: 'success' | 'warning' | 'danger';
+  icon: React.ReactNode;
+  title: string;
+  body: React.ReactNode;
+}) {
+  const border =
+    tone === 'success' ? 'var(--success)' : tone === 'danger' ? 'var(--danger)' : 'var(--warning)';
+  const bg =
+    tone === 'success'
+      ? 'var(--success-bg)'
+      : tone === 'danger'
+        ? 'var(--danger-bg)'
+        : 'var(--warning-bg)';
+  const text =
+    tone === 'success'
+      ? 'var(--success-text)'
+      : tone === 'danger'
+        ? 'var(--danger-text)'
+        : 'var(--warning-text)';
+  return (
+    <div className="view-card" style={{ marginBottom: 16, borderColor: border, background: bg }}>
+      <div
+        className="view-card-body"
+        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 16 }}
+      >
+        <span style={{ color: text, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+        <div style={{ fontSize: 13, color: text, minWidth: 0 }}>
+          <strong style={{ display: 'block', marginBottom: 4 }}>{title}</strong>
+          {body}
+        </div>
       </div>
     </div>
   );

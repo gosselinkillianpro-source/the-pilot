@@ -39,6 +39,8 @@ export interface CalendlyInvitee {
   name: string;
   email: string;
   status: string;
+  noShow: boolean; // marqué absent (no-show) côté Calendly
+  rescheduled: boolean; // RDV reprogrammé par l'invité
 }
 
 /* --- Helpers de lecture sûre (réponses externes → unknown) --- */
@@ -132,55 +134,12 @@ export async function getEventInvitees(eventUri: string): Promise<CalendlyInvite
     name: str(i.name),
     email: str(i.email),
     status: str(i.status),
+    // `no_show` est un objet (uri…) quand l'invité est marqué absent, sinon null.
+    noShow: i.no_show != null,
+    rescheduled: i.rescheduled === true,
   }));
 }
 
 export function isCalendlyConfigured(): boolean {
   return Boolean(process.env.CALENDLY_TOKEN);
-}
-
-export interface CalendlyDiagEvent {
-  name: string;
-  startTime: string;
-  invitee: string | null;
-  inviteeEmail: string | null;
-}
-
-export type CalendlyDiagnostic =
-  | { state: 'not_configured' }
-  | { state: 'error'; message: string }
-  | { state: 'ok'; user: CalendlyUser; events: CalendlyDiagEvent[] };
-
-/**
- * Test de connexion : vérifie que le token lit bien l'agenda de Guillaume et
- * remonte ses prochains RDV (avec l'invité). Sert à valider le branchement
- * Calendly avant de construire la synchro complète. Read-only, best-effort.
- */
-export async function getCalendlyDiagnostic(): Promise<CalendlyDiagnostic> {
-  if (!isCalendlyConfigured()) return { state: 'not_configured' };
-  try {
-    const user = await getCurrentUser();
-    const events = await getUpcomingEvents(user.uri, 5);
-    const detailed: CalendlyDiagEvent[] = [];
-    for (const ev of events) {
-      let invitee: string | null = null;
-      let inviteeEmail: string | null = null;
-      try {
-        const invitees = await getEventInvitees(ev.uri);
-        if (invitees[0]) {
-          invitee = invitees[0].name || null;
-          inviteeEmail = invitees[0].email || null;
-        }
-      } catch {
-        // un invité illisible ne doit pas casser le diagnostic global
-      }
-      detailed.push({ name: ev.name, startTime: ev.startTime, invitee, inviteeEmail });
-    }
-    return { state: 'ok', user, events: detailed };
-  } catch (e) {
-    return {
-      state: 'error',
-      message: e instanceof CalendlyError ? e.message : e instanceof Error ? e.message : String(e),
-    };
-  }
 }
