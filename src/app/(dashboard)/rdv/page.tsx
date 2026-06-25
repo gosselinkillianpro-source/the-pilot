@@ -5,11 +5,14 @@ import {
   CheckCircle2,
   Clock,
   Info,
+  PlugZap,
   RotateCcw,
   TrendingUp,
+  XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, requireRole } from '@/lib/auth';
+import { type CalendlyDiagnostic, getCalendlyDiagnostic } from '@/lib/integrations/calendly/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -180,7 +183,15 @@ function etapeBadge(e: EtapePipeline): string {
 }
 
 export default async function RdvGuillaumePage() {
-  await getAuthenticatedUser();
+  const user = await getAuthenticatedUser();
+
+  // Test de connexion Calendly — réservé à l'admin (le panneau peut afficher
+  // l'identité du compte et les vrais RDV ; on ne l'expose pas aux autres rôles).
+  let diag: CalendlyDiagnostic | null = null;
+  if (user.role === 'admin') {
+    await requireRole(user, ['admin']);
+    diag = await getCalendlyDiagnostic();
+  }
 
   const aVenir = RDVS.filter((r) => r.statut === 'a_venir').sort(
     (a, b) => a.date.getTime() - b.date.getTime(),
@@ -215,6 +226,9 @@ export default async function RdvGuillaumePage() {
         </div>
       </div>
 
+      {/* Test de connexion Calendly (admin uniquement) */}
+      {diag ? <CalendlyDiagPanel diag={diag} /> : null}
+
       {/* Bandeau maquette */}
       <div
         className="view-card"
@@ -226,13 +240,9 @@ export default async function RdvGuillaumePage() {
         >
           <Info size={18} style={{ color: 'var(--warning-text)', flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 13, color: 'var(--warning-text)' }}>
-            <strong>Aperçu — données d'exemple.</strong> Calendly n'est pas encore branché. Pour
-            alimenter cette page avec les vrais RDV, il faut la clé d'accès Calendly de Guillaume
-            (compte <code>g-gosselin-sevenathome</code>). Voir{' '}
-            <Link href="/sources" style={{ color: 'var(--brand)', fontWeight: 600 }}>
-              État des sources
-            </Link>
-            .
+            <strong>Aperçu — données d'exemple.</strong> Les blocs ci-dessous (KPIs, agenda, suivi)
+            sont une maquette. Une fois la connexion Calendly validée (panneau ci-dessus), je
+            remplace ces données d'exemple par les vrais RDV de Guillaume.
           </div>
         </div>
       </div>
@@ -445,6 +455,128 @@ export default async function RdvGuillaumePage() {
         </div>
       </div>
     </>
+  );
+}
+
+function CalendlyDiagPanel({ diag }: { diag: CalendlyDiagnostic }) {
+  // Non configuré → bandeau neutre "clé manquante".
+  if (diag.state === 'not_configured') {
+    return (
+      <Panel
+        tone="warning"
+        icon={<PlugZap size={18} />}
+        title="Calendly non connecté"
+        body={
+          <>
+            Aucune clé d'accès détectée. Ajoute la variable <code>CALENDLY_TOKEN</code> dans Render
+            (Environment), puis recharge cette page.
+          </>
+        }
+      />
+    );
+  }
+
+  // Erreur → on affiche le message exact renvoyé par Calendly.
+  if (diag.state === 'error') {
+    return (
+      <Panel
+        tone="danger"
+        icon={<XCircle size={18} />}
+        title="Connexion Calendly en échec"
+        body={
+          <>
+            <div style={{ marginBottom: 6 }}>
+              La clé est bien présente, mais l'appel à Calendly a échoué :
+            </div>
+            <code style={{ fontSize: 12, wordBreak: 'break-word' }}>{diag.message}</code>
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              Pistes : token invalide/expiré, ou forfait Calendly sans accès API (il faut Standard
+              ou plus).
+            </div>
+          </>
+        }
+      />
+    );
+  }
+
+  // OK → identité du compte + vrais RDV à venir détectés.
+  return (
+    <Panel
+      tone="success"
+      icon={<CheckCircle2 size={18} />}
+      title={`Connecté à Calendly — ${diag.user.name || diag.user.email || 'compte OK'}`}
+      body={
+        <>
+          <div style={{ marginBottom: diag.events.length > 0 ? 10 : 0 }}>
+            Lecture de l'agenda OK. {diag.events.length} RDV à venir détecté
+            {diag.events.length > 1 ? 's' : ''} (aperçu des 5 prochains). Je peux maintenant
+            brancher la vraie page sur ces données.
+          </div>
+          {diag.events.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {diag.events.map((e) => (
+                <div
+                  key={`${e.startTime}-${e.inviteeEmail ?? e.name}`}
+                  style={{ fontSize: 12, color: 'var(--success-text)' }}
+                >
+                  •{' '}
+                  {new Date(e.startTime).toLocaleString('fr-FR', {
+                    weekday: 'short',
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  — {e.invitee ?? 'invité ?'}
+                  {e.inviteeEmail ? ` (${e.inviteeEmail})` : ''}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+function Panel({
+  tone,
+  icon,
+  title,
+  body,
+}: {
+  tone: 'success' | 'warning' | 'danger';
+  icon: React.ReactNode;
+  title: string;
+  body: React.ReactNode;
+}) {
+  const border =
+    tone === 'success' ? 'var(--success)' : tone === 'danger' ? 'var(--danger)' : 'var(--warning)';
+  const bg =
+    tone === 'success'
+      ? 'var(--success-bg)'
+      : tone === 'danger'
+        ? 'var(--danger-bg)'
+        : 'var(--warning-bg)';
+  const text =
+    tone === 'success'
+      ? 'var(--success-text)'
+      : tone === 'danger'
+        ? 'var(--danger-text)'
+        : 'var(--warning-text)';
+  return (
+    <div className="view-card" style={{ marginBottom: 16, borderColor: border, background: bg }}>
+      <div
+        className="view-card-body"
+        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 16 }}
+      >
+        <span style={{ color: text, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+        <div style={{ fontSize: 13, color: text, minWidth: 0 }}>
+          <strong style={{ display: 'block', marginBottom: 4 }}>{title}</strong>
+          {body}
+        </div>
+      </div>
+    </div>
   );
 }
 
