@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Building2,
+  CalendarClock,
   LayoutGrid,
   Mail,
   Radio,
@@ -29,6 +30,10 @@ export function NavContent({ role }: { role: string }) {
         <SidebarLink href="/closing">
           <Users />
           Closing
+        </SidebarLink>
+        <SidebarLink href="/rdv">
+          <CalendarClock />
+          RDV Guillaume
         </SidebarLink>
         {role === 'admin' && (
           <SidebarLink href="/equipe">
