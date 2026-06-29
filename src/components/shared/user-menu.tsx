@@ -1,8 +1,8 @@
 'use client';
 
-import { LogOut } from 'lucide-react';
+import { LogOut, Repeat2 } from 'lucide-react';
 import { useFormStatus } from 'react-dom';
-import { signOut } from '@/app/(auth)/actions';
+import { signOut, switchAccount } from '@/app/(auth)/actions';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
@@ -10,6 +10,35 @@ const ROLE_LABELS: Record<string, string> = {
   closer_junior: 'Closer junior',
   executive: 'Direction',
 };
+
+const iconButtonStyle: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 8,
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  color: 'var(--text-3)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
+function SwitchButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      aria-label="Changer de compte"
+      title="Changer de compte"
+      disabled={pending}
+      style={iconButtonStyle}
+    >
+      <Repeat2 size={14} />
+    </button>
+  );
+}
 
 function LogoutButton() {
   const { pending } = useFormStatus();
@@ -19,19 +48,7 @@ function LogoutButton() {
       aria-label="Se déconnecter"
       title="Se déconnecter"
       disabled={pending}
-      style={{
-        width: 30,
-        height: 30,
-        borderRadius: 8,
-        background: 'transparent',
-        border: '1px solid var(--border)',
-        color: 'var(--text-3)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        flexShrink: 0,
-      }}
+      style={iconButtonStyle}
     >
       <LogOut size={14} />
     </button>
@@ -54,9 +71,16 @@ export function UserMenu({
         <div className="view-sidebar-user-name">{name}</div>
         <div className="view-sidebar-user-role">{ROLE_LABELS[role] ?? role}</div>
       </div>
-      <form action={signOut}>
-        <LogoutButton />
-      </form>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {role === 'admin' ? (
+          <form action={switchAccount}>
+            <SwitchButton />
+          </form>
+        ) : null}
+        <form action={signOut}>
+          <LogoutButton />
+        </form>
+      </div>
     </div>
   );
 }

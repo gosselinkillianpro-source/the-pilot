@@ -18,7 +18,7 @@ function SubmitButton() {
   );
 }
 
-export function LoginForm() {
+export function LoginForm({ prefillEmail = '' }: { prefillEmail?: string }) {
   const [state, formAction] = useActionState<ActionError | null, FormData>(signIn, null);
 
   return (
@@ -32,6 +32,23 @@ export function LoginForm() {
         </p>
       </div>
 
+      {prefillEmail ? (
+        <p
+          style={{
+            fontSize: '0.75rem',
+            color: 'var(--brand-text)',
+            margin: 0,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: 'var(--brand-bg)',
+            border: '1px solid var(--brand-bg-strong)',
+          }}
+        >
+          Changement de compte : reconnecte-toi avec <strong>{prefillEmail}</strong> (mot de passe +
+          2FA).
+        </p>
+      ) : null}
+
       <div className="form-field">
         <label className="form-label" htmlFor="email">
           Email
@@ -44,6 +61,7 @@ export function LoginForm() {
           required
           className="input"
           placeholder="prenom@sevenathome.fr"
+          defaultValue={prefillEmail}
         />
       </div>
 

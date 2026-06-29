@@ -1,10 +1,25 @@
 'use server';
 
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { getSupabaseServerClient, roleRequiresMfa, type UserRole } from '@/lib/auth';
 import { checkLoginAllowed, recordLoginFailure, recordLoginSuccess } from '@/lib/auth/rate-limit';
+import { SWITCH_COOKIE } from './switch-cookie';
+
+/**
+ * Comptes éligibles au changement rapide (env PILOT_SWITCH_ACCOUNTS = emails séparés par des virgules).
+ * Renvoie le « prochain » compte (le premier différent de l'email courant), ou null.
+ */
+function otherSwitchAccount(currentEmail: string): string | null {
+  const list = (process.env.PILOT_SWITCH_ACCOUNTS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const current = currentEmail.toLowerCase();
+  return list.find((e) => e.toLowerCase() !== current) ?? null;
+}
 
 /* ============================================================
    Schémas de validation
@@ -115,6 +130,44 @@ export async function signOut(): Promise<void> {
       resourceId: data.user.id,
     });
   }
+  redirect('/login');
+}
+
+/**
+ * Changer de compte (re-connexion rapide) : déconnecte le compte courant et renvoie sur
+ * l'écran de connexion en pré-remplissant l'email de l'autre compte. Aucune session n'est
+ * partagée ni usurpée — l'utilisateur se ré-authentifie normalement (mot de passe + 2FA).
+ * L'email cible passe par un cookie éphémère httpOnly (jamais dans l'URL) pour respecter la vie privée.
+ */
+export async function switchAccount(): Promise<void> {
+  const supabase = await getSupabaseServerClient();
+  const { data } = await supabase.auth.getUser();
+  const currentEmail = data.user?.email ?? '';
+  const target = currentEmail ? otherSwitchAccount(currentEmail) : null;
+
+  await supabase.auth.signOut();
+
+  if (data.user) {
+    await logAudit({
+      userId: data.user.id,
+      action: 'auth.account_switch',
+      resourceType: 'auth',
+      resourceId: data.user.id,
+      metadata: { from: currentEmail, to: target },
+    });
+  }
+
+  if (target) {
+    const store = await cookies();
+    store.set(SWITCH_COOKIE, target, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 180,
+      path: '/',
+    });
+  }
+
   redirect('/login');
 }
 
