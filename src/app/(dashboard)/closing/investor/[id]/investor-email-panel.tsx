@@ -65,12 +65,13 @@ export function InvestorEmailPanel({
   const [preheader, setPreheader] = useState(saved?.preheader ?? '');
   const [bodyText, setBodyText] = useState(saved?.body ?? '');
   const [senderAddress, setSenderAddress] = useState(defaultSender || senders[0]?.address || '');
+  const [context, setContext] = useState('');
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
 
   function generate() {
     startTransition(async () => {
       const res = await runWithActivity(`Génération de l'email — ${firstName}`, () =>
-        generateProposalAssetAction({ investorId }),
+        generateProposalAssetAction({ investorId, closerContext: context.trim() || undefined }),
       );
       if (res.ok) {
         toast('Email généré et sauvegardé.', { variant: 'success' });
@@ -131,10 +132,24 @@ export function InvestorEmailPanel({
           style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
         >
           <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
-            Génère une proposition d'email personnalisée pour <strong>{firstName}</strong>, calée
-            sur son score, sa situation et les projets ouverts. Elle sera{' '}
-            <strong>sauvegardée</strong> sur la fiche.
+            Donne 1-2 phrases de contexte sur <strong>{firstName}</strong> (ce que tu sais, ce qui
+            s'est dit), et l'IA rédige un email <strong>cordial, sérieux et chaleureux</strong>{' '}
+            autour de ça. Laisse vide pour une proposition standard. L'email est sauvegardé sur la
+            fiche.
           </p>
+          <div className="form-field">
+            <label className="form-label" htmlFor="ai-context">
+              Contexte (ce que tu veux dire)
+            </label>
+            <textarea
+              id="ai-context"
+              className="textarea"
+              rows={3}
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="Ex : on s'est appelés hier, il hésite entre 2 projets, il veut placer ~20k avant l'été et aimerait un point sur la sécurité des opérations."
+            />
+          </div>
           <button
             type="button"
             className="btn btn-ai"
@@ -143,7 +158,7 @@ export function InvestorEmailPanel({
             style={{ alignSelf: 'flex-start' }}
           >
             <Sparkles />
-            {pending ? 'Génération…' : 'Générer une proposition'}
+            {pending ? 'Génération…' : "Générer l'email"}
           </button>
         </div>
       </div>
@@ -261,6 +276,20 @@ export function InvestorEmailPanel({
             ))}
           </div>
         )}
+
+        <div className="form-field">
+          <label className="form-label" htmlFor="ai-context-regen">
+            Affiner le contexte (puis « Régénérer »)
+          </label>
+          <textarea
+            id="ai-context-regen"
+            className="textarea"
+            rows={2}
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Ajoute/precise ce que tu veux dire, puis clique Régénérer."
+          />
+        </div>
 
         {senders.length > 1 && (
           <div className="form-field">

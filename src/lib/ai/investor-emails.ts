@@ -9,6 +9,9 @@ export type InvestorContext = {
   stage: string;
   totalInvested: number;
   amountMentioned?: number;
+  /** Contexte libre donné par le closer (1-2 phrases) : ce qu'il sait de la personne,
+   *  ce qui s'est dit. C'est le CŒUR du message à rédiger. */
+  closerContext?: string;
 };
 
 export type ProjectContext = {
@@ -43,11 +46,13 @@ export class MissingAnthropicKeyError extends Error {
 
 // Instructions propres à la tâche (le cadre/voix/AMF vient du brain, chargé en système caché).
 const TASK_INSTRUCTIONS = `INSTRUCTIONS POUR CETTE TÂCHE
-Tu rédiges un email de PROPOSITION pour un investisseur de Seven At Home, en appliquant strictement l'Email Brain ci-dessus (voix, cadre AMF, matrice de statut, délivrabilité).
+Tu rédiges un email pour un investisseur de Seven At Home, en appliquant strictement l'Email Brain ci-dessus (voix, cadre AMF, matrice de statut, délivrabilité).
 
+- S'il y a un « CONTEXTE DU CLOSER », c'est le CŒUR du message : construis tout l'email autour de ces informations (ce que le closer sait de la personne, ce qui s'est dit). Rebondis dessus naturellement. S'il n'y en a pas, rédige une proposition standard calée sur le statut.
+- TON : très cordial et sérieux à la fois, tout en gardant une vraie proximité (chaleureux, humain, on s'adresse à une personne qu'on apprécie) et une énergie positive. Jamais mielleux ni commercial agressif : on reste pro, sobre et crédible (cadre AMF).
 - Identifie le statut de l'investisseur (section 3 du brain) à partir des données fournies (total investi, montant évoqué, étape, score) et applique la ligne correspondante.
-- N'utilise QUE les données projets fournies pour tout chiffre (nom, ville, rendement cible, durée). N'invente aucun chiffre, aucune date, aucune statistique, aucun chiffre de track record.
-- Propose 1 à 2 projets pertinents parmi ceux fournis.
+- N'utilise QUE les données projets fournies pour tout chiffre (nom, ville, rendement cible, durée). N'invente aucun chiffre, aucune date, aucune statistique, aucun chiffre de track record. Ne contredis jamais le contexte du closer ; si une info manque, reste général plutôt que d'inventer.
+- Propose 1 à 2 projets pertinents parmi ceux fournis, seulement si c'est cohérent avec le contexte.
 - Ne mets PAS de signature dans le corps et ne nomme pas l'expéditeur (n'écris pas "Guillaume", "moi Guillaume", etc.) : la signature "L'équipe Seven At Home" est ajoutée automatiquement. Termine le corps sur ta dernière phrase utile. Tu peux écrire à la première personne ("je"), mais sans te nommer.
 - Objet : minuscule sauf la première lettre, 4 à 7 mots, sans emoji, sans chiffre ni symbole. Préheader : prolonge l'objet sans le répéter, jamais vide.
 
@@ -73,7 +78,11 @@ function buildUserPrompt(investor: InvestorContext, projects: ProjectContext[]):
     )
     .join('\n');
 
-  return `INVESTISSEUR :\n${investorBlock}\n\nPROJETS DISPONIBLES (n'utilise que ces données chiffrées) :\n${projectsBlock}\n\nRédige l'email de proposition.`;
+  const closerBlock = investor.closerContext?.trim()
+    ? `\n\nCONTEXTE DU CLOSER (cœur du message, à intégrer en priorité) :\n${investor.closerContext.trim()}`
+    : '';
+
+  return `INVESTISSEUR :\n${investorBlock}${closerBlock}\n\nPROJETS DISPONIBLES (n'utilise que ces données chiffrées) :\n${projectsBlock}\n\nRédige l'email.`;
 }
 
 function parseDraft(raw: string): InvestorEmailDraft {

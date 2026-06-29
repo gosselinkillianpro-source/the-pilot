@@ -927,14 +927,20 @@ export type AssetGenResult =
   | { ok: false; reason: 'no_key' | 'not_found' | 'error'; message: string };
 
 const assetTargetSchema = z.object({ investorId: z.string().uuid() });
+// Email de proposition : le closer peut fournir 1-2 phrases de contexte → cœur du mail.
+const proposalSchema = z.object({
+  investorId: z.string().uuid(),
+  closerContext: z.string().trim().max(1000).optional(),
+});
 
 /** Génère + sauvegarde un email de proposition (remplace l'actuel). */
 export async function generateProposalAssetAction(input: {
   investorId: string;
+  closerContext?: string;
 }): Promise<AssetGenResult> {
-  let parsed: { investorId: string };
+  let parsed: z.infer<typeof proposalSchema>;
   try {
-    parsed = assetTargetSchema.parse(input);
+    parsed = proposalSchema.parse(input);
   } catch {
     return { ok: false, reason: 'error', message: 'Données invalides.' };
   }
@@ -973,6 +979,7 @@ export async function generateProposalAssetAction(input: {
     stage: investor.pipelineStage,
     totalInvested: Number(investor.totalInvested ?? 0),
     amountMentioned: undefined,
+    closerContext: parsed.closerContext,
   };
   const projects: ProjectContext[] = (await getInvestableProjects()).map((p) => ({
     name: p.name,
