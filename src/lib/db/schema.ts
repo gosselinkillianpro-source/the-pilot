@@ -130,6 +130,8 @@ export const callOutcomeEnum = pgEnum('call_outcome', [
   'voicemail', // répondeur
   'wrong_number', // mauvais numéro
   'callback_scheduled', // rappel programmé
+  'profile_incompatible', // profil incompatible (→ lead sorti de la file / Perdu)
+  'in_progress', // en cours (échange en cours, à poursuivre)
 ]);
 
 export const closerTaskStatusEnum = pgEnum('closer_task_status', ['pending', 'done', 'cancelled']);

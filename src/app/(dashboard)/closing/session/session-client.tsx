@@ -4,10 +4,12 @@ import {
   ArrowRight,
   Copy,
   Flame,
+  Hourglass,
   PhoneCall,
   PhoneOff,
   Sparkles,
   Target,
+  UserX,
   Voicemail,
   X,
 } from 'lucide-react';
@@ -38,13 +40,26 @@ export type SessionLead = {
   factors: string[];
 };
 
-type Outcome = 'reached' | 'no_answer' | 'voicemail' | 'wrong_number';
+type Outcome =
+  | 'reached'
+  | 'no_answer'
+  | 'voicemail'
+  | 'wrong_number'
+  | 'in_progress'
+  | 'profile_incompatible';
 
 const OUTCOMES: { key: Outcome; label: string; icon: typeof PhoneCall; color: string }[] = [
   { key: 'reached', label: 'Joint', icon: PhoneCall, color: 'var(--success)' },
   { key: 'no_answer', label: 'Pas de réponse', icon: PhoneOff, color: 'var(--warning)' },
   { key: 'voicemail', label: 'Répondeur', icon: Voicemail, color: 'var(--text-3)' },
   { key: 'wrong_number', label: 'Faux numéro', icon: X, color: 'var(--danger)' },
+  { key: 'in_progress', label: 'En cours', icon: Hourglass, color: 'var(--brand)' },
+  {
+    key: 'profile_incompatible',
+    label: 'Profil incompatible',
+    icon: UserX,
+    color: 'var(--danger)',
+  },
 ];
 
 const STAGES: { value: string; label: string }[] = [
@@ -404,7 +419,9 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
                     </select>
                   </label>
                 )}
-                {(outcome === 'no_answer' || outcome === 'voicemail') && (
+                {(outcome === 'no_answer' ||
+                  outcome === 'voicemail' ||
+                  outcome === 'in_progress') && (
                   <label
                     style={{
                       display: 'flex',

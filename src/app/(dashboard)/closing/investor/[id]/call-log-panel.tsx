@@ -13,6 +13,8 @@ const OUTCOMES: { value: Outcome; label: string }[] = [
   { value: 'no_answer', label: 'Pas de réponse' },
   { value: 'voicemail', label: 'Répondeur' },
   { value: 'wrong_number', label: 'Mauvais numéro' },
+  { value: 'in_progress', label: 'En cours' },
+  { value: 'profile_incompatible', label: 'Profil incompatible' },
 ];
 
 const STAGES: { value: NonNullable<LogCallInput['nextStage']>; label: string }[] = [

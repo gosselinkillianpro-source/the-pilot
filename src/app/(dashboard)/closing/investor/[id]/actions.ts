@@ -175,7 +175,15 @@ const PIPELINE_STAGES = [
 
 const logCallSchema = z.object({
   investorId: z.string().uuid(),
-  outcome: z.enum(['reached', 'no_answer', 'voicemail', 'wrong_number', 'callback_scheduled']),
+  outcome: z.enum([
+    'reached',
+    'no_answer',
+    'voicemail',
+    'wrong_number',
+    'callback_scheduled',
+    'profile_incompatible',
+    'in_progress',
+  ]),
   note: z.string().trim().max(4000).optional(),
   nextStage: z.enum(PIPELINE_STAGES).optional(),
   callbackAt: z.string().datetime({ offset: true }).optional(),
@@ -226,14 +234,17 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
       });
     }
 
-    // 3. Avancement pipeline (optionnel) + libération du verrou (l'appel est fait)
+    // 3. Avancement pipeline (optionnel) + libération du verrou (l'appel est fait).
+    //    « Profil incompatible » sort le lead de la file → étape « Perdu » (sauf étape explicite).
+    const effectiveStage =
+      parsed.nextStage ?? (parsed.outcome === 'profile_incompatible' ? 'closed_lost' : undefined);
     await db
       .update(investors)
       .set({
         claimedById: null,
         claimedAt: null,
-        ...(parsed.nextStage
-          ? { pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() }
+        ...(effectiveStage
+          ? { pipelineStage: effectiveStage, pipelineStageUpdatedAt: new Date() }
           : {}),
       })
       .where(eq(investors.id, parsed.investorId));
@@ -612,7 +623,14 @@ export async function undoCallAction(input: {
 
 const qualifyCallSchema = z.object({
   callId: z.string().uuid(),
-  outcome: z.enum(['reached', 'no_answer', 'voicemail', 'wrong_number']),
+  outcome: z.enum([
+    'reached',
+    'no_answer',
+    'voicemail',
+    'wrong_number',
+    'profile_incompatible',
+    'in_progress',
+  ]),
   note: z.string().trim().max(4000).optional(),
   nextStage: z.enum(PIPELINE_STAGES).optional(),
   callbackAt: z.string().datetime({ offset: true }).optional(),
@@ -625,7 +643,13 @@ const qualifyCallSchema = z.object({
  */
 export async function qualifyCallAction(input: {
   callId: string;
-  outcome: 'reached' | 'no_answer' | 'voicemail' | 'wrong_number';
+  outcome:
+    | 'reached'
+    | 'no_answer'
+    | 'voicemail'
+    | 'wrong_number'
+    | 'profile_incompatible'
+    | 'in_progress';
   note?: string;
   nextStage?: string;
   callbackAt?: string;
@@ -677,10 +701,13 @@ export async function qualifyCallAction(input: {
         createdBy: user.id,
       });
     }
-    if (parsed.nextStage) {
+    // « Profil incompatible » sort le lead de la file → « Perdu » (sauf étape explicite).
+    const effectiveStage =
+      parsed.nextStage ?? (parsed.outcome === 'profile_incompatible' ? 'closed_lost' : undefined);
+    if (effectiveStage) {
       await db
         .update(investors)
-        .set({ pipelineStage: parsed.nextStage, pipelineStageUpdatedAt: new Date() })
+        .set({ pipelineStage: effectiveStage, pipelineStageUpdatedAt: new Date() })
         .where(eq(investors.id, investorId));
     }
     await assignOwnershipIfFree(investorId, user.id);

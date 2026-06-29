@@ -68,6 +68,8 @@ const OUTCOME_LABEL: Record<string, string> = {
   voicemail: 'Répondeur',
   wrong_number: 'Faux numéro',
   callback_scheduled: 'Rappel programmé',
+  in_progress: 'En cours',
+  profile_incompatible: 'Profil incompatible',
 };
 const TYPE_LABEL: Record<string, string> = {
   call_outbound: 'Appel',
