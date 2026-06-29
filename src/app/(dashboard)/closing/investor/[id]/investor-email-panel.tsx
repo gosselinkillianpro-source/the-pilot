@@ -1,6 +1,16 @@
 'use client';
 
-import { AlertTriangle, Check, Loader2, Mail, Send, Sparkles, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  Mail,
+  PenLine,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { sendEmailAction } from '@/app/(dashboard)/email/compose/actions';
@@ -31,12 +41,12 @@ function Header({ cost }: { cost: string | null }) {
   return (
     <div className="view-card-header">
       <div className="view-card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Sparkles size={14} style={{ color: 'var(--ai)' }} />
-        Email IA
+        <Mail size={14} />
+        Email
       </div>
       {cost ? (
-        <span className="badge badge-neutral" title="Coût estimé de la génération">
-          ~{Number(cost).toFixed(3)}€
+        <span className="badge badge-neutral" title="Coût estimé de la génération IA">
+          IA ~{Number(cost).toFixed(3)}€
         </span>
       ) : null}
     </div>
@@ -66,6 +76,8 @@ export function InvestorEmailPanel({
   const [bodyText, setBodyText] = useState(saved?.body ?? '');
   const [senderAddress, setSenderAddress] = useState(defaultSender || senders[0]?.address || '');
   const [context, setContext] = useState('');
+  // Mode « écrire à la main » : éditeur vierge, sans IA (actif tant qu'aucun email IA n'est sauvegardé).
+  const [manual, setManual] = useState(false);
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
 
   function generate() {
@@ -122,51 +134,8 @@ export function InvestorEmailPanel({
     });
   }
 
-  // --- Aucun email encore généré ---
-  if (!saved) {
-    return (
-      <div className="view-card">
-        <Header cost={null} />
-        <div
-          className="view-card-body"
-          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
-        >
-          <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
-            Donne 1-2 phrases de contexte sur <strong>{firstName}</strong> (ce que tu sais, ce qui
-            s'est dit), et l'IA rédige un email <strong>cordial, sérieux et chaleureux</strong>{' '}
-            autour de ça. Laisse vide pour une proposition standard. L'email est sauvegardé sur la
-            fiche.
-          </p>
-          <div className="form-field">
-            <label className="form-label" htmlFor="ai-context">
-              Contexte (ce que tu veux dire)
-            </label>
-            <textarea
-              id="ai-context"
-              className="textarea"
-              rows={3}
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="Ex : on s'est appelés hier, il hésite entre 2 projets, il veut placer ~20k avant l'été et aimerait un point sur la sécurité des opérations."
-            />
-          </div>
-          <button
-            type="button"
-            className="btn btn-ai"
-            onClick={generate}
-            disabled={pending}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            <Sparkles />
-            {pending ? 'Génération…' : "Générer l'email"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Génération en cours (tourne en fond, même si tu quittes la page) ---
-  if (saved.status === 'generating') {
+  // --- Génération IA en cours ---
+  if (saved?.status === 'generating') {
     return (
       <div className="view-card">
         <Header cost={null} />
@@ -183,8 +152,8 @@ export function InvestorEmailPanel({
     );
   }
 
-  // --- Erreur de génération ---
-  if (saved.status === 'error') {
+  // --- Erreur de génération IA ---
+  if (saved?.status === 'error') {
     return (
       <div className="view-card">
         <Header cost={null} />
@@ -195,26 +164,86 @@ export function InvestorEmailPanel({
           <p style={{ fontSize: 13, color: 'var(--danger)', margin: 0 }}>
             {saved.error ?? 'La génération a échoué.'}
           </p>
-          <button
-            type="button"
-            className="btn btn-ai"
-            onClick={generate}
-            disabled={pending}
-            style={{ alignSelf: 'flex-start' }}
-          >
-            <Sparkles />
-            Réessayer
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-ai" onClick={generate} disabled={pending}>
+              <Sparkles />
+              Réessayer
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setManual(true)}
+              disabled={pending}
+            >
+              <PenLine size={14} />
+              Écrire à la main
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- Email prêt : éditable + envoyer / régénérer / supprimer ---
+  // --- Rien encore, et pas en mode manuel : choix génération IA ou écriture manuelle ---
+  if (!saved && !manual) {
+    return (
+      <div className="view-card">
+        <Header cost={null} />
+        <div
+          className="view-card-body"
+          style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        >
+          <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
+            Donne 1-2 phrases de contexte sur <strong>{firstName}</strong> (ce que tu sais, ce qui
+            s'est dit), et l'IA rédige un email <strong>cordial, sérieux et chaleureux</strong>{' '}
+            autour de ça. Ou écris tout toi-même.
+          </p>
+          <div className="form-field">
+            <label className="form-label" htmlFor="ai-context">
+              Contexte (ce que tu veux dire) — optionnel
+            </label>
+            <textarea
+              id="ai-context"
+              className="textarea"
+              rows={3}
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="Ex : on s'est appelés hier, il hésite entre 2 projets, veut placer ~20k avant l'été et un point sur la sécurité des opérations."
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-ai" onClick={generate} disabled={pending}>
+              <Sparkles />
+              {pending ? 'Génération…' : "Générer avec l'IA"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setManual(true)}
+              disabled={pending}
+            >
+              <PenLine size={14} />
+              Écrire à la main
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Éditeur : email IA prêt (saved) OU rédaction manuelle (manual) ---
+  const isManual = !saved;
   return (
     <div className="view-card">
-      <Header cost={saved.costEur} />
+      <Header cost={saved?.costEur ?? null} />
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {isManual ? (
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+            Rédaction manuelle — écris l'objet, l'aperçu et le message. Le scan AMF et la signature
+            « L'équipe Seven At Home » s'appliquent à l'envoi.
+          </p>
+        ) : null}
+
         <div className="form-field">
           <label className="form-label" htmlFor="ai-subject">
             Objet
@@ -224,6 +253,7 @@ export function InvestorEmailPanel({
             className="input"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
+            placeholder="Ex : Un point sur votre projet"
           />
         </div>
         <div className="form-field">
@@ -248,10 +278,11 @@ export function InvestorEmailPanel({
             value={bodyText}
             rows={10}
             onChange={(e) => setBodyText(e.target.value)}
+            placeholder={isManual ? 'Écris ton message…' : undefined}
           />
         </div>
 
-        {saved.amfWarnings.length > 0 && (
+        {saved && saved.amfWarnings.length > 0 && (
           <div
             style={{
               fontSize: 12,
@@ -277,19 +308,22 @@ export function InvestorEmailPanel({
           </div>
         )}
 
-        <div className="form-field">
-          <label className="form-label" htmlFor="ai-context-regen">
-            Affiner le contexte (puis « Régénérer »)
-          </label>
-          <textarea
-            id="ai-context-regen"
-            className="textarea"
-            rows={2}
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="Ajoute/precise ce que tu veux dire, puis clique Régénérer."
-          />
-        </div>
+        {/* Régénération IA : seulement quand un email IA est sauvegardé */}
+        {saved ? (
+          <div className="form-field">
+            <label className="form-label" htmlFor="ai-context-regen">
+              Affiner le contexte (puis « Régénérer »)
+            </label>
+            <textarea
+              id="ai-context-regen"
+              className="textarea"
+              rows={2}
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="Ajoute/precise ce que tu veux dire, puis clique Régénérer."
+            />
+          </div>
+        ) : null}
 
         {senders.length > 1 && (
           <div className="form-field">
@@ -316,20 +350,40 @@ export function InvestorEmailPanel({
             <Send />
             {pending ? 'Envoi…' : 'Relire et envoyer'}
           </button>
-          <button type="button" className="btn btn-ai" onClick={generate} disabled={pending}>
-            <Sparkles />
-            Régénérer
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={remove}
-            disabled={pending}
-            style={{ color: 'var(--danger)' }}
-          >
-            <Trash2 size={13} />
-            Supprimer
-          </button>
+          {saved ? (
+            <>
+              <button type="button" className="btn btn-ai" onClick={generate} disabled={pending}>
+                <Sparkles />
+                Régénérer
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={remove}
+                disabled={pending}
+                style={{ color: 'var(--danger)' }}
+              >
+                <Trash2 size={13} />
+                Supprimer
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setManual(false);
+                setSubject('');
+                setPreheader('');
+                setBodyText('');
+                setSend({ kind: 'idle' });
+              }}
+              disabled={pending}
+            >
+              <X size={13} />
+              Annuler
+            </button>
+          )}
         </div>
 
         {send.kind === 'sent' && (
