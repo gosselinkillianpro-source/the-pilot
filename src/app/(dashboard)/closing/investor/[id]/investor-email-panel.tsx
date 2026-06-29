@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { sendEmailAction } from '@/app/(dashboard)/email/compose/actions';
 import { useToast } from '@/components/shared/toast';
+import type { EmailSender } from '@/lib/email/config';
 import { deleteInvestorAssetAction, generateProposalAssetAction } from './actions';
 
 type AmfWarning = { match: string; suggestedFix: string };
@@ -47,11 +48,13 @@ export function InvestorEmailPanel({
   firstName,
   email,
   saved,
+  senders,
 }: {
   investorId: string;
   firstName: string;
   email: string;
   saved: SavedEmail | null;
+  senders: EmailSender[];
 }) {
   const router = useRouter();
   const { toast, runWithActivity } = useToast();
@@ -59,6 +62,7 @@ export function InvestorEmailPanel({
   const [subject, setSubject] = useState(saved?.subject ?? '');
   const [preheader, setPreheader] = useState(saved?.preheader ?? '');
   const [bodyText, setBodyText] = useState(saved?.body ?? '');
+  const [senderAddress, setSenderAddress] = useState(senders[0]?.address ?? '');
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
 
   function generate() {
@@ -99,6 +103,7 @@ export function InvestorEmailPanel({
           bodyText,
           emails: [email],
           variant: 'personal',
+          senderAddress: senderAddress || undefined,
         }),
       );
       if (res.ok) {
@@ -252,6 +257,26 @@ export function InvestorEmailPanel({
                 « {w.match} » → {w.suggestedFix}
               </span>
             ))}
+          </div>
+        )}
+
+        {senders.length > 1 && (
+          <div className="form-field">
+            <label className="form-label" htmlFor="ai-sender">
+              Envoyer depuis
+            </label>
+            <select
+              id="ai-sender"
+              className="input"
+              value={senderAddress}
+              onChange={(e) => setSenderAddress(e.target.value)}
+            >
+              {senders.map((s) => (
+                <option key={s.address} value={s.address}>
+                  {s.name} — {s.address}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 

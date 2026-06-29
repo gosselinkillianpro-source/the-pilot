@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { getEmailConfig } from '@/lib/email/config';
+import { getEmailConfig, resolveSender } from '@/lib/email/config';
 import { renderEmailTemplate, renderPersonalEmail } from '@/lib/email/template';
 import {
   addContactsToList,
@@ -29,6 +29,8 @@ const schema = z.object({
   variant: z.enum(['brand', 'personal']).optional(),
   // Texte d'aperçu (préheader) — surtout pour la variante personnelle.
   preheader: z.string().max(200).optional(),
+  // Expéditeur choisi (closer) — validé contre la liste blanche côté serveur.
+  senderAddress: z.string().email().optional(),
 });
 
 export type SendEmailInput = z.infer<typeof schema>;
@@ -67,6 +69,8 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
   }
   const data = parsed.data;
   const config = getEmailConfig();
+  // Expéditeur : choisi par le closer, mais TOUJOURS validé contre la liste blanche.
+  const sender = resolveSender(data.senderAddress);
 
   // 3. Rendu du template final selon la variante (marque vs personnel 1-à-1)
   const renderHtml = (notice?: string) =>
@@ -134,8 +138,8 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
         to: [{ email: config.testAddress }],
         subject: `[TEST] ${data.subject}`,
         htmlContent: testHtml,
-        senderName: config.senderName,
-        senderAddress: config.senderAddress,
+        senderName: sender.name,
+        senderAddress: sender.address,
       });
       sentTo = config.testAddress;
     } else {
@@ -151,8 +155,8 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
         to: realRecipients,
         subject: data.subject,
         htmlContent,
-        senderName: config.senderName,
-        senderAddress: config.senderAddress,
+        senderName: sender.name,
+        senderAddress: sender.address,
       });
       sentTo = description;
     }
@@ -170,6 +174,7 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
         testMode: config.testMode,
         description,
         recipientCount,
+        senderAddress: sender.address,
       },
     });
 

@@ -1,6 +1,6 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { getEmailConfig } from '@/lib/email/config';
+import { getAllowedSenders, getEmailConfig } from '@/lib/email/config';
 import { getBrevoLists } from '@/lib/integrations/brevo/client';
 import { ComposeForm } from './compose-form';
 
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ComposePage() {
   const config = getEmailConfig();
+  const senders = getAllowedSenders();
   let lists: { id: number; name: string; uniqueSubscribers: number }[] = [];
   try {
     lists = (await getBrevoLists()).map((l) => ({
@@ -38,11 +39,19 @@ export default async function ComposePage() {
       <div>
         <h1 className="page-title">Composer un email</h1>
         <div className="page-desc">
-          Scan AMF automatique · expéditeur {config.senderName} &lt;{config.senderAddress}&gt;
+          Scan AMF automatique ·{' '}
+          {senders.length > 1
+            ? `${senders.length} expéditeurs disponibles`
+            : `expéditeur ${config.senderName} <${config.senderAddress}>`}
         </div>
       </div>
 
-      <ComposeForm lists={lists} testMode={config.testMode} testAddress={config.testAddress} />
+      <ComposeForm
+        lists={lists}
+        testMode={config.testMode}
+        testAddress={config.testAddress}
+        senders={senders}
+      />
     </>
   );
 }

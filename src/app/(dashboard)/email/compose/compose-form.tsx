@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle, List as ListIcon, Send, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
+import type { EmailSender } from '@/lib/email/config';
 import { renderEmailTemplate } from '@/lib/email/template';
 import { type SendEmailResult, sendEmailAction } from './actions';
 
@@ -20,12 +21,15 @@ export function ComposeForm({
   lists,
   testMode,
   testAddress,
+  senders,
 }: {
   lists: BrevoListLite[];
   testMode: boolean;
   testAddress: string;
+  senders: EmailSender[];
 }) {
   const [mode, setMode] = useState<Mode>('people');
+  const [senderAddress, setSenderAddress] = useState(senders[0]?.address ?? '');
   const [subject, setSubject] = useState('');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -78,6 +82,7 @@ export function ComposeForm({
         listName: mode === 'list' ? selectedList?.name : undefined,
         groupName: mode === 'group' ? groupName : undefined,
         groupEmails: mode === 'group' ? groupEmails : undefined,
+        senderAddress: senderAddress || undefined,
       });
       setResult(res);
     } catch (e) {
@@ -213,6 +218,26 @@ export function ComposeForm({
                     />
                   </div>
                 </>
+              )}
+
+              {senders.length > 1 && (
+                <div className="form-field">
+                  <label className="form-label" htmlFor="sender">
+                    Envoyer depuis
+                  </label>
+                  <select
+                    id="sender"
+                    className="select"
+                    value={senderAddress}
+                    onChange={(e) => setSenderAddress(e.target.value)}
+                  >
+                    {senders.map((s) => (
+                      <option key={s.address} value={s.address}>
+                        {s.name} — {s.address}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
           </div>

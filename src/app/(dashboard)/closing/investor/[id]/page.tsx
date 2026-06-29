@@ -15,6 +15,7 @@ import {
   getInvestorSubscriptions,
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
+import { getAllowedSenders } from '@/lib/email/config';
 import { getInvestorStage } from '@/lib/investor-stage';
 import { ActionRowButtons, PlanActionPanel } from './actions-panel';
 import { AssignCloser } from './assign-closer';
@@ -518,6 +519,7 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             firstName={firstName}
             email={investor.email}
             saved={savedEmail}
+            senders={getAllowedSenders()}
           />
 
           {/* Souscriptions */}
