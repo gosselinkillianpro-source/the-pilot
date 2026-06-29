@@ -62,3 +62,25 @@ export function resolveSender(address?: string | null): EmailSender {
   }
   return allowed[0] ?? { name: 'SevenAtHome', address: 'newsletter@sevenathome.com' };
 }
+
+/**
+ * Calage automatique : trouve l'expéditeur qui correspond à l'utilisateur (closer),
+ * par rapprochement nom/email. Ex. compte `yannick@breach.com` → expéditeur
+ * « Yannick … <yannick@sevenathome.com> ». Aucun match → premier expéditeur (défaut).
+ * `identity` = email (et/ou nom) de l'utilisateur connecté.
+ */
+export function pickSenderForUser(
+  senders: EmailSender[],
+  identity: string | null | undefined,
+): EmailSender | null {
+  if (senders.length === 0) return null;
+  const id = (identity ?? '').toLowerCase();
+  const local = id.split('@')[0] ?? id;
+  // Mots distinctifs de l'utilisateur (prénom/nom), ≥4 lettres pour éviter les faux positifs.
+  const tokens = `${local} ${id}`.split(/[^a-z0-9]+/).filter((t) => t.length >= 4);
+  for (const s of senders) {
+    const target = `${s.name} ${s.address}`.toLowerCase();
+    if (tokens.some((t) => target.includes(t))) return s;
+  }
+  return senders[0] ?? null;
+}

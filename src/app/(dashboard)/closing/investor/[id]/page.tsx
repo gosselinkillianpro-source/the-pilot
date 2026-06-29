@@ -1,6 +1,7 @@
 import { ArrowLeft, CalendarPlus, Mail, MapPin, Phone } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { getInvestorScored } from '@/lib/db/queries/call-queue';
 import {
   getCallImpact,
@@ -15,7 +16,8 @@ import {
   getInvestorSubscriptions,
   type InvestorSubscription,
 } from '@/lib/db/queries/investors';
-import { getAllowedSenders } from '@/lib/email/config';
+import { pickSenderForUser } from '@/lib/email/config';
+import { listSenders } from '@/lib/email/senders';
 import { getInvestorStage } from '@/lib/investor-stage';
 import { ActionRowButtons, PlanActionPanel } from './actions-panel';
 import { AssignCloser } from './assign-closer';
@@ -153,17 +155,32 @@ export default async function InvestorPage({ params, searchParams }: Props) {
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 
-  const [subs, scored, timeline, closers, openTasks, callImpact, emailAsset, scriptAsset] =
-    await Promise.all([
-      getInvestorSubscriptions(investor.id),
-      getInvestorScored(investor.id),
-      getInvestorTimeline(investor.id),
-      getClosers(),
-      getInvestorOpenTasks(investor.id),
-      getCallImpact(investor.id),
-      getLatestAsset(investor.id, 'email_proposal'),
-      getLatestAsset(investor.id, 'call_script'),
-    ]);
+  const [
+    subs,
+    scored,
+    timeline,
+    closers,
+    openTasks,
+    callImpact,
+    emailAsset,
+    scriptAsset,
+    user,
+    senders,
+  ] = await Promise.all([
+    getInvestorSubscriptions(investor.id),
+    getInvestorScored(investor.id),
+    getInvestorTimeline(investor.id),
+    getClosers(),
+    getInvestorOpenTasks(investor.id),
+    getCallImpact(investor.id),
+    getLatestAsset(investor.id, 'email_proposal'),
+    getLatestAsset(investor.id, 'call_script'),
+    getAuthenticatedUser(),
+    listSenders(),
+  ]);
+  // Calage auto : l'expéditeur du closer connecté est pré-sélectionné.
+  const defaultSender =
+    pickSenderForUser(senders, user.email)?.address ?? senders[0]?.address ?? '';
   const firstName = investor.firstName ?? investor.fullName?.split(' ')[0] ?? 'Investisseur';
   const civ = civilityLabel(investor.civility);
   const displayName = [civ, investor.fullName].filter(Boolean).join(' ') || investor.email;
@@ -519,7 +536,8 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             firstName={firstName}
             email={investor.email}
             saved={savedEmail}
-            senders={getAllowedSenders()}
+            senders={senders}
+            defaultSender={defaultSender}
           />
 
           {/* Souscriptions */}

@@ -66,6 +66,19 @@ export async function sendTransactionalEmail(
   });
 }
 
+/** Expéditeurs validés dans Brevo (Senders & IP). Source de vérité pour le « Envoyer depuis ». */
+export async function getBrevoSenders(): Promise<{ name: string; email: string }[]> {
+  const data = await brevoGet<{
+    senders?: { name?: string; email?: string; active?: boolean }[];
+  }>('/senders');
+  return (data.senders ?? [])
+    .filter((s) => s.email && s.active !== false)
+    .map((s) => ({
+      name: (s.name || (s.email as string)).trim(),
+      email: (s.email as string).toLowerCase(),
+    }));
+}
+
 async function getOrCreateFolderId(): Promise<number> {
   const data = await brevoGet<{ folders?: { id: number; name: string }[] }>(
     '/contacts/folders?limit=10',

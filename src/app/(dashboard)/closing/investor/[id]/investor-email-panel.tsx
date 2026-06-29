@@ -49,12 +49,14 @@ export function InvestorEmailPanel({
   email,
   saved,
   senders,
+  defaultSender,
 }: {
   investorId: string;
   firstName: string;
   email: string;
   saved: SavedEmail | null;
   senders: EmailSender[];
+  defaultSender?: string;
 }) {
   const router = useRouter();
   const { toast, runWithActivity } = useToast();
@@ -62,7 +64,7 @@ export function InvestorEmailPanel({
   const [subject, setSubject] = useState(saved?.subject ?? '');
   const [preheader, setPreheader] = useState(saved?.preheader ?? '');
   const [bodyText, setBodyText] = useState(saved?.body ?? '');
-  const [senderAddress, setSenderAddress] = useState(senders[0]?.address ?? '');
+  const [senderAddress, setSenderAddress] = useState(defaultSender || senders[0]?.address || '');
   const [send, setSend] = useState<SendState>({ kind: 'idle' });
 
   function generate() {

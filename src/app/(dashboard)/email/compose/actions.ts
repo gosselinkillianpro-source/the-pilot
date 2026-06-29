@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { getEmailConfig, resolveSender } from '@/lib/email/config';
+import { getEmailConfig, pickSenderForUser } from '@/lib/email/config';
+import { listSenders } from '@/lib/email/senders';
 import { renderEmailTemplate, renderPersonalEmail } from '@/lib/email/template';
 import {
   addContactsToList,
@@ -69,8 +70,17 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
   }
   const data = parsed.data;
   const config = getEmailConfig();
-  // Expéditeur : choisi par le closer, mais TOUJOURS validé contre la liste blanche.
-  const sender = resolveSender(data.senderAddress);
+  // Expéditeur : adresse choisie validée contre les expéditeurs Brevo (anti-usurpation) ;
+  // sinon calage automatique sur l'expéditeur du closer (match nom/email), sinon défaut.
+  const senders = await listSenders();
+  const chosen = data.senderAddress
+    ? senders.find((s) => s.address === data.senderAddress?.toLowerCase())
+    : undefined;
+  const sender = chosen ??
+    pickSenderForUser(senders, actorEmail) ?? {
+      name: config.senderName,
+      address: config.senderAddress,
+    };
 
   // 3. Rendu du template final selon la variante (marque vs personnel 1-à-1)
   const renderHtml = (notice?: string) =>

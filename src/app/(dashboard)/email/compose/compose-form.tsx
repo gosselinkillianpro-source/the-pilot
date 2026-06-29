@@ -22,14 +22,16 @@ export function ComposeForm({
   testMode,
   testAddress,
   senders,
+  defaultSender,
 }: {
   lists: BrevoListLite[];
   testMode: boolean;
   testAddress: string;
   senders: EmailSender[];
+  defaultSender?: string;
 }) {
   const [mode, setMode] = useState<Mode>('people');
-  const [senderAddress, setSenderAddress] = useState(senders[0]?.address ?? '');
+  const [senderAddress, setSenderAddress] = useState(defaultSender || senders[0]?.address || '');
   const [subject, setSubject] = useState('');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');

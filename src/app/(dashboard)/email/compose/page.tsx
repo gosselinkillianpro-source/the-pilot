@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { getAllowedSenders, getEmailConfig } from '@/lib/email/config';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { getEmailConfig, pickSenderForUser } from '@/lib/email/config';
+import { listSenders } from '@/lib/email/senders';
 import { getBrevoLists } from '@/lib/integrations/brevo/client';
 import { ComposeForm } from './compose-form';
 
@@ -8,7 +10,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function ComposePage() {
   const config = getEmailConfig();
-  const senders = getAllowedSenders();
+  const [user, senders] = await Promise.all([getAuthenticatedUser(), listSenders()]);
+  // Calage auto : expéditeur du closer pré-sélectionné (Yannick→Yannick, Cédric→Cédric).
+  const defaultSender =
+    pickSenderForUser(senders, user.email)?.address ?? senders[0]?.address ?? '';
   let lists: { id: number; name: string; uniqueSubscribers: number }[] = [];
   try {
     lists = (await getBrevoLists()).map((l) => ({
@@ -51,6 +56,7 @@ export default async function ComposePage() {
         testMode={config.testMode}
         testAddress={config.testAddress}
         senders={senders}
+        defaultSender={defaultSender}
       />
     </>
   );
