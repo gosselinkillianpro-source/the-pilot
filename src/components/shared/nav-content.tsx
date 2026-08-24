@@ -6,7 +6,6 @@ import {
   LayoutGrid,
   Mail,
   Radio,
-  Share2,
   Sparkles,
   Target,
   TrendingUp,
@@ -52,10 +51,6 @@ export function NavContent({ role }: { role: string }) {
         <SidebarLink href="/email">
           <Mail />
           Email
-        </SidebarLink>
-        <SidebarLink href="/social">
-          <Share2 />
-          Social
         </SidebarLink>
         <SidebarLink href="/ads">
           <TrendingUp />

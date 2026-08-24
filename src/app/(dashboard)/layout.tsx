@@ -49,7 +49,7 @@ function formatAgo(d: Date | null): string | null {
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const user = await getAuthenticatedUser();
   // BARRIÈRE D'ISOLATION : un compte "admin affilié" n'a JAMAIS accès aux pages staff
-  // (closing, ads, mail, social, perf, équipe…). Ce layout est le point de passage
+  // (closing, ads, mail, perf, équipe…). Ce layout est le point de passage
   // unique de toutes ces pages → on le renvoie systématiquement vers son espace dédié.
   if (user.role === 'admin_affiliate') {
     redirect('/reseau');
