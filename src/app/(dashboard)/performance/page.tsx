@@ -1,11 +1,11 @@
-import { Link as LinkIcon, Phone, TrendingUp } from 'lucide-react';
-import Link from 'next/link';
+import { Phone, TrendingUp } from 'lucide-react';
 import { PeriodFilter } from '@/components/shared/period-filter';
 import { StatCard } from '@/components/shared/stat-card';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getBreachStats, getCloserPerformance } from '@/lib/db/queries/closing';
 import { getInvestorStats } from '@/lib/db/queries/investors';
 import { resolvePeriod } from '@/lib/period';
+import { CloserBreakdown } from './closer-breakdown';
 import { PilotePanel } from './pilote-panel';
 
 export const dynamic = 'force-dynamic';
@@ -155,19 +155,7 @@ export default async function PerformancePage({
         <Kpi label="Onboardés (KYC)" value={nb(stats.onboarded)} />
       </div>
 
-      <Link
-        href="/closing/performance"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: 13,
-          color: 'var(--brand)',
-        }}
-      >
-        <LinkIcon size={14} />
-        Détail par closer (page Performance closers)
-      </Link>
+      <CloserBreakdown closers={report.closers} />
     </>
   );
 }

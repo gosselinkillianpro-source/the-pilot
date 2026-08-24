@@ -306,7 +306,7 @@ export default async function DashboardPage({
               hint={`${stats.breachLeads} leads`}
             />
             <QuickLink
-              href="/closing/performance"
+              href="/performance"
               icon={<TrendingUp size={15} />}
               label="Performance closers"
             />

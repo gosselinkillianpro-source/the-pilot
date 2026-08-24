@@ -1,10 +1,8 @@
 'use client';
 
 import {
-  BarChart3,
   Briefcase,
   CalendarClock,
-  Layers,
   ListChecks,
   PhoneOutgoing,
   Receipt,
@@ -22,9 +20,7 @@ const TABS: { href: string; label: string; icon: ReactNode }[] = [
   { href: '/closing/suivi', label: 'Suivi', icon: <PhoneOutgoing size={15} /> },
   { href: '/closing/portefeuille', label: 'Portefeuille', icon: <Briefcase size={15} /> },
   { href: '/closing/souscriptions', label: 'Souscriptions', icon: <Receipt size={15} /> },
-  { href: '/closing/board', label: 'Tunnel', icon: <Layers size={15} /> },
   { href: '/closing/pipeline', label: 'Investisseurs', icon: <Users size={15} /> },
-  { href: '/closing/performance', label: 'Performance', icon: <BarChart3 size={15} /> },
 ];
 
 export function ClosingNav() {
