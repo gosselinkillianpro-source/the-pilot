@@ -165,7 +165,13 @@ export default async function RdvPage({
 
   // Assignation auto : les leads issus d'un RDV reviennent au closer de l'agenda.
   let assign: RdvAssignResult | null = null;
-  if (board.state === 'ok') {
+  if (board.state === 'ok' && access.state === 'connected') {
+    // Propriétaire explicite : le compte dont on lit l'agenda. Plus aucune
+    // devinette sur le nom — c'est ce qui avait fait réassigner 25 fiches à
+    // l'admin au lieu du closer concerné.
+    assign = await autoAssignRdvLeads(board.board, user, access.target.userId);
+  } else if (board.state === 'ok') {
+    // Ancien token global, le temps que chacun relie son compte.
     assign = await autoAssignRdvLeads(board.board, user);
   }
 
@@ -220,8 +226,8 @@ export default async function RdvPage({
           <div className="view-card-body" style={{ fontSize: 13 }}>
             <strong>Compte introuvable dans THE PILOT.</strong>
             <div style={{ color: 'var(--text-3)', marginTop: 4 }}>
-              Impossible de savoir de quel agenda il s'agit. En développement local,
-              c'est attendu : l'utilisateur de contournement n'a pas de fiche en base.
+              Impossible de savoir de quel agenda il s'agit. En développement local, c'est attendu :
+              l'utilisateur de contournement n'a pas de fiche en base.
             </div>
           </div>
         </div>

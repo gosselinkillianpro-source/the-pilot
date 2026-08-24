@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -430,46 +430,61 @@ export interface RdvAssignResult {
 }
 
 /**
- * Retrouve l'utilisateur PILOT propriétaire du Calendly (Guillaume) :
- * 1) par l'email du compte Calendly (le plus fiable), 2) à défaut par le nom.
+ * Le propriétaire de l'agenda, c'est-à-dire le closer à qui reviennent les leads
+ * de ses propres rendez-vous.
+ *
+ * ⚠️ Il y avait ici un repli « chercher un utilisateur dont le nom contient
+ * gosselin ». Guillaume n'ayant jamais eu de compte, ce repli tombait sur
+ * « Gosselinkillian Pro » : 25 fiches ont été réassignées à l'admin entre juin
+ * et août 2026, en silence, en écrasant parfois un autre closer. Repli supprimé.
+ *
+ * On ne rapproche plus que par e-mail exact du compte Calendly. Pas de
+ * correspondance : personne n'est propriétaire, on ne réassigne rien.
  */
 async function findOwnerUser(
   calendlyEmail: string,
-  _calendlyName: string,
 ): Promise<{ id: string; name: string | null } | null> {
-  if (calendlyEmail) {
-    const byEmail = await db
-      .select({ id: users.id, fullName: users.fullName })
-      .from(users)
-      .where(
-        and(eq(sql`lower(${users.email})`, calendlyEmail.toLowerCase()), eq(users.active, true)),
-      )
-      .limit(1);
-    if (byEmail[0]) return { id: byEmail[0].id, name: byEmail[0].fullName };
-  }
-  const byName = await db
+  if (!calendlyEmail) return null;
+  const byEmail = await db
     .select({ id: users.id, fullName: users.fullName })
     .from(users)
-    .where(and(ilike(users.fullName, '%gosselin%'), eq(users.active, true)))
+    .where(and(eq(sql`lower(${users.email})`, calendlyEmail.toLowerCase()), eq(users.active, true)))
     .limit(1);
-  if (byName[0]) return { id: byName[0].id, name: byName[0].fullName };
-  return null;
+  return byEmail[0] ? { id: byEmail[0].id, name: byEmail[0].fullName } : null;
+}
+
+/** Propriétaire explicite : l'utilisateur dont on lit la connexion Calendly. */
+async function findOwnerById(userId: string): Promise<{ id: string; name: string | null } | null> {
+  const rows = await db
+    .select({ id: users.id, fullName: users.fullName })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.active, true)))
+    .limit(1);
+  return rows[0] ? { id: rows[0].id, name: rows[0].fullName } : null;
 }
 
 /**
- * Assigne automatiquement à Guillaume TOUS les leads (présents en base) issus d'un
- * RDV Calendly. Force la propriété : même un lead déjà assigné à un autre closer
- * bascule vers Guillaume (décision produit — c'est lui qui tient les RDV Funnel B).
+ * Assigne au propriétaire de l'agenda TOUS les leads (présents en base) issus de
+ * ses RDV Calendly. Force la propriété : même un lead déjà assigné à un autre
+ * closer bascule vers lui — c'est lui qui a tenu le rendez-vous.
  *
- * Idempotent : ne touche que les fiches dont le closer diffère déjà de Guillaume,
+ * Idempotent : ne touche que les fiches dont le closer diffère déjà du propriétaire,
  * donc en régime établi l'UPDATE ne modifie 0 ligne. Audit loggé uniquement quand
  * au moins une fiche change. Best-effort : n'interrompt jamais l'affichage.
  */
 export async function autoAssignRdvLeads(
   board: RdvBoard,
   viewer: AuthenticatedUser,
+  /**
+   * Compte THE PILOT dont on lit l'agenda. Fourni dès que le closer a relié son
+   * Calendly en OAuth : c'est la source de vérité, sans aucune devinette. Le
+   * rapprochement par e-mail ne sert plus que pour l'ancien token global.
+   */
+  ownerUserId?: string,
 ): Promise<RdvAssignResult> {
-  const owner = await findOwnerUser(board.user.email, board.user.name);
+  const owner = ownerUserId
+    ? await findOwnerById(ownerUserId)
+    : await findOwnerUser(board.user.email);
   if (!owner) return { ownerFound: false, ownerName: null, assigned: 0 };
 
   const ids = [
