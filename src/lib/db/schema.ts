@@ -302,9 +302,13 @@ export const subscriptions = pgTable('subscriptions', {
    ============================================================ */
 export const interactions = pgTable('interactions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  investorId: uuid('investor_id')
-    .notNull()
-    .references(() => investors.id),
+  /**
+   * Nullable depuis l'ouverture des RDV aux prospects : quelqu'un peut prendre
+   * rendez-vous sans avoir de compte SAH. Exactement UN de `investorId` /
+   * `rdvContactId` est renseigné (contrainte en base).
+   */
+  investorId: uuid('investor_id').references(() => investors.id),
+  rdvContactId: uuid('rdv_contact_id'),
   type: interactionTypeEnum('type').notNull(),
   outcome: callOutcomeEnum('outcome'), // résultat d'appel (null pour les autres types)
   note: text('note'), // notes libres du closer (résumé d'appel)
@@ -320,9 +324,9 @@ export const interactions = pgTable('interactions', {
    ============================================================ */
 export const closerTasks = pgTable('closer_tasks', {
   id: uuid('id').primaryKey().defaultRandom(),
-  investorId: uuid('investor_id')
-    .notNull()
-    .references(() => investors.id),
+  /** Nullable : une action peut porter sur un prospect RDV pas encore dans SAH. */
+  investorId: uuid('investor_id').references(() => investors.id),
+  rdvContactId: uuid('rdv_contact_id'),
   closerId: uuid('closer_id').references(() => users.id), // à qui c'est assigné
   type: text('type').notNull().default('callback'), // callback | todo
   dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
@@ -410,4 +414,59 @@ export const emailEvents = pgTable('email_events', {
   occurredAt: timestamp('occurred_at', { withTimezone: true }),
   payload: jsonb('payload'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ============================================================
+   CALENDLY — connexion OAuth par utilisateur
+   Chaque closer relie SON agenda. Plus de token global : la page
+   /rdv est celle du compte connecté (l'admin peut voir les autres).
+   ============================================================ */
+export const calendlyConnections = pgTable('calendly_connections', {
+  // Un compte = un Calendly. Reconnecter écrase la connexion existante.
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // Identité Calendly, pour afficher « connecté en tant que » sans appel API.
+  calendlyUserUri: text('calendly_user_uri').notNull(),
+  calendlyOrgUri: text('calendly_org_uri').notNull(),
+  calendlyEmail: text('calendly_email').notNull(),
+  calendlyName: text('calendly_name'),
+  // ⚠️ Chiffrés côté application (lib/crypto/secret-box) — jamais en clair.
+  accessTokenEnc: text('access_token_enc').notNull(),
+  refreshTokenEnc: text('refresh_token_enc').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  scope: text('scope'),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  // Déconnexion : on garde la ligne pour l'audit, on cesse de l'utiliser.
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+});
+
+/* ============================================================
+   CONTACTS RDV — les gens qui prennent rendez-vous
+   Un invité Calendly n'a pas forcément de compte SAH. Cette table
+   lui donne une fiche (notes, actions) en attendant, et porte le
+   LIEN MANUEL vers l'investisseur quand les e-mails diffèrent.
+   ============================================================ */
+export const rdvContacts = pgTable('rdv_contacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // Le closer propriétaire du RDV (celui dont c'est l'agenda).
+  ownerUserId: uuid('owner_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // E-mail utilisé sur Calendly — la clé de rapprochement automatique.
+  calendlyEmail: text('calendly_email').notNull(),
+  fullName: text('full_name'),
+  phone: text('phone'),
+  notes: text('notes'),
+  /**
+   * Lien vers la fiche SAH. Rempli automatiquement si l'e-mail Calendly
+   * correspond, ou À LA MAIN par le closer quand la personne s'est inscrite
+   * avec une autre adresse. `linkedBy` trace qui a fait le rapprochement.
+   */
+  investorId: uuid('investor_id').references(() => investors.id, { onDelete: 'set null' }),
+  linkedBy: uuid('linked_by').references(() => users.id),
+  linkedAt: timestamp('linked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

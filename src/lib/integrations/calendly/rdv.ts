@@ -297,6 +297,9 @@ async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>
 
   // interactions triées du + récent au + ancien → 1ère vue par investisseur = dernière action.
   for (const row of ix) {
+    // investor_id est nullable (interactions sur un prospect RDV hors SAH) :
+    // seules celles rattachées à une fiche investisseur nous intéressent ici.
+    if (!row.investorId) continue;
     const entry = map.get(row.investorId);
     if (!entry) continue;
     if (!entry.derniereAction) {
@@ -313,6 +316,7 @@ async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>
 
   // tasks triées par échéance croissante → 1ère vue = prochain rappel.
   for (const t of tasks) {
+    if (!t.investorId) continue;
     const entry = map.get(t.investorId);
     if (entry && !entry.prochainRappel) {
       entry.prochainRappel = { dueAt: new Date(t.dueAt), note: t.note };
