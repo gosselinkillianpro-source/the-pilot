@@ -82,9 +82,9 @@ function str(v: unknown): string {
 async function listEvents(
   userUri: string,
   opts: { minStart?: string; maxStart?: string; count: number; sort: string },
+  accessToken: string,
 ): Promise<RawEvent[]> {
-  const token = process.env.CALENDLY_TOKEN;
-  if (!token) throw new CalendlyError('CALENDLY_TOKEN non configuré');
+  const token = accessToken;
   const params = new URLSearchParams({
     user: userUri,
     count: String(opts.count),
@@ -332,15 +332,17 @@ const UPCOMING_CAP = 15;
 const PAST_CAP = 25;
 const PAST_WINDOW_DAYS = 45;
 
-export async function getRdvBoard(): Promise<RdvBoardResult> {
-  if (!isCalendlyConfigured()) return { state: 'not_configured' };
+export async function getRdvBoard(accessToken?: string): Promise<RdvBoardResult> {
+  // Sans jeton fourni ET sans token global de transition : rien à afficher.
+  if (!accessToken && !isCalendlyConfigured()) return { state: 'not_configured' };
 
   let user: CalendlyUser;
   try {
-    user = await getCurrentUser();
+    user = await getCurrentUser(accessToken);
   } catch (e) {
     return { state: 'error', message: errMsg(e) };
   }
+  const bearer = accessToken ?? process.env.CALENDLY_TOKEN ?? '';
 
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
@@ -350,13 +352,16 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
   let past: RawEvent[] = [];
   try {
     [upcoming, past] = await Promise.all([
-      listEvents(user.uri, { minStart: nowIso, count: UPCOMING_CAP, sort: 'start_time:asc' }),
-      listEvents(user.uri, {
-        minStart: pastFromIso,
-        maxStart: nowIso,
-        count: PAST_CAP,
-        sort: 'start_time:desc',
-      }),
+      listEvents(
+        user.uri,
+        { minStart: nowIso, count: UPCOMING_CAP, sort: 'start_time:asc' },
+        bearer,
+      ),
+      listEvents(
+        user.uri,
+        { minStart: pastFromIso, maxStart: nowIso, count: PAST_CAP, sort: 'start_time:desc' },
+        bearer,
+      ),
     ]);
   } catch (e) {
     return { state: 'error', message: errMsg(e) };
@@ -368,7 +373,7 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
   const invitees = await Promise.all(
     events.map(async (ev) => {
       try {
-        const list = await getEventInvitees(ev.uri);
+        const list = await getEventInvitees(ev.uri, bearer);
         return list[0] ?? null;
       } catch {
         return null;

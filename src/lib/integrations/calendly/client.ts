@@ -53,17 +53,28 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
-function token(): string {
-  const t = process.env.CALENDLY_TOKEN;
-  if (!t) throw new CalendlyError('CALENDLY_TOKEN non configuré', undefined);
+/**
+ * Jeton à utiliser pour un appel.
+ *
+ * Depuis le passage à OAuth, l'appelant fournit le jeton du closer dont on lit
+ * l'agenda. Le repli sur `CALENDLY_TOKEN` est TRANSITOIRE : il maintient la page
+ * de Guillaume pendant que chacun relie son compte. À supprimer une fois tous
+ * les closers connectés (et la variable retirée de Render).
+ */
+function token(accessToken?: string): string {
+  const t = accessToken ?? process.env.CALENDLY_TOKEN;
+  if (!t) throw new CalendlyError('Aucun compte Calendly relié', undefined);
   return t;
 }
 
-async function call(path: string): Promise<unknown> {
+async function call(path: string, accessToken?: string): Promise<unknown> {
   let res: Response;
   try {
     res = await fetch(`${CALENDLY_API}${path}`, {
-      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token(accessToken)}`,
+        'Content-Type': 'application/json',
+      },
       cache: 'no-store',
     });
   } catch (e) {
@@ -89,9 +100,9 @@ async function call(path: string): Promise<unknown> {
   return res.json();
 }
 
-/** Identité du compte rattaché au token (ici : Guillaume). */
-export async function getCurrentUser(): Promise<CalendlyUser> {
-  const data = await call('/users/me');
+/** Identité du compte Calendly rattaché au jeton fourni. */
+export async function getCurrentUser(accessToken?: string): Promise<CalendlyUser> {
+  const data = await call('/users/me', accessToken);
   const r = isRecord(data) && isRecord(data.resource) ? data.resource : {};
   return {
     uri: str(r.uri),
@@ -103,7 +114,11 @@ export async function getCurrentUser(): Promise<CalendlyUser> {
 }
 
 /** RDV à venir du user, triés par date de début croissante. */
-export async function getUpcomingEvents(userUri: string, count = 20): Promise<CalendlyEvent[]> {
+export async function getUpcomingEvents(
+  userUri: string,
+  count = 20,
+  accessToken?: string,
+): Promise<CalendlyEvent[]> {
   const minStart = new Date().toISOString();
   const params = new URLSearchParams({
     user: userUri,
@@ -112,7 +127,7 @@ export async function getUpcomingEvents(userUri: string, count = 20): Promise<Ca
     sort: 'start_time:asc',
     count: String(count),
   });
-  const data = await call(`/scheduled_events?${params.toString()}`);
+  const data = await call(`/scheduled_events?${params.toString()}`, accessToken);
   const collection = isRecord(data) && Array.isArray(data.collection) ? data.collection : [];
   return collection.filter(isRecord).map((e) => ({
     uri: str(e.uri),
@@ -124,11 +139,14 @@ export async function getUpcomingEvents(userUri: string, count = 20): Promise<Ca
 }
 
 /** Invités d'un RDV (prospect : nom + email). */
-export async function getEventInvitees(eventUri: string): Promise<CalendlyInvitee[]> {
+export async function getEventInvitees(
+  eventUri: string,
+  accessToken?: string,
+): Promise<CalendlyInvitee[]> {
   // eventUri = https://api.calendly.com/scheduled_events/{uuid}
   const uuid = eventUri.split('/').pop() ?? '';
   if (!uuid) return [];
-  const data = await call(`/scheduled_events/${uuid}/invitees?count=10`);
+  const data = await call(`/scheduled_events/${uuid}/invitees?count=10`, accessToken);
   const collection = isRecord(data) && Array.isArray(data.collection) ? data.collection : [];
   return collection.filter(isRecord).map((i) => ({
     name: str(i.name),
