@@ -5,7 +5,6 @@ import {
   CalendarX2,
   CheckCircle2,
   Clock,
-  PlugZap,
   RotateCcw,
   TrendingUp,
   XCircle,
@@ -19,6 +18,8 @@ import {
   type RdvReel,
   type RdvStatut,
 } from '@/lib/integrations/calendly/rdv';
+import { listRdvCloser, resolveRdvAccess } from '@/lib/rdv/access';
+import { BrokenConnection, CloserSwitcher, ConnectPrompt } from './connection-panel';
 import { SuiviTable } from './rdv-suivi';
 
 export const dynamic = 'force-dynamic';
@@ -142,40 +143,94 @@ function computeReminders(rdvs: RdvReel[]): Reminder[] {
   });
 }
 
-export default async function RdvGuillaumePage() {
+export default async function RdvPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ closer?: string; calendly?: string; erreur?: string; detail?: string }>;
+}) {
+  const params = await searchParams;
   const user = await getAuthenticatedUser();
-  const board = await getRdvBoard();
 
-  // Assignation auto : tout lead issu d'un RDV Calendly est rattaché à Guillaume.
+  // De quel agenda parle-t-on ? Le sien par défaut ; celui d'un autre seulement
+  // si l'admin le demande explicitement (le contrôle est fait dans resolveRdvAccess).
+  const access = await resolveRdvAccess(user, params.closer);
+  const closers = await listRdvCloser(user);
+
+  const board =
+    access.state === 'connected'
+      ? await getRdvBoard(access.accessToken)
+      : access.state === 'not_connected' || access.state === 'connection_broken'
+        ? ({ state: 'not_configured' } as const)
+        : ({ state: 'not_configured' } as const);
+
+  // Assignation auto : les leads issus d'un RDV reviennent au closer de l'agenda.
   let assign: RdvAssignResult | null = null;
   if (board.state === 'ok') {
     assign = await autoAssignRdvLeads(board.board, user);
   }
 
+  const targetName =
+    access.state === 'no_target' ? '—' : (access.target.name ?? access.target.email);
+  const isOtherUser = access.state !== 'no_target' && access.target.isOtherUser;
+
   return (
     <>
       {/* En-tête */}
       <div style={{ marginBottom: 16 }}>
-        <h1 className="page-title">RDV Guillaume</h1>
+        <h1 className="page-title">{isOtherUser ? `RDV — ${targetName}` : 'Mes rendez-vous'}</h1>
         <div className="page-desc">
-          Agenda Calendly de Guillaume, suivi des RDV investisseurs (Funnel B) et leads issus des
-          rendez-vous.
+          {isOtherUser
+            ? `Agenda Calendly de ${targetName}, consulté en tant qu'administrateur.`
+            : 'Ton agenda Calendly, le suivi de chaque contact et les leads issus des rendez-vous.'}
         </div>
       </div>
 
-      {board.state === 'not_configured' ? (
-        <Panel
-          tone="warning"
-          icon={<PlugZap size={18} />}
-          title="Calendly non connecté"
-          body={
-            <>
-              Aucune clé d'accès détectée. Ajoute la variable <code>CALENDLY_TOKEN</code> dans
-              Render (Environment), puis recharge cette page.
-            </>
-          }
-        />
-      ) : null}
+      {closers.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <CloserSwitcher
+            closers={closers}
+            activeUserId={access.state === 'no_target' ? user.id : access.target.userId}
+          />
+        </div>
+      )}
+
+      {params.calendly === 'connecte' && (
+        <div className="view-card" style={{ borderColor: 'var(--success)' }}>
+          <div className="view-card-body" style={{ fontSize: 13 }}>
+            ✅ Calendly connecté. Tes rendez-vous vont apparaître ci-dessous.
+          </div>
+        </div>
+      )}
+
+      {params.erreur && (
+        <div className="view-card" style={{ borderColor: 'var(--danger)' }}>
+          <div className="view-card-body" style={{ fontSize: 13 }}>
+            <strong>La connexion Calendly a échoué</strong> ({params.erreur})
+            {params.detail ? (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-3)' }}>
+                {params.detail}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {access.state === 'no_target' && (
+        <div className="view-card" style={{ borderColor: 'var(--warning)' }}>
+          <div className="view-card-body" style={{ fontSize: 13 }}>
+            <strong>Compte introuvable dans THE PILOT.</strong>
+            <div style={{ color: 'var(--text-3)', marginTop: 4 }}>
+              Impossible de savoir de quel agenda il s'agit. En développement local,
+              c'est attendu : l'utilisateur de contournement n'a pas de fiche en base.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {access.state === 'not_connected' && (
+        <ConnectPrompt targetName={targetName} isOtherUser={isOtherUser} />
+      )}
+      {access.state === 'connection_broken' && <BrokenConnection message={access.message} />}
 
       {board.state === 'error' ? (
         <Panel

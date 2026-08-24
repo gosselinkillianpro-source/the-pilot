@@ -30,7 +30,7 @@ export function NavContent({ role }: { role: string }) {
       </SidebarLink>
       <SidebarLink href="/rdv">
         <CalendarClock />
-        RDV Guillaume
+        Rendez-vous
       </SidebarLink>
       {role === 'admin' && (
         <SidebarLink href="/equipe">
