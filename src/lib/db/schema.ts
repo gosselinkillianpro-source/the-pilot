@@ -105,23 +105,6 @@ export const interactionTypeEnum = pgEnum('interaction_type', [
   'note_added',
 ]);
 
-export const emailFlowStatusEnum = pgEnum('email_flow_status', [
-  'draft',
-  'active',
-  'paused',
-  'archived',
-]);
-
-export const emailFlowRunStatusEnum = pgEnum('email_flow_run_status', [
-  'triggered',
-  'conditions_failed',
-  'pending_validation',
-  'validated',
-  'sent',
-  'bounced',
-  'converted',
-]);
-
 export const llmStatusEnum = pgEnum('llm_status', ['success', 'error', 'timeout']);
 
 export const callOutcomeEnum = pgEnum('call_outcome', [
@@ -371,46 +354,6 @@ export const investorAssets = pgTable('investor_assets', {
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-/* ============================================================
-   EMAIL FLOWS — automations (Brevo)
-   ============================================================ */
-export const emailFlows = pgTable('email_flows', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  description: text('description'),
-  status: emailFlowStatusEnum('status').notNull().default('draft'),
-  triggerType: text('trigger_type').notNull(), // event | schedule | manual
-  triggerConfig: jsonb('trigger_config'),
-  conditions: jsonb('conditions'),
-  actions: jsonb('actions'),
-  statsSent: integer('stats_sent').notNull().default(0),
-  statsOpened: integer('stats_opened').notNull().default(0),
-  statsClicked: integer('stats_clicked').notNull().default(0),
-  statsConverted: integer('stats_converted').notNull().default(0),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const emailFlowRuns = pgTable('email_flow_runs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  flowId: uuid('flow_id')
-    .notNull()
-    .references(() => emailFlows.id),
-  investorId: uuid('investor_id')
-    .notNull()
-    .references(() => investors.id),
-  triggerEventId: uuid('trigger_event_id').references(() => interactions.id),
-  status: emailFlowRunStatusEnum('status').notNull().default('triggered'),
-  // Human-in-the-loop : un envoi externe exige validated_by + validated_at
-  validatedBy: uuid('validated_by').references(() => users.id),
-  validatedAt: timestamp('validated_at', { withTimezone: true }),
-  emailContent: text('email_content'),
-  amfCompliancePassed: boolean('amf_compliance_passed'),
-  brevoMessageId: text('brevo_message_id'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* ============================================================
