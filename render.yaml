@@ -45,14 +45,24 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: OPENROUTER_GROK_MODEL
-        sync: false
-      - key: OPENROUTER_IMAGE_MODEL
-        sync: false
       # Réplique lecture seule SAH (connexion seulement depuis les IP dédiées Render)
       - key: SAH_DATABASE_URL
+        sync: false
+      # --- Calendly : une connexion OAuth par closer ---
+      - key: CALENDLY_CLIENT_ID
+        sync: false
+      - key: CALENDLY_CLIENT_SECRET
+        sync: false
+      # Ancien token global (agenda de Guillaume). TRANSITOIRE : à supprimer
+      # une fois que chaque closer a relié son propre Calendly.
+      - key: CALENDLY_TOKEN
+        sync: false
+      # Chiffre les jetons OAuth stockés en base. DOIT être identique partout,
+      # sinon les connexions créées d'un côté sont illisibles de l'autre.
+      - key: SECRET_ENCRYPTION_KEY
+        sync: false
+      # --- WebinarGeek : inscrits, présence, engagement ---
+      - key: WEBINARGEEK_API_TOKEN
         sync: false
       # Secret partagé avec le cron de synchro (protège /api/cron/sah-sync)
       - key: CRON_SECRET
