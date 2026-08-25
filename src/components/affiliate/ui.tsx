@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { CLOSING_STAGE_LABELS, isClosingStage } from '@/lib/closing/pipeline';
 
 /** Composants présentationnels partagés de l'espace affilié (server-safe). */
 
@@ -140,19 +141,11 @@ export function Table({
   );
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  new: 'Nouveau',
-  contacted: 'Contacté',
-  meeting_booked: 'RDV pris',
-  meeting_done: 'RDV fait',
-  proposal_sent: 'Proposition',
-  closed_won: 'Gagné',
-  closed_lost: 'Perdu',
-  dormant: 'Dormant',
-};
-
 export function stageLabel(stage: string): string {
-  return STAGE_LABELS[stage] ?? stage;
+  // Un seul vocabulaire d'étapes pour toute l'app : cette table vivait ici en
+  // double, et les étapes ajoutées au suivi des appels s'y affichaient brutes
+  // (« to_call_back »).
+  return isClosingStage(stage) ? CLOSING_STAGE_LABELS[stage] : stage;
 }
 
 export function statusLabel(s: {

@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   CheckCircle2,
+  KanbanSquare,
   Mail,
   MessageSquare,
   Phone,
@@ -74,11 +75,27 @@ export default async function TodayPage() {
 
   return (
     <>
-      <div>
-        <h1 className="page-title">Aujourd'hui</h1>
-        <div className="page-desc">
-          Ce qui attend ton retour, ce qu'il faut faire maintenant, et ce qui arrive.
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 className="page-title">Aujourd'hui</h1>
+          <div className="page-desc">
+            Ce qui attend ton retour, ce qu'il faut faire maintenant, et ce qui arrive.
+          </div>
         </div>
+        {/* Une fois l'appel qualifié, la personne part ici : le lien évite de
+            chercher où elle est passée. */}
+        <Link href="/closing/pipeline" className="btn btn-secondary btn-sm">
+          <KanbanSquare size={13} />
+          Suivi des appels
+        </Link>
       </div>
 
       <div className="kpi-grid">

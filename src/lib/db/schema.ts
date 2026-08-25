@@ -53,6 +53,10 @@ export const acquisitionSourceEnum = pgEnum('acquisition_source', [
 export const pipelineStageEnum = pgEnum('pipeline_stage', [
   'new',
   'contacted',
+  // Suivi d'appel (ajoutées le 25/08/2026) : sans elles, un closer qualifiait un
+  // appel « pas de réponse » et la personne ne changeait d'état nulle part.
+  'to_call_back',
+  'interested',
   'meeting_booked',
   'meeting_done',
   'proposal_sent',
@@ -216,6 +220,15 @@ export const investors = pgTable('investors', {
   claimedAt: timestamp('claimed_at', { withTimezone: true }),
   pipelineStage: pipelineStageEnum('pipeline_stage').notNull().default('new'),
   pipelineStageUpdatedAt: timestamp('pipeline_stage_updated_at', { withTimezone: true }),
+  /**
+   * File d'appels d'où venait la personne quand elle est entrée dans le suivi
+   * (« Nouveaux inscrits », « Argent à placer »…). Figée à l'entrée : le score
+   * se recalcule en permanence, donc la file COURANTE d'une fiche suivie depuis
+   * trois semaines ne dit plus rien de la raison pour laquelle on l'a appelée.
+   */
+  pipelineSource: text('pipeline_source'),
+  /** Entrée dans le tableau de suivi — mesure la durée réelle du parcours. */
+  pipelineEnteredAt: timestamp('pipeline_entered_at', { withTimezone: true }),
   communicationConsent: boolean('communication_consent').notNull().default(false),
   lastEmailOpenedAt: timestamp('last_email_opened_at', { withTimezone: true }),
   lastPageVisitAt: timestamp('last_page_visit_at', { withTimezone: true }),
