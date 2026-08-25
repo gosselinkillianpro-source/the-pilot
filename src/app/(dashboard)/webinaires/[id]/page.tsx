@@ -66,13 +66,23 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
         <Kpi label="Absents" value={String(webinar.noShow)} accent="var(--text-3)" />
         <Kpi label="Comptes SAH" value={String(webinar.linkedToSah)} accent="var(--ai)" />
         <Kpi
+          label="Recrues"
+          value={String(webinar.recruits)}
+          accent="var(--ai)"
+          hint="comptes Seven At Home ouverts grâce à ce webinaire"
+        />
+        <Kpi
           label="Collecte attribuée"
           value={`${Math.round(webinar.attributedRevenue).toLocaleString('fr-FR')} €`}
           accent="var(--success)"
           hint={
             webinar.attributedInvestors > 0
-              ? `${webinar.attributedInvestors} investisseur${webinar.attributedInvestors > 1 ? 's' : ''} · signé après ce webinaire`
-              : 'aucune souscription depuis ce webinaire'
+              ? `${webinar.attributedInvestors} investisseur${webinar.attributedInvestors > 1 ? 's' : ''}${
+                  webinar.recruitRevenue > 0
+                    ? ` · dont ${Math.round(webinar.recruitRevenue).toLocaleString('fr-FR')} € de recrues`
+                    : ''
+                }`
+              : 'aucune souscription attribuable à ce webinaire'
           }
         />
       </div>

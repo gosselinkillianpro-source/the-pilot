@@ -320,6 +320,36 @@ const DEFS: MetricDef[] = [
     decision: 'ROI réel des appels → arbitrage effort closing. (Fiable seulement ≥ 20 appels.)',
     screens: '/performance',
   },
+
+  // ───────────────────────────────── Webinaires ─────────────────────────────────
+  {
+    id: 'webinaire_collecte_attribuee',
+    label: 'Collecte attribuée au webinaire',
+    definition:
+      'Souscriptions non annulées portées au crédit d’un webinaire : tout ce que souscrivent les personnes qu’il a fait entrer sur Seven At Home, plus une seule souscription (la première après le live) pour chaque membre déjà présent avant lui.',
+    source: 'sah_db',
+    sourceDetail:
+      'webinar_registrations + investors.sah_created_at + subscriptions · webinars/attribution.ts (module pur testé) via loadAttribution (queries/webinars.ts)',
+    calcul:
+      'recrue (compte SAH ouvert au plus tôt 15 j avant le premier contact avec le webinaire, sans souscription antérieure au live) → somme de toutes ses souscriptions postérieures ; sinon → première souscription après le live, une seule fois. Date de référence coalesce(signed_at, paid_at, created_at). Comptes internes exclus.',
+    unit: 'eur',
+    decision:
+      'Valeur réelle d’un webinaire → décider d’en reprogrammer un, et à quel budget d’acquisition.',
+    screens: '/webinaires · /webinaires/[id]',
+  },
+  {
+    id: 'webinaire_recrues',
+    label: 'Recrues du webinaire',
+    definition:
+      'Inscrits dont le compte Seven At Home a été ouvert grâce à ce webinaire (au plus tôt 15 jours avant leur premier contact avec lui), et qui n’avaient jamais souscrit avant le live.',
+    source: 'sah_db',
+    sourceDetail: 'webinar_registrations.registered_at + investors.sah_created_at · attribution.ts',
+    calcul: 'count(distinct investor_id) des inscrits dont ce webinaire est le webinaire d’entrée',
+    unit: 'count',
+    decision:
+      'Capacité d’acquisition du webinaire (vs simple réactivation de clients existants) → format à répéter ou non.',
+    screens: '/webinaires · /webinaires/[id]',
+  },
 ];
 
 /** Registre indexé par id. */

@@ -105,6 +105,20 @@ Exposé en temps réel par [`src/lib/sources/health.ts`](src/lib/sources/health.
 | `collecte_signee_periode` | Collecte signée (période) | € signé non annulé sur la période | `sum(amount) filter (non annulé, signed_at in période)` |
 | `collecte_attribuee_appels` | Collecte attribuée aux appels | collecte − part non attribuée (fenêtre 30 j) | `totalAmount − unattributed.amount` |
 
+### Webinaires (attribution de la collecte)
+| id | Métrique | Définition | Calcul |
+|---|---|---|---|
+| `webinaire_collecte_attribuee` | Collecte attribuée au webinaire | tout ce que souscrivent les personnes qu'il a fait entrer sur SAH + **une seule** souscription (la première après le live) par membre déjà présent | `webinars/attribution.ts` (module pur testé) |
+| `webinaire_recrues` | Recrues du webinaire | inscrits dont le compte SAH a été ouvert grâce à lui | `count(distinct investor_id)` dont ce webinaire est le webinaire d'entrée |
+
+**La règle, en clair.** Un webinaire ne recrute pas deux fois la même personne.
+
+- **Recrue** — compte Seven At Home ouvert au plus tôt **15 jours avant** son premier contact avec le webinaire (inscription au live, ou le live lui-même), sans limite après, et **aucune souscription antérieure au live**. Le webinaire l'a fait entrer : *toutes* ses souscriptions lui reviennent, pendant des années, même si elle suit d'autres webinaires ensuite (le webinaire d'entrée garde le crédit).
+- **Membre déjà présent** — compte antérieur, souvent apporté par un administrateur ou un CGP. Le live a pu le réactiver : on lui accorde **exactement une** souscription, la première qui suit. Les suivantes ne doivent plus rien au webinaire.
+- **Jamais deux fois** : une souscription est attribuée à au plus un webinaire (en cas d'égalité, le plus proche l'emporte).
+- **Comptes internes exclus** (fondateur, staff, comptes de service — voir `sah/internal-accounts.ts`) : ils restent visibles à l'écran, mais hors des chiffres d'acquisition.
+- Date de référence d'une souscription : `coalesce(signed_at, paid_at, created_at)`.
+
 ---
 
 ## Ajouter une métrique / une source

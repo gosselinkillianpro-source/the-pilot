@@ -121,10 +121,21 @@ export function AttendeeRow({
             {attendee.investorId && (
               <span style={{ color: 'var(--success)', marginLeft: 6 }}>· compte SAH</span>
             )}
-            {attendee.investedAfterWebinar > 0 && (
+            {attendee.investedSinceWebinar > 0 && (
               <span style={{ color: 'var(--success)', fontWeight: 700, marginLeft: 6 }}>
-                · a investi {Math.round(attendee.investedAfterWebinar).toLocaleString('fr-FR')} €
+                · a investi {Math.round(attendee.investedSinceWebinar).toLocaleString('fr-FR')} €
                 depuis
+              </span>
+            )}
+            {/* Le crédit du webinaire diffère de ce que la personne a investi
+                depuis : un membre déjà présent n'apporte que sa première
+                souscription. On affiche l'écart plutôt que de le taire. */}
+            {attendee.investedSinceWebinar > attendee.attributedAmount && (
+              <span style={{ color: 'var(--text-4)', marginLeft: 6 }}>
+                ·{' '}
+                {attendee.attributedAmount > 0
+                  ? `${Math.round(attendee.attributedAmount).toLocaleString('fr-FR')} € attribués`
+                  : 'rien attribué'}
               </span>
             )}
           </span>
@@ -135,6 +146,20 @@ export function AttendeeRow({
             {capacity.label}
           </span>
           {availability === 'Oui' && <span className="badge badge-brand">fonds dispo</span>}
+          {attendee.internalAccountReason ? (
+            <span className="badge badge-neutral" title={attendee.internalAccountReason}>
+              compte interne
+            </span>
+          ) : (
+            attendee.attributionStatus === 'recruit' && (
+              <span
+                className="badge badge-brand"
+                title="Compte Seven At Home ouvert grâce à ce webinaire"
+              >
+                recrue
+              </span>
+            )
+          )}
         </span>
 
         <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
@@ -209,6 +234,17 @@ export function AttendeeRow({
                   </>
                 )}
                 {attendee.assignedCloserName && ` · suivi par ${attendee.assignedCloserName}`}
+              </div>
+              {/* La règle d'attribution en une phrase, sur la fiche concernée :
+                  un closer doit pouvoir vérifier le chiffre sans lire le code. */}
+              <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 4 }}>
+                {attendee.internalAccountReason
+                  ? `Compte interne (${attendee.internalAccountReason}) — exclu de la collecte attribuée.`
+                  : attendee.attributionStatus === 'recruit'
+                    ? 'Entré sur Seven At Home par ce webinaire : toutes ses souscriptions lui sont attribuées.'
+                    : attendee.attributionStatus === 'recruited_elsewhere'
+                      ? 'Entré sur Seven At Home par un autre webinaire, qui garde le crédit de ses souscriptions.'
+                      : 'Membre avant ce webinaire : seule sa première souscription après le live est attribuée.'}
               </div>
               <Link
                 href={`/closing/investor/${attendee.investorId}`}
