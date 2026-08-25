@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { qualifyCallAction } from '@/app/(dashboard)/closing/investor/[id]/actions';
 import { useToast } from '@/components/shared/toast';
+import { CLOSING_STAGE_LABELS, type ClosingStage } from '@/lib/closing/pipeline';
 
 type Outcome = 'reached' | 'no_answer' | 'voicemail' | 'wrong_number';
 
@@ -15,15 +16,21 @@ const OUTCOMES: { value: Outcome; label: string; primary?: boolean }[] = [
   { value: 'wrong_number', label: 'Mauvais numéro' },
 ];
 
+/**
+ * Étapes proposées à la main. Elles PRIMENT sur le rangement automatique :
+ * un closer qui a eu la personne au téléphone en sait plus que la règle.
+ * Ordre et libellés viennent du module de suivi — un seul vocabulaire.
+ */
 const STAGES: { value: string; label: string }[] = [
-  { value: 'contacted', label: 'Contacté' },
-  { value: 'meeting_booked', label: 'RDV pris' },
-  { value: 'meeting_done', label: 'RDV fait' },
-  { value: 'proposal_sent', label: 'Proposition envoyée' },
-  { value: 'closed_won', label: 'Gagné' },
-  { value: 'closed_lost', label: 'Perdu' },
-  { value: 'dormant', label: 'En sommeil' },
-];
+  'to_call_back',
+  'interested',
+  'meeting_booked',
+  'meeting_done',
+  'proposal_sent',
+  'closed_won',
+  'closed_lost',
+  'dormant',
+].map((value) => ({ value, label: CLOSING_STAGE_LABELS[value as ClosingStage] }));
 
 /** Qualifie un appel passé : résultat en 1 clic + détails optionnels (note, étape, rappel). */
 export function QualifyCall({ callId, name }: { callId: string; name: string }) {
@@ -48,7 +55,12 @@ export function QualifyCall({ callId, name }: { callId: string; name: string }) 
       );
       if (res.ok) {
         const label = OUTCOMES.find((o) => o.value === outcome)?.label ?? '';
-        toast(`Appel qualifié (${label}) — ${name}.`, { variant: 'success' });
+        // On dit OÙ la personne vient d'être rangée : c'est tout l'objet du
+        // suivi, et sans ce retour l'automatisme resterait invisible.
+        const where = res.moved
+          ? ` → ${CLOSING_STAGE_LABELS[res.moved.stage as ClosingStage] ?? res.moved.stage}. ${res.moved.reason}`
+          : '';
+        toast(`Appel qualifié (${label}) — ${name}.${where}`, { variant: 'success' });
         router.refresh();
       } else {
         toast(res.message, { variant: 'error' });

@@ -29,6 +29,10 @@ export function NavContent({ role }: { role: string }) {
         <Users />
         Closing
       </SidebarLink>
+      <SidebarLink href="/closing/pipeline">
+        <KanbanSquare />
+        Suivi des appels
+      </SidebarLink>
       <SidebarLink href="/rdv">
         <CalendarClock />
         Rendez-vous

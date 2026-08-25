@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
+import { CLOSING_STAGE_LABELS, isClosingStage } from '@/lib/closing/pipeline';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
@@ -133,16 +134,8 @@ const SOURCE_LABELS: Record<string, string> = {
   other: 'Autre',
 };
 
-const STAGE_LABELS: Record<string, string> = {
-  new: 'Nouveau',
-  contacted: 'Contacté',
-  meeting_booked: 'RDV pris',
-  meeting_done: 'RDV fait',
-  proposal_sent: 'Proposition envoyée',
-  closed_won: 'Souscrit',
-  closed_lost: 'Perdu',
-  dormant: 'Dormant',
-};
+// Libellés d'étapes : une seule table pour toute l'app (`closing/pipeline`),
+// sinon les étapes ajoutées au suivi des appels s'affichent brutes ici.
 
 interface InvestorMatch {
   id: string;
@@ -211,7 +204,11 @@ async function matchInvestors(emails: string[]): Promise<Map<string, InvestorMat
     map.set(r.email.toLowerCase(), {
       id: r.id,
       source: r.acquisitionSource ? (SOURCE_LABELS[r.acquisitionSource] ?? 'Autre') : 'Inconnue',
-      etape: r.pipelineStage ? (STAGE_LABELS[r.pipelineStage] ?? r.pipelineStage) : '—',
+      etape: r.pipelineStage
+        ? isClosingStage(r.pipelineStage)
+          ? CLOSING_STAGE_LABELS[r.pipelineStage]
+          : r.pipelineStage
+        : '—',
       montantInvestiEur: inv > 0 ? inv : null,
       converti: inv > 0 || r.pipelineStage === 'closed_won',
       statutInscription: statutInscriptionLabel({

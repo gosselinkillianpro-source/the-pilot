@@ -19,8 +19,10 @@ import {
 import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
+import { queueSourceKey } from '@/lib/closing/pipeline';
 import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN, getInvestorScored } from '@/lib/db/queries/call-queue';
+import { applyQualification, enterPipeline } from '@/lib/db/queries/closing-pipeline';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investorAssets, investors } from '@/lib/db/schema';
@@ -190,7 +192,17 @@ const logCallSchema = z.object({
 });
 
 export type LogCallInput = z.infer<typeof logCallSchema>;
-export type CallActionResult = { ok: true } | { ok: false; message: string };
+export type CallActionResult =
+  | {
+      ok: true;
+      /**
+       * Colonne du tableau de suivi où la personne vient d'être rangée, quand
+       * l'action l'a déplacée. Le closer doit voir l'effet de sa qualification,
+       * sinon il croit que rien ne s'est passé — c'était tout le problème.
+       */
+      moved?: { stage: string; reason: string };
+    }
+  | { ok: false; message: string };
 
 /** Enregistre un appel : interaction + (option) rappel programmé + (option) étape pipeline. */
 export async function logCallAction(input: LogCallInput): Promise<CallActionResult> {
@@ -552,6 +564,11 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
       .update(investors)
       .set({ claimedById: null, claimedAt: null })
       .where(eq(investors.id, parsed.investorId));
+    // La personne entre dans le tableau de suivi, colonne « Appelé ». On fige
+    // au passage la file d'où elle venait : le score se recalcule en continu,
+    // donc dans trois semaines plus rien ne dira pourquoi on l'a appelée.
+    const scored = await getInvestorScored(parsed.investorId);
+    await enterPipeline(parsed.investorId, queueSourceKey(scored?.scored.queueBucket));
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -563,7 +580,7 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
     });
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
-    revalidatePath('/closing/suivi');
+    revalidatePath('/closing/pipeline');
     return { ok: true, interactionId: inserted[0]?.id ?? '', assignedNow };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -701,15 +718,11 @@ export async function qualifyCallAction(input: {
         createdBy: user.id,
       });
     }
-    // « Profil incompatible » sort le lead de la file → « Perdu » (sauf étape explicite).
-    const effectiveStage =
-      parsed.nextStage ?? (parsed.outcome === 'profile_incompatible' ? 'closed_lost' : undefined);
-    if (effectiveStage) {
-      await db
-        .update(investors)
-        .set({ pipelineStage: effectiveStage, pipelineStageUpdatedAt: new Date() })
-        .where(eq(investors.id, investorId));
-    }
+    // Le résultat de l'appel range la personne dans une colonne du tableau de
+    // suivi : pas de réponse → « À rappeler » (et sortie de file à la 3e
+    // tentative), profil incompatible ou mauvais numéro → sortie immédiate.
+    // Une étape choisie à la main par le closer prime sur la règle.
+    const move = await applyQualification(investorId, parsed.outcome, parsed.nextStage);
     await assignOwnershipIfFree(investorId, user.id);
 
     await logAudit({
@@ -722,15 +735,18 @@ export async function qualifyCallAction(input: {
       metadata: {
         outcome: parsed.outcome,
         nextStage: parsed.nextStage ?? null,
+        stageApplied: move?.stage ?? null,
         callbackAt: parsed.callbackAt ?? null,
       },
     });
 
-    revalidatePath('/closing/suivi');
+    revalidatePath('/closing/pipeline');
     revalidatePath('/closing/today');
     revalidatePath('/closing/queue');
     revalidatePath(`/closing/investor/${investorId}`);
-    return { ok: true };
+    // `moved` dit au closer où la personne vient d'être rangée — sinon
+    // l'automatisme est invisible et il croit que rien ne s'est passé.
+    return { ok: true, moved: move ?? undefined };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
   }

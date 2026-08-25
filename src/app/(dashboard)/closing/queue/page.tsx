@@ -1,6 +1,7 @@
 import {
   Clock,
   Flame,
+  KanbanSquare,
   MessageSquare,
   Phone,
   PhoneCall,
@@ -147,10 +148,17 @@ export default async function CallQueuePage({
             l'ordre (inscrit le plus récent en haut · échéance la plus proche en haut).
           </div>
         </div>
-        <Link href="/closing/session" className="btn btn-primary">
-          <PhoneCall size={15} />
-          Démarrer une session d'appels
-        </Link>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {/* Les gens déjà appelés ne sont plus ici : ils vivent dans le suivi. */}
+          <Link href="/closing/pipeline" className="btn btn-secondary">
+            <KanbanSquare size={15} />
+            Suivi des appels
+          </Link>
+          <Link href="/closing/session" className="btn btn-primary">
+            <PhoneCall size={15} />
+            Démarrer une session d'appels
+          </Link>
+        </div>
       </div>
 
       {/* Filtre source : BREACH (pubs de Killian) vs reste */}

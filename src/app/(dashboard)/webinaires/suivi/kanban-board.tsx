@@ -1,25 +1,19 @@
 'use client';
 
-import { ArrowRight, GripVertical, Phone, Radio, TrendingUp, User } from 'lucide-react';
+import { Phone, Radio, TrendingUp, User } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useOptimistic, useState, useTransition } from 'react';
-import { useToast } from '@/components/shared/toast';
+import { Kanban } from '@/components/shared/kanban';
 import type { PipelineCard } from '@/lib/db/queries/webinar-pipeline';
 import { parseCapacity } from '@/lib/webinars/call-order';
-import { STAGES, type WebinarStage } from '@/lib/webinars/pipeline';
+import { STAGES } from '@/lib/webinars/pipeline';
 import { moveCardAction } from './actions';
 
 /**
- * Le tableau de suivi.
+ * Le tableau de suivi des inscrits webinaire.
  *
- * Glisser-déposer natif (aucune dépendance ajoutée), doublé d'un sélecteur
- * « déplacer vers » sur chaque carte : le drag seul exclut le clavier, le
- * lecteur d'écran et le mobile, où l'essentiel du travail se fait.
- *
- * Le déplacement est optimiste — la carte change de colonne tout de suite, le
- * serveur suit. Un closer qui traite trente fiches ne doit pas attendre un
- * aller-retour réseau à chaque geste.
+ * Colonnes, glisser-déposer et déplacement optimiste viennent du kanban
+ * partagé (`components/shared/kanban`) : ici ne vit que le CONTENU des cartes,
+ * propre au webinaire (engagement au live, capacité déclarée, collecte).
  */
 
 function fmtAgo(d: Date | null): string {
@@ -50,131 +44,37 @@ const OUTCOME_LABEL: Record<string, string> = {
   in_progress: 'en cours',
 };
 
+/** Le kanban partagé identifie une carte par `id` et l'annonce par `title`. */
+type BoardCard = PipelineCard & { id: string; title: string };
+
 export function KanbanBoard({ cards, myId }: { cards: PipelineCard[]; myId: string }) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [, startTransition] = useTransition();
-  const [dragOver, setDragOver] = useState<WebinarStage | null>(null);
-
-  // La carte bouge d'abord à l'écran, le serveur confirme ensuite.
-  const [view, moveOptimistic] = useOptimistic(
-    cards,
-    (state: PipelineCard[], move: { contactId: string; stage: WebinarStage }) =>
-      state.map((c) => (c.contactId === move.contactId ? { ...c, stage: move.stage } : c)),
-  );
-
-  function move(card: PipelineCard, stage: WebinarStage) {
-    if (card.stage === stage) return;
-    startTransition(async () => {
-      moveOptimistic({ contactId: card.contactId, stage });
-      const res = await moveCardAction({ contactId: card.contactId, stage });
-      if (res.success) {
-        router.refresh();
-        toast(`${card.fullName} → ${res.label ?? 'déplacé'}`, { variant: 'success' });
-      } else {
-        // L'état optimiste est abandonné au refresh : la carte revient d'elle-même.
-        router.refresh();
-        toast(res.error ?? 'Déplacement impossible', { variant: 'error' });
-      }
-    });
-  }
+  const board: BoardCard[] = cards.map((c) => ({ ...c, id: c.contactId, title: c.fullName }));
 
   return (
-    // Le scroll horizontal vit ICI, jamais sur la page : six colonnes ne tiennent
-    // pas sur un écran de portable, et une colonne coupée est une colonne perdue.
-    // Sur mobile, la feuille de style empile les colonnes (voir .kanban-board).
-    <div className="kanban-board">
-      {STAGES.map((col) => {
-        const colCards = view.filter((c) => c.stage === col.stage);
-        const isTarget = dragOver === col.stage;
-        return (
-          // biome-ignore lint/a11y/noStaticElementInteractions: zone de dépôt du glisser-déposer ; le déplacement au clavier passe par le sélecteur de chaque carte.
-          <section
-            key={col.stage}
-            className="kanban-col"
-            data-over={isTarget}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(col.stage);
-            }}
-            onDragLeave={() => setDragOver((s) => (s === col.stage ? null : s))}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(null);
-              const id = e.dataTransfer.getData('text/plain');
-              const card = view.find((c) => c.contactId === id);
-              if (card) move(card, col.stage);
-            }}
-            style={{ borderColor: isTarget ? col.accent : undefined }}
-          >
-            <header style={{ padding: '2px 4px 10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: col.accent,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-1)' }}>
-                  {col.label}
-                </span>
-                <span className="badge badge-neutral" style={{ marginLeft: 'auto' }}>
-                  {colCards.length}
-                </span>
-              </div>
-              <div style={{ fontSize: 10.5, color: 'var(--text-4)', marginTop: 3 }}>{col.hint}</div>
-            </header>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {colCards.length === 0 ? (
-                <div style={{ fontSize: 11.5, color: 'var(--text-4)', padding: '10px 4px' }}>
-                  Aucune fiche.
-                </div>
-              ) : (
-                colCards.map((card) => (
-                  <Card key={card.contactId} card={card} myId={myId} onMove={move} />
-                ))
-              )}
-            </div>
-          </section>
-        );
-      })}
-    </div>
+    <Kanban
+      columns={STAGES}
+      cards={board}
+      onMove={async (card, stage) => {
+        const res = await moveCardAction({ contactId: card.contactId, stage });
+        return { ok: res.success, label: res.label, error: res.error };
+      }}
+      // Bordure verte : la personne a souscrit depuis le webinaire mais dort
+      // encore dans une colonne intermédiaire — carte à faire avancer.
+      isHighlighted={(c) => c.investedSince > 0 && c.stage !== 'invested' && c.stage !== 'lost'}
+      renderCard={(card) => <Card card={card} mine={card.ownerUserId === myId} />}
+    />
   );
 }
 
-function Card({
-  card,
-  myId,
-  onMove,
-}: {
-  card: PipelineCard;
-  myId: string;
-  onMove: (card: PipelineCard, stage: WebinarStage) => void;
-}) {
+function Card({ card, mine }: { card: PipelineCard; mine: boolean }) {
   const capacity = parseCapacity(card.capacityRaw);
   const due = fmtDue(card.nextActionAt);
-  const mine = card.ownerUserId === myId;
-  // Le montant souscrit depuis le webinaire signale une carte à faire avancer :
-  // la personne a investi mais dort encore dans une colonne intermédiaire.
   const toPromote = card.investedSince > 0 && card.stage !== 'invested' && card.stage !== 'lost';
 
   return (
-    <article
-      className="kanban-card"
-      data-promote={toPromote}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData('text/plain', card.contactId);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-        <GripVertical size={13} style={{ color: 'var(--text-4)', marginTop: 2, flexShrink: 0 }} />
-        <div style={{ minWidth: 0, flex: 1 }}>
+    <>
+      <div>
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               fontSize: 12.5,
@@ -255,31 +155,6 @@ function Card({
         </span>
       </div>
 
-      {/* Déplacement sans souris : indispensable au clavier et sur mobile. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <ArrowRight size={11} style={{ color: 'var(--text-4)' }} />
-        <select
-          aria-label={`Déplacer ${card.fullName} vers une autre colonne`}
-          value={card.stage}
-          onChange={(e) => onMove(card, e.target.value as WebinarStage)}
-          style={{
-            flex: 1,
-            fontSize: 11,
-            padding: '3px 6px',
-            borderRadius: 6,
-            border: '1px solid var(--border-strong)',
-            background: 'var(--surface-2)',
-            color: 'var(--text-2)',
-          }}
-        >
-          {STAGES.map((s) => (
-            <option key={s.stage} value={s.stage}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
       {card.webinarId && (
         <Link
           href={`/webinaires/${card.webinarId}`}
@@ -291,6 +166,6 @@ function Card({
           →
         </Link>
       )}
-    </article>
+    </>
   );
 }
