@@ -1262,7 +1262,13 @@
 /* Coque applicative (remplace la grille inline du layout) */
 .app-shell {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  /* minmax(0, 1fr) et non 1fr : sans le minimum à 0, une colonne de grille
+     refuse de se réduire sous la largeur de son contenu. Un tableau large
+     (kanban, liste dense) élargissait alors toute la colonne au-delà de
+     l'écran — et `body { overflow-x: clip }` COUPAIT la partie droite au lieu
+     de la rendre atteignable. Le bloc mobile appliquait déjà ce garde-fou ;
+     il manquait sur desktop. */
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 100vh;
   position: relative;
   z-index: 1;
@@ -1276,6 +1282,12 @@
   overflow-y: auto;
   position: relative;
   z-index: 1;
+  /* Même raison : les enfants d'une colonne flex ne doivent pas gonfler le
+     parent. Chaque bloc large gère lui-même son scroll (voir .kanban-board). */
+  min-width: 0;
+}
+.app-main > * {
+  min-width: 0;
 }
 
 /* Grilles utilitaires responsives */
@@ -1292,6 +1304,81 @@
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   TABLEAU DE SUIVI (kanban) — /webinaires/suivi
+   Six colonnes ne tiennent pas sur tous les écrans : le scroll est ASSUMÉ et
+   maîtrisé DANS le tableau, jamais reporté sur la page. `min-width: 0` est ce
+   qui autorise le conteneur à se réduire ; sans lui, `overflow-x` ne sert à
+   rien — la boîte s'élargit au lieu de scroller, et la droite est coupée.
+   ============================================================ */
+.kanban-board {
+  display: grid;
+  grid-auto-flow: column;
+  /* 180px : six colonnes + gouttières = 1140px, ce qui tient sans scroll sur un
+     écran de portable 14/16" (≈1234px utiles une fois la barre latérale et les
+     marges déduites). En dessous, le tableau scrolle — la barre ci-dessous le
+     dit franchement plutôt que de laisser croire à un tableau tronqué. */
+  grid-auto-columns: minmax(180px, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Les colonnes s'alignent sous le doigt / la molette au lieu de flotter. */
+  scroll-snap-type: x proximity;
+  padding-bottom: 8px;
+  /* Barre de défilement TOUJOURS visible : sur macOS elle est masquée par
+     défaut, et un tableau qui déborde sans indice se lit comme un tableau
+     amputé. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.kanban-board::-webkit-scrollbar {
+  height: 8px;
+}
+.kanban-board::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kanban-board::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+.kanban-col {
+  scroll-snap-align: start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  min-height: 160px;
+  min-width: 0;
+  transition:
+    background 120ms,
+    border-color 120ms;
+}
+.kanban-col[data-over='true'] {
+  background: var(--surface-3);
+}
+.kanban-card {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.kanban-card:active {
+  cursor: grabbing;
+}
+/* Une carte dont la personne a déjà souscrit : à faire avancer. */
+.kanban-card[data-promote='true'] {
+  border-color: var(--success);
 }
 
 /* (Ancien bloc responset V1 « sidebar horizontale » retiré — remplacé par le système
@@ -1622,6 +1709,23 @@ body.drawer-open {
   .cards-grid {
     grid-template-columns: 1fr !important;
     gap: 12px !important;
+  }
+
+  /* Kanban : six colonnes côte à côte n'ont aucun sens sur un téléphone.
+     On les empile, chacune pleine largeur, dans l'ordre du parcours. */
+  .kanban-board {
+    display: flex !important;
+    flex-direction: column;
+    grid-auto-flow: row;
+    overflow-x: visible;
+    gap: 10px;
+    /* `align-items: start` du mode desktop colle les colonnes en haut ; empilées,
+       il les rétrécit à la largeur de leur contenu. Chaque colonne doit occuper
+       toute la largeur du téléphone. */
+    align-items: stretch;
+  }
+  .kanban-col {
+    min-height: 0;
   }
 
   /* Toute grille inline (lignes de tableaux, cartes…) → empilée verticalement.

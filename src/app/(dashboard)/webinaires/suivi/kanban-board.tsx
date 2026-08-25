@@ -80,16 +80,10 @@ export function KanbanBoard({ cards, myId }: { cards: PipelineCard[]; myId: stri
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${STAGES.length}, minmax(230px, 1fr))`,
-        gap: 12,
-        overflowX: 'auto',
-        paddingBottom: 8,
-        alignItems: 'start',
-      }}
-    >
+    // Le scroll horizontal vit ICI, jamais sur la page : six colonnes ne tiennent
+    // pas sur un écran de portable, et une colonne coupée est une colonne perdue.
+    // Sur mobile, la feuille de style empile les colonnes (voir .kanban-board).
+    <div className="kanban-board">
       {STAGES.map((col) => {
         const colCards = view.filter((c) => c.stage === col.stage);
         const isTarget = dragOver === col.stage;
@@ -97,6 +91,8 @@ export function KanbanBoard({ cards, myId }: { cards: PipelineCard[]; myId: stri
           // biome-ignore lint/a11y/noStaticElementInteractions: zone de dépôt du glisser-déposer ; le déplacement au clavier passe par le sélecteur de chaque carte.
           <section
             key={col.stage}
+            className="kanban-col"
+            data-over={isTarget}
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(col.stage);
@@ -109,14 +105,7 @@ export function KanbanBoard({ cards, myId }: { cards: PipelineCard[]; myId: stri
               const card = view.find((c) => c.contactId === id);
               if (card) move(card, col.stage);
             }}
-            style={{
-              background: isTarget ? 'var(--surface-3)' : 'var(--surface-2)',
-              border: `1px solid ${isTarget ? col.accent : 'var(--border)'}`,
-              borderRadius: 12,
-              padding: 10,
-              minHeight: 160,
-              transition: 'background 120ms, border-color 120ms',
-            }}
+            style={{ borderColor: isTarget ? col.accent : undefined }}
           >
             <header style={{ padding: '2px 4px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -175,20 +164,12 @@ function Card({
 
   return (
     <article
+      className="kanban-card"
+      data-promote={toPromote}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', card.contactId);
         e.dataTransfer.effectAllowed = 'move';
-      }}
-      style={{
-        background: 'var(--surface)',
-        border: `1px solid ${toPromote ? 'var(--success)' : 'var(--border-strong)'}`,
-        borderRadius: 10,
-        padding: 10,
-        cursor: 'grab',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
