@@ -102,6 +102,11 @@ export default async function WebinairesPage() {
                         tone={rate >= 30 ? 'var(--success)' : 'var(--warning)'}
                       />
                       <Stat
+                        label="Recrues"
+                        value={w.recruits}
+                        tone={w.recruits > 0 ? 'var(--ai)' : 'var(--text-3)'}
+                      />
+                      <Stat
                         label="Collecte"
                         value={money(w.attributedRevenue)}
                         tone={w.attributedRevenue > 0 ? 'var(--success)' : 'var(--text-3)'}
@@ -124,9 +129,18 @@ export default async function WebinairesPage() {
                         {money(w.attributedRevenue)}
                       </strong>{' '}
                       souscrits par <strong>{w.attributedInvestors}</strong> inscrit
-                      {w.attributedInvestors > 1 ? 's' : ''}{' '}
+                      {w.attributedInvestors > 1 ? 's' : ''}
+                      {w.recruitRevenue > 0 && (
+                        <>
+                          {' '}
+                          · dont{' '}
+                          <strong style={{ color: 'var(--ai)' }}>{money(w.recruitRevenue)}</strong>{' '}
+                          de comptes ouverts grâce à ce webinaire
+                        </>
+                      )}{' '}
                       <span style={{ color: 'var(--text-4)' }}>
-                        — uniquement ce qui a été signé APRÈS ce webinaire
+                        — pour un membre déjà présent avant le live, seule sa première souscription
+                        est comptée
                       </span>
                     </div>
                   )}
