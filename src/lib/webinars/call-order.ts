@@ -1,84 +1,172 @@
 /**
  * Ordre de rappel après un webinaire.
  *
- * Règle métier (décision Killian) : on rappelle dans l'ordre de l'intérêt
- * démontré.
+ * Règle métier (décision Killian, révisée) : on rappelle dans l'ordre de
+ * l'intérêt commercial réel, pas de la seule présence.
  *
- *   1. PRÉSENTS EN DIRECT — les plus engagés, triés par durée de visionnage
- *      décroissante. Quelqu'un resté 50 minutes sur 60 est incomparablement
- *      plus chaud que quelqu'un parti au bout de deux.
- *   2. REPLAY — absents du direct, mais qui ont regardé après coup. Intérêt
- *      réel, juste décalé. Triés eux aussi par durée.
- *   3. NO-SHOW — inscrits jamais venus. À rappeler en dernier.
+ *   1. ONT REGARDÉ — direct ou replay confondus, triés par un score composite.
+ *      Une minute de direct ne vaut pas une heure de replay : c'est la DURÉE
+ *      réellement regardée qui compte, pas le canal.
+ *   2. NE SONT PAS VENUS — inscrits jamais connectés, triés par capacité
+ *      d'investissement (un gros ticket absent reste à rappeler).
+ *
+ * Le score combine trois signaux, du plus au moins déterminant :
+ *   - la CAPACITÉ d'investissement déclarée au formulaire — le levier de
+ *     chiffre d'affaires le plus fort ;
+ *   - l'ENGAGEMENT, part du webinaire réellement suivie ;
+ *   - la DISPONIBILITÉ des fonds sous 30 jours — signal d'imminence.
+ * Un clic sur un call-to-action ajoute un bonus : c'est une demande explicite.
  *
  * Module volontairement pur (aucun accès base, aucune date « maintenant ») :
- * l'ordre d'appel des closers est une règle métier, elle doit être vérifiable
- * par un test plutôt que constatée à l'écran.
+ * l'ordre de travail des closers est une règle métier, elle doit être
+ * vérifiable par un test plutôt que constatée à l'écran.
  */
 
-export type WebinarBucket = 'present' | 'replay' | 'no_show';
+export type WebinarBucket = 'watched' | 'no_show';
+
+/** Tranches réellement proposées par le formulaire WebinarGeek de SAH. */
+export type CapacityTier = {
+  /** Rang croissant : 0 = inconnu, 1 = le plus petit ticket. */
+  rank: number;
+  label: string;
+};
+
+/**
+ * Barème des capacités.
+ *
+ * ⚠️ « 25 000€ - 50 0000€ » comporte une coquille dans le formulaire (un zéro
+ * en trop). On la reconnaît telle quelle pour ne pas perdre les réponses déjà
+ * collectées ; à corriger côté WebinarGeek.
+ *
+ * « Je ne sais pas encore » est classé AU-DESSUS de « Moins de 10 000€ » :
+ * un montant inconnu garde tout son potentiel, alors qu'un petit ticket
+ * déclaré est un plafond connu. C'est justement à l'appel de le qualifier.
+ */
+const CAPACITY_TIERS: { match: string; rank: number; label: string }[] = [
+  // ⚠️ ORDRE SIGNIFICATIF : la reconnaissance se fait par sous-chaîne, et les
+  // libellés s'emboîtent (« 50 000€ - 250 000€ » contient « 250 000 »). On va
+  // donc du plus spécifique au plus général — un test verrouille chaque tranche.
+  { match: '+500 000', rank: 6, label: 'Plus de 500 k€' },
+  { match: '250 000€ - 500 000', rank: 5, label: '250 à 500 k€' },
+  { match: '50 000€ - 250 000', rank: 4, label: '50 à 250 k€' },
+  { match: '25 000€ - 50 0000', rank: 3, label: '25 à 50 k€' },
+  { match: '10 000€ - 25 000', rank: 2, label: '10 à 25 k€' },
+  { match: 'je ne sais pas', rank: 1.5, label: 'À qualifier' },
+  { match: 'moins de 10 000', rank: 1, label: 'Moins de 10 k€' },
+];
+
+const MAX_CAPACITY_RANK = 6;
+
+export function parseCapacity(raw: string | null | undefined): CapacityTier {
+  if (!raw) return { rank: 0, label: 'Non renseignée' };
+  const normalized = raw.trim().toLowerCase();
+  for (const tier of CAPACITY_TIERS) {
+    if (normalized.includes(tier.match.toLowerCase())) {
+      return { rank: tier.rank, label: tier.label };
+    }
+  }
+  return { rank: 0, label: raw.trim() };
+}
+
+/** « Oui » / « En partie » / « Non » → 1 / 0.5 / 0. */
+export function parseAvailability(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const n = raw.trim().toLowerCase();
+  if (n.startsWith('oui')) return 1;
+  if (n.startsWith('en partie')) return 0.5;
+  return 0;
+}
 
 export type CallOrderInput = {
   watchedLive: boolean;
   watchedReplay: boolean;
   watchDurationS: number | null;
   watchDurationReplayS: number | null;
-  /** Nombre de CTA cliqués — signal d'intérêt fort, affiché, non trieur. */
+  /** Réponse brute à « Capacité d'inscription ». */
+  capacityRaw?: string | null;
+  /** Réponse brute à « Disponibilité des fonds sous 30 jours ». */
+  availabilityRaw?: string | null;
+  /** Nombre de call-to-action cliqués pendant le webinaire. */
   ctaCount?: number;
+  /** Durée du webinaire, pour rapporter le temps regardé à un pourcentage. */
+  webinarDurationS?: number | null;
 };
 
+/** Poids des trois signaux. Leur somme fait 1 — le score reste sur 0-100. */
+const W_CAPACITY = 0.45;
+const W_ENGAGEMENT = 0.4;
+const W_AVAILABILITY = 0.15;
+/** Un CTA cliqué est une demande explicite : il pèse lourd, mais reste borné. */
+const CTA_BONUS = 12;
+const CTA_BONUS_MAX = 24;
+/** Départage à engagement égal : le direct traduit une disponibilité réelle. */
+const LIVE_TIEBREAK = 1;
+
+export function getBucket(r: CallOrderInput): WebinarBucket {
+  return r.watchedLive || r.watchedReplay ? 'watched' : 'no_show';
+}
+
+/** Temps total regardé, direct et replay confondus. */
+export function totalWatchedS(r: CallOrderInput): number {
+  return (r.watchDurationS ?? 0) + (r.watchDurationReplayS ?? 0);
+}
+
+/**
+ * Part du webinaire réellement suivie, de 0 à 100.
+ * Sans durée de webinaire connue, on retombe sur un plafond d'une heure —
+ * imparfait, mais préférable à écarter du classement tous les inscrits d'un
+ * webinaire dont la durée n'a pas été remontée.
+ */
+const FALLBACK_WEBINAR_S = 3600;
+
+export function engagementScore(r: CallOrderInput): number {
+  const total = totalWatchedS(r);
+  if (total <= 0) return 0;
+  const reference =
+    r.webinarDurationS && r.webinarDurationS > 0 ? r.webinarDurationS : FALLBACK_WEBINAR_S;
+  return Math.min(100, Math.round((total / reference) * 100));
+}
+
+/** Score de rappel sur 100. Plus il est haut, plus l'appel est prioritaire. */
+export function callScore(r: CallOrderInput): number {
+  const capacity = (parseCapacity(r.capacityRaw).rank / MAX_CAPACITY_RANK) * 100;
+  const engagement = engagementScore(r);
+  const availability = parseAvailability(r.availabilityRaw) * 100;
+
+  const base = capacity * W_CAPACITY + engagement * W_ENGAGEMENT + availability * W_AVAILABILITY;
+
+  const cta = Math.min(CTA_BONUS_MAX, (r.ctaCount ?? 0) * CTA_BONUS);
+  const tiebreak = r.watchedLive ? LIVE_TIEBREAK : 0;
+
+  return Math.round(Math.min(100, base + cta) + tiebreak);
+}
+
+/**
+ * Comparateur : ceux qui ont regardé d'abord, puis par score décroissant.
+ * Le groupe prime pour que jamais un absent ne passe devant quelqu'un qui a
+ * pris le temps de regarder, même avec une grosse capacité déclarée.
+ */
+export function compareForCallOrder(a: CallOrderInput, b: CallOrderInput): number {
+  const bucketA = getBucket(a);
+  const bucketB = getBucket(b);
+  if (bucketA !== bucketB) return bucketA === 'watched' ? -1 : 1;
+  return callScore(b) - callScore(a);
+}
+
 export const BUCKET_LABELS: Record<WebinarBucket, string> = {
-  present: 'Présents en direct',
-  replay: 'Ont regardé le replay',
+  watched: 'Ont regardé',
   no_show: 'Ne sont pas venus',
 };
 
 export const BUCKET_HINTS: Record<WebinarBucket, string> = {
-  present: 'À rappeler en priorité, du plus assidu au moins assidu.',
-  replay: 'Absents du direct mais intéressés — ils ont pris le temps de regarder.',
-  no_show: 'Inscrits jamais venus. Relance douce ou proposition de replay.',
+  watched:
+    'Direct et replay confondus — classés par capacité, engagement et disponibilité des fonds.',
+  no_show:
+    'Inscrits jamais connectés. Classés par capacité : un gros ticket absent reste à rappeler.',
 };
 
-/** Ordre d'affichage des groupes. L'index sert aussi de rang de tri. */
-export const BUCKET_ORDER: WebinarBucket[] = ['present', 'replay', 'no_show'];
+export const BUCKET_ORDER: WebinarBucket[] = ['watched', 'no_show'];
 
-export function getBucket(r: CallOrderInput): WebinarBucket {
-  if (r.watchedLive) return 'present';
-  if (r.watchedReplay) return 'replay';
-  return 'no_show';
-}
-
-/**
- * Durée qui sert au tri à l'intérieur d'un groupe.
- * Pour un présent c'est le direct, pour un replay c'est le replay — comparer
- * les deux entre eux n'aurait pas de sens, mais ils ne se croisent jamais
- * puisqu'ils sont dans des groupes différents.
- */
-export function sortDurationS(r: CallOrderInput): number {
-  const bucket = getBucket(r);
-  if (bucket === 'present') return r.watchDurationS ?? 0;
-  if (bucket === 'replay') return r.watchDurationReplayS ?? 0;
-  return 0;
-}
-
-/**
- * Comparateur complet : groupe d'abord, puis durée décroissante.
- * À durée égale, celui qui a cliqué le plus de CTA passe devant — un clic sur
- * « être rappelé » vaut mieux qu'un départage arbitraire.
- */
-export function compareForCallOrder(a: CallOrderInput, b: CallOrderInput): number {
-  const rankA = BUCKET_ORDER.indexOf(getBucket(a));
-  const rankB = BUCKET_ORDER.indexOf(getBucket(b));
-  if (rankA !== rankB) return rankA - rankB;
-
-  const durA = sortDurationS(a);
-  const durB = sortDurationS(b);
-  if (durA !== durB) return durB - durA;
-
-  return (b.ctaCount ?? 0) - (a.ctaCount ?? 0);
-}
-
-/** Groupe les inscrits dans l'ordre de rappel, groupes vides compris. */
 export function groupByBucket<T extends CallOrderInput>(
   rows: T[],
 ): { bucket: WebinarBucket; label: string; hint: string; rows: T[] }[] {
@@ -97,17 +185,4 @@ export function formatDuration(seconds: number | null): string {
   const min = Math.round(seconds / 60);
   if (min < 60) return `${min} min`;
   return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
-}
-
-/**
- * Part du webinaire réellement suivie, en pourcentage.
- * Renvoie null si la durée du webinaire est inconnue — mieux vaut ne rien
- * afficher qu'un pourcentage calculé sur une hypothèse.
- */
-export function attendanceRate(
-  watchedS: number | null,
-  webinarDurationMinutes: number | null,
-): number | null {
-  if (!watchedS || !webinarDurationMinutes || webinarDurationMinutes <= 0) return null;
-  return Math.min(100, Math.round((watchedS / (webinarDurationMinutes * 60)) * 100));
 }
