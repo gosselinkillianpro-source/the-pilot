@@ -87,8 +87,14 @@ services:
 
   # --- Cron 2 : NOUVELLES souscriptions seulement, toutes les heures ---
   # Les souscriptions sont figées : on n'insère que les nouvelles (scope=subscriptions).
-  # SYNC_URL_SUBS à renseigner dans le dashboard Render :
+  # Deux synchros dans le MÊME service : un cron Render est un service payant,
+  # et les deux ont besoin du même rythme horaire. Elles s'enchaînent — une
+  # panne de la première n'empêche pas la seconde de tourner.
+  #
+  # SYNC_URL_SUBS :
   #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>&scope=subscriptions
+  # SYNC_URL_WEBINARS :
+  #   https://<domaine-de-l-app>/api/cron/webinar-sync?token=<CRON_SECRET>
   - type: cron
     name: the-pilot-sync-subscriptions
     runtime: node
@@ -97,26 +103,10 @@ services:
     schedule: '0 * * * *'
     buildCommand: 'echo no-build'
     startCommand: >-
-      node -e "fetch(process.env.SYNC_URL_SUBS).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+      node -e "const urls=[process.env.SYNC_URL_SUBS,process.env.SYNC_URL_WEBINARS].filter(Boolean);let bad=0;(async()=>{for(const u of urls){try{const r=await fetch(u);console.log(await r.text())}catch(e){bad++;console.error('ECHEC',e.message)}}process.exit(bad?1:0)})()"
     envVars:
       - key: SYNC_URL_SUBS
         sync: false
-
-  # --- Cron 3 : webinaires WebinarGeek, toutes les heures ---
-  # Remplace l'export CSV manuel des « abonnés ». Récupère inscrits, engagement
-  # (durée de visionnage, CTA, sondages), crée une fiche contact par personne et
-  # la relie à sa fiche investisseur SAH quand l'e-mail correspond.
-  # SYNC_URL_WEBINARS à renseigner dans le dashboard Render :
-  #   https://<domaine-de-l-app>/api/cron/webinar-sync?token=<CRON_SECRET>
-  - type: cron
-    name: the-pilot-sync-webinars
-    runtime: node
-    region: frankfurt
-    plan: starter
-    schedule: '20 * * * *'
-    buildCommand: 'echo no-build'
-    startCommand: >-
-      node -e "fetch(process.env.SYNC_URL_WEBINARS).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
-    envVars:
       - key: SYNC_URL_WEBINARS
         sync: false
+
