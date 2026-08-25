@@ -98,7 +98,9 @@ export const CLOSING_COLUMNS: ClosingColumn[] = [
   {
     stage: 'closed_won',
     label: 'A investi',
-    hint: 'Souscription signée',
+    // La carte y arrive toute seule dès que la synchro voit une souscription
+    // postérieure à l'entrée dans le suivi (voir queries/pipeline-auto.ts).
+    hint: 'Souscription signée — rangement automatique',
     accent: 'var(--success)',
     absorbs: [],
   },

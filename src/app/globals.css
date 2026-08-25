@@ -1316,11 +1316,14 @@
 .kanban-board {
   display: grid;
   grid-auto-flow: column;
-  /* 180px : six colonnes + gouttières = 1140px, ce qui tient sans scroll sur un
+  /* 178px : six colonnes + gouttières = 1128px, ce qui tient sans scroll sur un
      écran de portable 14/16" (≈1234px utiles une fois la barre latérale et les
-     marges déduites). En dessous, le tableau scrolle — la barre ci-dessous le
-     dit franchement plutôt que de laisser croire à un tableau tronqué. */
-  grid-auto-columns: minmax(180px, 1fr);
+     marges déduites). Les colonnes de SORTIE (perdus, injoignables) sont
+     masquées par défaut pour rester sous cette limite — voir `collapsedStages`
+     dans components/shared/kanban. En dessous de cette largeur le tableau
+     scrolle : la barre et le dégradé ci-dessous le disent franchement, plutôt
+     que de laisser croire à un tableau tronqué. */
+  grid-auto-columns: minmax(178px, 1fr);
   gap: 12px;
   align-items: start;
   min-width: 0;

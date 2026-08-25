@@ -62,13 +62,14 @@ export const STAGES: StageColumn[] = [
   {
     stage: 'account_ready',
     label: 'Compte finalisé',
-    hint: 'KYC validé côté Seven At Home : peut investir',
+    hint: 'KYC validé côté SAH — rangement automatique',
     accent: 'var(--warning)',
   },
   {
     stage: 'invested',
     label: 'A investi',
-    hint: 'Souscription signée',
+    // Rangement automatique à la synchro SAH (queries/pipeline-auto.ts).
+    hint: 'Souscription signée — rangement automatique',
     accent: 'var(--success)',
   },
   {

@@ -1,6 +1,7 @@
 import 'server-only';
 import { and, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { applyAutomaticMoves } from '@/lib/db/queries/pipeline-auto';
 import { investors, projects, subscriptions } from '@/lib/db/schema';
 import { getSahClient } from './client';
 
@@ -15,6 +16,8 @@ export type SyncResult = {
   projects: number;
   investors: number;
   subscriptions: number;
+  /** Cartes de suivi rangées automatiquement d'après les faits importés. */
+  autoMoves: number;
   errors: string[];
 };
 
@@ -552,6 +555,7 @@ export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult>
   let projectsCount = 0;
   let investorsCount = 0;
   let subscriptionsCount = 0;
+  let autoMoves = 0;
 
   if (scope === 'light' || scope === 'full') {
     try {
@@ -576,10 +580,23 @@ export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult>
     }
   }
 
+  // Les tableaux de suivi se rangent d'après ce que la synchro vient
+  // d'apprendre : une souscription fait avancer la carte en « A investi », un
+  // KYC validé en « Compte finalisé ». Un closer n'a pas à recopier à la main
+  // ce que la base sait déjà. Une erreur ici ne doit pas faire échouer la
+  // synchro elle-même : les données sont importées, c'est le principal.
+  try {
+    const moved = await applyAutomaticMoves();
+    autoMoves = moved.closingInvested + moved.webinarInvested + moved.webinarAccountReady;
+  } catch (e) {
+    errors.push(`rangement des suivis: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   return {
     projects: projectsCount,
     investors: investorsCount,
     subscriptions: subscriptionsCount,
+    autoMoves,
     errors,
   };
 }

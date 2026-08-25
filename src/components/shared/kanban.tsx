@@ -44,6 +44,8 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
   onMove,
   renderCard,
   isHighlighted,
+  collapsedStages = [],
+  collapsedLabel = 'les sortis',
   emptyLabel = 'Aucune fiche.',
 }: {
   columns: KanbanColumn<S>[];
@@ -53,12 +55,23 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
   renderCard: (card: C) => ReactNode;
   /** Carte à signaler (bordure verte) — ex. « a souscrit, à faire avancer ». */
   isHighlighted?: (card: C) => boolean;
+  /**
+   * Colonnes de SORTIE, masquées par défaut (perdus, injoignables).
+   *
+   * Deux raisons : elles n'ont rien à voir avec le travail du jour — l'objectif
+   * est de vider les listes, pas de contempler les sorties — et chaque colonne
+   * en moins, c'est une colonne de plus qui tient à l'écran sans scroll.
+   * Elles restent accessibles d'un clic, et on peut y déposer une carte.
+   */
+  collapsedStages?: S[];
+  collapsedLabel?: string;
   emptyLabel?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [, startTransition] = useTransition();
   const [dragOver, setDragOver] = useState<S | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
 
   // La carte bouge d'abord à l'écran, le serveur confirme ensuite : un closer
   // qui traite trente fiches ne doit pas attendre le réseau à chaque geste.
@@ -84,12 +97,72 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
     });
   }
 
+  // Colonnes de sortie : hors de l'écran tant que le closer ne les demande pas.
+  const hidden = showClosed ? [] : collapsedStages;
+  const visibleColumns = columns.filter((c) => !hidden.includes(c.stage));
+  // Le compteur porte sur les colonnes de sortie, affichées ou non : il dit
+  // combien de fiches y dorment, pas combien sont cachées à cet instant.
+  const closedCount = view.filter((c) => collapsedStages.includes(c.stage)).length;
+
+  return (
+    <>
+      {collapsedStages.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowClosed((v) => !v)}
+            aria-expanded={showClosed}
+          >
+            {showClosed ? `Masquer ${collapsedLabel}` : `Voir ${collapsedLabel} (${closedCount})`}
+          </button>
+        </div>
+      )}
+      <KanbanGrid
+        columns={visibleColumns}
+        // Le sélecteur doit proposer TOUTES les colonnes, y compris masquées :
+        // sans ça, on ne pourrait plus sortir quelqu'un de la file au clavier.
+        allColumns={columns}
+        cards={view}
+        dragOver={dragOver}
+        setDragOver={setDragOver}
+        move={move}
+        renderCard={renderCard}
+        isHighlighted={isHighlighted}
+        emptyLabel={emptyLabel}
+      />
+    </>
+  );
+}
+
+/** La grille elle-même — séparée pour garder le composant principal lisible. */
+function KanbanGrid<S extends string, C extends KanbanItem<S>>({
+  columns,
+  allColumns,
+  cards,
+  dragOver,
+  setDragOver,
+  move,
+  renderCard,
+  isHighlighted,
+  emptyLabel,
+}: {
+  columns: KanbanColumn<S>[];
+  allColumns: KanbanColumn<S>[];
+  cards: C[];
+  dragOver: S | null;
+  setDragOver: (fn: (s: S | null) => S | null) => void;
+  move: (card: C, stage: S) => void;
+  renderCard: (card: C) => ReactNode;
+  isHighlighted?: (card: C) => boolean;
+  emptyLabel: string;
+}) {
   return (
     // Le scroll horizontal vit ICI, jamais sur la page : sur mobile, la feuille
     // de style empile les colonnes (voir .kanban-board dans globals.css).
     <div className="kanban-board">
       {columns.map((col) => {
-        const colCards = view.filter((c) => c.stage === col.stage);
+        const colCards = cards.filter((c) => c.stage === col.stage);
         const isTarget = dragOver === col.stage;
         return (
           // biome-ignore lint/a11y/noStaticElementInteractions: zone de dépôt du glisser-déposer ; le déplacement au clavier passe par le sélecteur de chaque carte.
@@ -99,14 +172,14 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
             data-over={isTarget}
             onDragOver={(e) => {
               e.preventDefault();
-              setDragOver(col.stage);
+              setDragOver(() => col.stage);
             }}
             onDragLeave={() => setDragOver((s) => (s === col.stage ? null : s))}
             onDrop={(e) => {
               e.preventDefault();
-              setDragOver(null);
+              setDragOver(() => null);
               const id = e.dataTransfer.getData('text/plain');
-              const card = view.find((c) => c.id === id);
+              const card = cards.find((c) => c.id === id);
               if (card) move(card, col.stage);
             }}
             style={{ borderColor: isTarget ? col.accent : undefined }}
@@ -173,7 +246,7 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
                           color: 'var(--text-2)',
                         }}
                       >
-                        {columns.map((c) => (
+                        {allColumns.map((c) => (
                           <option key={c.stage} value={c.stage}>
                             {c.label}
                           </option>

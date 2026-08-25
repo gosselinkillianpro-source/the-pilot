@@ -62,6 +62,8 @@ export function KanbanBoard({ cards, myId }: { cards: PipelineCard[]; myId: stri
       // encore dans une colonne intermédiaire — carte à faire avancer.
       isHighlighted={(c) => c.investedSince > 0 && c.stage !== 'invested' && c.stage !== 'lost'}
       renderCard={(card) => <Card card={card} mine={card.ownerUserId === myId} />}
+      collapsedStages={['lost']}
+      collapsedLabel="les perdus"
     />
   );
 }
