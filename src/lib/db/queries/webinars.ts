@@ -34,10 +34,19 @@ export type WebinarSummary = {
  * Règle d'attribution de la collecte à un webinaire.
  *
  * Une souscription n'est comptée que si :
- *   - elle est signée APRÈS la date du webinaire — sinon on créditerait un
- *     webinaire d'août pour de l'argent placé en juin ;
+ *   - sa date est POSTÉRIEURE au webinaire — sinon on créditerait un webinaire
+ *     d'août pour de l'argent placé en juin ;
  *   - elle n'est pas annulée ;
  *   - son investisseur est relié à une inscription à ce webinaire.
+ *
+ * ⚠️ DATE DE RÉFÉRENCE : coalesce(signed_at, paid_at, created_at).
+ * SAH ne renseigne pas toujours `signed_at` — 51 souscriptions actives en
+ * étaient dépourvues, pour 329 497 €, dont une de 30 000 € le jour même d'un
+ * webinaire. Exiger `signed_at` les écartait toutes EN SILENCE : la collecte
+ * du 17/08 affichait 1 452 € au lieu de 71 452 €.
+ * `created_at` est la date à laquelle NOTRE synchro a vu la souscription :
+ * une approximation haute, précise à l'heure près puisque la synchro est
+ * horaire. Mieux vaut cette imprécision qu'un silence qui divise par 50.
  *
  * Quand une personne a suivi PLUSIEURS webinaires avant d'investir, la
  * souscription est créditée au DERNIER qui précède la signature (last-touch) :
@@ -58,9 +67,8 @@ const ATTRIBUTION_CTE = sql`
     join webinar_registrations r on r.investor_id = s.investor_id
     join webinars w on w.id = r.webinar_id
     where s.status <> 'cancelled'
-      and s.signed_at is not null
       and w.scheduled_at is not null
-      and s.signed_at > w.scheduled_at
+      and coalesce(s.signed_at, s.paid_at, s.created_at) > w.scheduled_at
     order by s.id, w.scheduled_at desc
   )
 `;
@@ -201,14 +209,13 @@ export async function getWebinar(
       -- détail afficherait un total différent de celui de la liste.
       (select coalesce(sum(s.amount), 0) from subscriptions s
         where s.investor_id = i.id and s.status <> 'cancelled'
-          and s.signed_at is not null
-          and s.signed_at > ${webinarDate}
+          and coalesce(s.signed_at, s.paid_at, s.created_at) > ${webinarDate}
           and not exists (
             select 1 from webinar_registrations r2
             join webinars w2 on w2.id = r2.webinar_id
             where r2.investor_id = i.id
               and w2.scheduled_at > ${webinarDate}
-              and w2.scheduled_at < s.signed_at
+              and w2.scheduled_at < coalesce(s.signed_at, s.paid_at, s.created_at)
           )
       )::float as invested_after,
       u.full_name as assigned_closer_name,
