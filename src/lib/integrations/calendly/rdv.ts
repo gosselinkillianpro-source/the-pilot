@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -82,9 +82,9 @@ function str(v: unknown): string {
 async function listEvents(
   userUri: string,
   opts: { minStart?: string; maxStart?: string; count: number; sort: string },
+  accessToken: string,
 ): Promise<RawEvent[]> {
-  const token = process.env.CALENDLY_TOKEN;
-  if (!token) throw new CalendlyError('CALENDLY_TOKEN non configuré');
+  const token = accessToken;
   const params = new URLSearchParams({
     user: userUri,
     count: String(opts.count),
@@ -297,6 +297,9 @@ async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>
 
   // interactions triées du + récent au + ancien → 1ère vue par investisseur = dernière action.
   for (const row of ix) {
+    // investor_id est nullable (interactions sur un prospect RDV hors SAH) :
+    // seules celles rattachées à une fiche investisseur nous intéressent ici.
+    if (!row.investorId) continue;
     const entry = map.get(row.investorId);
     if (!entry) continue;
     if (!entry.derniereAction) {
@@ -313,6 +316,7 @@ async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>
 
   // tasks triées par échéance croissante → 1ère vue = prochain rappel.
   for (const t of tasks) {
+    if (!t.investorId) continue;
     const entry = map.get(t.investorId);
     if (entry && !entry.prochainRappel) {
       entry.prochainRappel = { dueAt: new Date(t.dueAt), note: t.note };
@@ -328,15 +332,17 @@ const UPCOMING_CAP = 15;
 const PAST_CAP = 25;
 const PAST_WINDOW_DAYS = 45;
 
-export async function getRdvBoard(): Promise<RdvBoardResult> {
-  if (!isCalendlyConfigured()) return { state: 'not_configured' };
+export async function getRdvBoard(accessToken?: string): Promise<RdvBoardResult> {
+  // Sans jeton fourni ET sans token global de transition : rien à afficher.
+  if (!accessToken && !isCalendlyConfigured()) return { state: 'not_configured' };
 
   let user: CalendlyUser;
   try {
-    user = await getCurrentUser();
+    user = await getCurrentUser(accessToken);
   } catch (e) {
     return { state: 'error', message: errMsg(e) };
   }
+  const bearer = accessToken ?? process.env.CALENDLY_TOKEN ?? '';
 
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
@@ -346,13 +352,16 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
   let past: RawEvent[] = [];
   try {
     [upcoming, past] = await Promise.all([
-      listEvents(user.uri, { minStart: nowIso, count: UPCOMING_CAP, sort: 'start_time:asc' }),
-      listEvents(user.uri, {
-        minStart: pastFromIso,
-        maxStart: nowIso,
-        count: PAST_CAP,
-        sort: 'start_time:desc',
-      }),
+      listEvents(
+        user.uri,
+        { minStart: nowIso, count: UPCOMING_CAP, sort: 'start_time:asc' },
+        bearer,
+      ),
+      listEvents(
+        user.uri,
+        { minStart: pastFromIso, maxStart: nowIso, count: PAST_CAP, sort: 'start_time:desc' },
+        bearer,
+      ),
     ]);
   } catch (e) {
     return { state: 'error', message: errMsg(e) };
@@ -364,7 +373,7 @@ export async function getRdvBoard(): Promise<RdvBoardResult> {
   const invitees = await Promise.all(
     events.map(async (ev) => {
       try {
-        const list = await getEventInvitees(ev.uri);
+        const list = await getEventInvitees(ev.uri, bearer);
         return list[0] ?? null;
       } catch {
         return null;
@@ -421,46 +430,61 @@ export interface RdvAssignResult {
 }
 
 /**
- * Retrouve l'utilisateur PILOT propriétaire du Calendly (Guillaume) :
- * 1) par l'email du compte Calendly (le plus fiable), 2) à défaut par le nom.
+ * Le propriétaire de l'agenda, c'est-à-dire le closer à qui reviennent les leads
+ * de ses propres rendez-vous.
+ *
+ * ⚠️ Il y avait ici un repli « chercher un utilisateur dont le nom contient
+ * gosselin ». Guillaume n'ayant jamais eu de compte, ce repli tombait sur
+ * « Gosselinkillian Pro » : 25 fiches ont été réassignées à l'admin entre juin
+ * et août 2026, en silence, en écrasant parfois un autre closer. Repli supprimé.
+ *
+ * On ne rapproche plus que par e-mail exact du compte Calendly. Pas de
+ * correspondance : personne n'est propriétaire, on ne réassigne rien.
  */
 async function findOwnerUser(
   calendlyEmail: string,
-  _calendlyName: string,
 ): Promise<{ id: string; name: string | null } | null> {
-  if (calendlyEmail) {
-    const byEmail = await db
-      .select({ id: users.id, fullName: users.fullName })
-      .from(users)
-      .where(
-        and(eq(sql`lower(${users.email})`, calendlyEmail.toLowerCase()), eq(users.active, true)),
-      )
-      .limit(1);
-    if (byEmail[0]) return { id: byEmail[0].id, name: byEmail[0].fullName };
-  }
-  const byName = await db
+  if (!calendlyEmail) return null;
+  const byEmail = await db
     .select({ id: users.id, fullName: users.fullName })
     .from(users)
-    .where(and(ilike(users.fullName, '%gosselin%'), eq(users.active, true)))
+    .where(and(eq(sql`lower(${users.email})`, calendlyEmail.toLowerCase()), eq(users.active, true)))
     .limit(1);
-  if (byName[0]) return { id: byName[0].id, name: byName[0].fullName };
-  return null;
+  return byEmail[0] ? { id: byEmail[0].id, name: byEmail[0].fullName } : null;
+}
+
+/** Propriétaire explicite : l'utilisateur dont on lit la connexion Calendly. */
+async function findOwnerById(userId: string): Promise<{ id: string; name: string | null } | null> {
+  const rows = await db
+    .select({ id: users.id, fullName: users.fullName })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.active, true)))
+    .limit(1);
+  return rows[0] ? { id: rows[0].id, name: rows[0].fullName } : null;
 }
 
 /**
- * Assigne automatiquement à Guillaume TOUS les leads (présents en base) issus d'un
- * RDV Calendly. Force la propriété : même un lead déjà assigné à un autre closer
- * bascule vers Guillaume (décision produit — c'est lui qui tient les RDV Funnel B).
+ * Assigne au propriétaire de l'agenda TOUS les leads (présents en base) issus de
+ * ses RDV Calendly. Force la propriété : même un lead déjà assigné à un autre
+ * closer bascule vers lui — c'est lui qui a tenu le rendez-vous.
  *
- * Idempotent : ne touche que les fiches dont le closer diffère déjà de Guillaume,
+ * Idempotent : ne touche que les fiches dont le closer diffère déjà du propriétaire,
  * donc en régime établi l'UPDATE ne modifie 0 ligne. Audit loggé uniquement quand
  * au moins une fiche change. Best-effort : n'interrompt jamais l'affichage.
  */
 export async function autoAssignRdvLeads(
   board: RdvBoard,
   viewer: AuthenticatedUser,
+  /**
+   * Compte THE PILOT dont on lit l'agenda. Fourni dès que le closer a relié son
+   * Calendly en OAuth : c'est la source de vérité, sans aucune devinette. Le
+   * rapprochement par e-mail ne sert plus que pour l'ancien token global.
+   */
+  ownerUserId?: string,
 ): Promise<RdvAssignResult> {
-  const owner = await findOwnerUser(board.user.email, board.user.name);
+  const owner = ownerUserId
+    ? await findOwnerById(ownerUserId)
+    : await findOwnerUser(board.user.email);
   if (!owner) return { ownerFound: false, ownerName: null, assigned: 0 };
 
   const ids = [

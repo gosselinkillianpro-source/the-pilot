@@ -83,7 +83,12 @@ export async function getDueTasks(opts?: { closerId?: string }): Promise<CloserT
     .where(and(...filters))
     .orderBy(closerTasks.dueAt);
 
-  return rows.map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now.getTime() }));
+  // L'innerJoin sur `investors` garantit déjà un investisseur : le filtre ne
+  // retire rien, il rend la garantie lisible par le typage (investor_id est
+  // nullable depuis l'ouverture des RDV aux prospects hors SAH).
+  return rows
+    .filter((r): r is typeof r & { investorId: string } => r.investorId !== null)
+    .map((r) => ({ ...r, overdue: new Date(r.dueAt).getTime() < now.getTime() }));
 }
 
 export type InvestorOpenTask = {
@@ -374,6 +379,9 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
 
   const contactsByInvestor = new Map<string, Contact[]>();
   for (const c of contactsRows) {
+    // Une interaction sur un prospect RDV (pas encore dans SAH) n'a pas
+    // d'investisseur : elle ne compte pas dans l'attribution de performance.
+    if (!c.investorId) continue;
     const kind: ContactKind = c.type.startsWith('call') ? 'call' : (EMAIL_KIND[c.type] ?? 'open');
     const list = contactsByInvestor.get(c.investorId) ?? [];
     list.push({ kind, at: c.at, userId: c.userId });
