@@ -350,6 +350,21 @@ const DEFS: MetricDef[] = [
       'Capacité d’acquisition du webinaire (vs simple réactivation de clients existants) → format à répéter ou non.',
     screens: '/webinaires · /webinaires/[id]',
   },
+  {
+    id: 'webinaire_suivi_collecte',
+    label: 'Collecte de la colonne « A investi »',
+    definition:
+      'Somme souscrite depuis leur webinaire d’origine par les personnes rangées dans la colonne « A investi » du tableau de suivi.',
+    source: 'sah_db',
+    sourceDetail:
+      'rdv_contacts.pipeline_stage + subscriptions · listPipelineCards (queries/webinar-pipeline.ts)',
+    calcul:
+      "somme de `invested_since` des cartes en stage 'invested' ; invested_since = sum(amount) non annulé signé après le dernier webinaire suivi",
+    unit: 'eur',
+    decision:
+      'Vérifier que le travail de suivi se transforme en collecte — et repérer les cartes à faire avancer (montant > 0 hors colonne « A investi »).',
+    screens: '/webinaires/suivi',
+  },
 ];
 
 /** Registre indexé par id. */

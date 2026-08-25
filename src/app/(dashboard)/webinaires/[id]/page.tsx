@@ -1,6 +1,7 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, KanbanSquare } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { getWebinar } from '@/lib/db/queries/webinars';
 import { groupByBucket } from '@/lib/webinars/call-order';
 import { AttendeeRow } from './attendee-row';
@@ -19,7 +20,7 @@ function fmtDate(d: Date | null): string {
 
 export default async function WebinarDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const data = await getWebinar(id);
+  const [data, user] = await Promise.all([getWebinar(id), getAuthenticatedUser()]);
   if (!data) notFound();
 
   const { webinar, attendees } = data;
@@ -52,11 +53,31 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
           <ArrowLeft size={13} />
           Tous les webinaires
         </Link>
-        <h1 className="page-title">{webinar.title}</h1>
-        <div className="page-desc">
-          {fmtDate(webinar.scheduledAt)}
-          {webinar.durationMinutes ? ` · ${webinar.durationMinutes} min` : ''} ·{' '}
-          <strong>{webinar.registrations} inscrits</strong>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <h1 className="page-title">{webinar.title}</h1>
+            <div className="page-desc">
+              {fmtDate(webinar.scheduledAt)}
+              {webinar.durationMinutes ? ` · ${webinar.durationMinutes} min` : ''} ·{' '}
+              <strong>{webinar.registrations} inscrits</strong>
+            </div>
+          </div>
+          {/* Le tableau de suivi de CE webinaire : la suite du travail commence là. */}
+          <Link
+            href={`/webinaires/suivi?webinar=${webinar.id}`}
+            className="btn btn-secondary btn-sm"
+          >
+            <KanbanSquare size={13} />
+            Tableau de suivi
+          </Link>
         </div>
       </div>
 
@@ -112,6 +133,7 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
                   webinarId={webinar.id}
                   webinarDurationS={webinarDurationS}
                   rank={idx + 1}
+                  myId={user.id}
                 />
               ))
             )}

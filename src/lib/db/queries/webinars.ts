@@ -276,6 +276,12 @@ export type WebinarAttendee = {
   internalAccountReason: string | null;
   assignedCloserName: string | null;
 
+  /** Closer qui a pris la fiche en charge (« Je prends »). */
+  ownerUserId: string | null;
+  ownerName: string | null;
+  /** Colonne du tableau de suivi, quand la personne y est déjà. */
+  pipelineStage: string | null;
+
   /** Dernier appel passé à cette personne, tous canaux d'origine confondus. */
   lastCallAt: Date | null;
   lastCallOutcome: string | null;
@@ -329,6 +335,9 @@ export async function getWebinar(
             and coalesce(s.signed_at, s.paid_at, s.created_at) > ${webinarDate}
         )::float as invested_since,
         u.full_name as assigned_closer_name,
+        c.owner_user_id::text as owner_user_id,
+        ow.full_name as owner_name,
+        c.pipeline_stage,
         lc.created_at as last_call_at,
         lc.outcome as last_call_outcome,
         na.due_at as next_action_at,
@@ -337,6 +346,7 @@ export async function getWebinar(
       left join rdv_contacts c on c.id = r.rdv_contact_id
       left join investors i on i.id = r.investor_id
       left join users u on u.id = i.assigned_closer_id
+      left join users ow on ow.id = c.owner_user_id
       left join lateral (
         select created_at, outcome from interactions ix
         where ix.type in ('call_outbound', 'call_inbound')
@@ -400,6 +410,9 @@ export async function getWebinar(
           : null,
       internalAccountReason: internal,
       assignedCloserName: r.assigned_closer_name ? String(r.assigned_closer_name) : null,
+      ownerUserId: r.owner_user_id ? String(r.owner_user_id) : null,
+      ownerName: r.owner_name ? String(r.owner_name) : null,
+      pipelineStage: r.pipeline_stage ? String(r.pipeline_stage) : null,
       lastCallAt: toDate(r.last_call_at),
       lastCallOutcome: r.last_call_outcome ? String(r.last_call_outcome) : null,
       nextActionAt: toDate(r.next_action_at),

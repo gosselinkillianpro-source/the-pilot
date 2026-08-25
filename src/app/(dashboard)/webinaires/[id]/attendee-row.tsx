@@ -1,12 +1,18 @@
 'use client';
 
-import { CheckCircle2, ChevronDown, Phone, Radio } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Hand, LockOpen, Phone, Radio } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { useToast } from '@/components/shared/toast';
 import type { WebinarAttendee } from '@/lib/db/queries/webinars';
 import { formatDuration, parseCapacity, totalWatchedS } from '@/lib/webinars/call-order';
-import { claimWebinarContact, logWebinarCall, scheduleWebinarCallback } from '../actions';
+import {
+  claimWebinarContact,
+  logWebinarCall,
+  releaseWebinarContact,
+  scheduleWebinarCallback,
+} from '../actions';
 
 /**
  * Une ligne d'inscrit, dépliable.
@@ -36,15 +42,22 @@ export function AttendeeRow({
   webinarId,
   webinarDurationS,
   rank,
+  myId,
 }: {
   attendee: WebinarAttendee;
   webinarId: string;
   webinarDurationS: number | null;
   rank: number;
+  /** Utilisateur connecté : sert à distinguer « ma fiche » de celle d'un collègue. */
+  myId: string;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const { toast } = useToast();
+  const router = useRouter();
+
+  const claimedByMe = attendee.ownerUserId != null && attendee.ownerUserId === myId;
+  const claimedByOther = attendee.ownerUserId != null && attendee.ownerUserId !== myId;
 
   const capacity = parseCapacity(attendee.extraFields?.["Capacité d'inscription"]);
   const availability = attendee.extraFields?.['Disponibilité des fonds sous 30 jours'] ?? null;
@@ -62,8 +75,14 @@ export function AttendeeRow({
     startTransition(async () => {
       try {
         const res = await fn();
-        if (res.success) toast(ok, { variant: 'success' });
-        else toast(res.error ?? 'Action impossible', { variant: 'error' });
+        if (res.success) {
+          // Sans ce rafraîchissement, l'écran restait identique après le clic :
+          // l'action passait en base, l'utilisateur ne voyait rien changer.
+          router.refresh();
+          toast(ok, { variant: 'success' });
+        } else {
+          toast(res.error ?? 'Action impossible', { variant: 'error' });
+        }
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Erreur', { variant: 'error' });
       }
@@ -324,23 +343,44 @@ export function AttendeeRow({
               Rappeler demain
             </button>
 
-            {attendee.contactId && !attendee.investorId && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={pending}
-                onClick={() =>
-                  run(
-                    () =>
-                      claimWebinarContact({ webinarId, contactId: attendee.contactId as string }),
-                    'Contact pris en charge',
-                  )
-                }
-              >
-                <Radio size={13} />
-                Je m'en occupe
-              </button>
-            )}
+            {/* « Je prends » vaut pour TOUT inscrit, avec ou sans compte SAH :
+                le bouton était caché dès qu'une fiche investisseur existait,
+                c'est-à-dire pour la majorité des gens qu'on appelle. */}
+            {attendee.contactId &&
+              (claimedByOther ? (
+                <span className="badge badge-neutral" title="Verrou posé par un collègue">
+                  <Hand size={11} /> suivi par {attendee.ownerName}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className={claimedByMe ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm'}
+                  disabled={pending}
+                  onClick={() =>
+                    run(
+                      () =>
+                        claimedByMe
+                          ? releaseWebinarContact({
+                              webinarId,
+                              contactId: attendee.contactId as string,
+                            })
+                          : claimWebinarContact({
+                              webinarId,
+                              contactId: attendee.contactId as string,
+                            }),
+                      claimedByMe ? 'Fiche libérée' : 'Pris en charge — carte créée dans le suivi',
+                    )
+                  }
+                >
+                  {claimedByMe ? <LockOpen size={13} /> : <Hand size={13} />}
+                  {claimedByMe ? 'Libérer' : 'Je prends'}
+                </button>
+              ))}
+
+            <Link href="/webinaires/suivi" className="btn btn-ghost btn-sm">
+              <Radio size={13} />
+              Voir le suivi
+            </Link>
           </div>
         </div>
       )}

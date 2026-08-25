@@ -1,4 +1,4 @@
-import { CalendarClock, Euro, Radio, Users } from 'lucide-react';
+import { CalendarClock, Euro, KanbanSquare, Radio, Users } from 'lucide-react';
 import Link from 'next/link';
 import { listWebinars } from '@/lib/db/queries/webinars';
 
@@ -33,11 +33,25 @@ export default async function WebinairesPage() {
 
   return (
     <>
-      <div>
-        <h1 className="page-title">Webinaires</h1>
-        <div className="page-desc">
-          Qui s'est inscrit, qui est venu, combien de temps — et dans quel ordre les rappeler.
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 className="page-title">Webinaires</h1>
+          <div className="page-desc">
+            Qui s'est inscrit, qui est venu, combien de temps — et dans quel ordre les rappeler.
+          </div>
         </div>
+        <Link href="/webinaires/suivi" className="btn btn-secondary btn-sm">
+          <KanbanSquare size={13} />
+          Tableau de suivi
+        </Link>
       </div>
 
       {webinars.length === 0 ? (

@@ -110,6 +110,9 @@ Exposé en temps réel par [`src/lib/sources/health.ts`](src/lib/sources/health.
 |---|---|---|---|
 | `webinaire_collecte_attribuee` | Collecte attribuée au webinaire | tout ce que souscrivent les personnes qu'il a fait entrer sur SAH + **une seule** souscription (la première après le live) par membre déjà présent | `webinars/attribution.ts` (module pur testé) |
 | `webinaire_recrues` | Recrues du webinaire | inscrits dont le compte SAH a été ouvert grâce à lui | `count(distinct investor_id)` dont ce webinaire est le webinaire d'entrée |
+| `webinaire_suivi_collecte` | Collecte de la colonne « A investi » | € souscrit depuis leur webinaire par les cartes rangées dans « A investi » | somme de `invested_since` des cartes en stage `invested` |
+
+**Tableau de suivi (kanban).** Une carte par personne prise en charge, dans `rdv_contacts.pipeline_stage` : `taken` → `called` → `interested` → `account_ready` → `invested`, plus `lost` en sortie. La carte naît au clic « Je prends » ou à l'enregistrement d'un appel ; l'automatisme ne fait qu'avancer, jamais reculer, et ne touche jamais une carte classée « A investi » ou « Perdu » par un humain. Règle testée : `src/lib/webinars/pipeline.ts`.
 
 **La règle, en clair.** Un webinaire ne recrute pas deux fois la même personne.
 
