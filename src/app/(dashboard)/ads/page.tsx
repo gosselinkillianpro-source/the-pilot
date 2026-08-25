@@ -554,8 +554,16 @@ export default async function AdsPage({
         <StatTile label="CTR" value={pct(totals.ctr)} />
         <StatTile label="CPC" value={eur(totals.cpc, 2)} hint="coût / clic" />
         <StatTile label="CPM" value={eur(totals.cpm, 2)} hint="/ 1000 impr." />
-        <StatTile label="Résultats" value={int(totals.results)} hint="conversions / leads" />
-        <StatTile label="Coût / résultat" value={eur(totals.cpa, 2)} />
+        <StatTile
+          label="Résultats (pixel)"
+          value={int(totals.results)}
+          hint="conversions déclarées par la régie"
+        />
+        <StatTile
+          label="Coût / résultat (pixel)"
+          value={eur(totals.cpa, 2)}
+          hint="régie — sert à comparer les campagnes, pas à mesurer le coût réel"
+        />
         <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
       </div>
 

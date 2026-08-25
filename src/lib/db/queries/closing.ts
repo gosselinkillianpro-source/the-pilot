@@ -253,22 +253,21 @@ export async function getPipelineBoard(): Promise<BoardColumn[]> {
   });
 }
 
-export type FunnelStage = { stage: string; label: string; total: number };
-
-/** Comptage des personnes par étape du tunnel (vue tunnel lecture seule). */
-export async function getPipelineFunnel(): Promise<FunnelStage[]> {
-  const rows = await db
-    .select({ stage: investors.pipelineStage, n: count() })
-    .from(investors)
-    .where(isNull(investors.deletedAt))
-    .groupBy(investors.pipelineStage);
-  const map = new Map(rows.map((r) => [r.stage, Number(r.n)]));
-  return PIPELINE_STAGES.map((s) => ({
-    stage: s.value,
-    label: s.label,
-    total: map.get(s.value) ?? 0,
-  }));
-}
+/*
+ * getPipelineFunnel() a été supprimé (audit — « un chiffre, une définition »).
+ * Il comptait les investisseurs par `pipeline_stage`, un champ saisi à la main
+ * par les closers : 3 120 des 3 135 investisseurs étaient restés sur la valeur
+ * par défaut `new`, et l'étape `closed_won` affichait 1 personne alors que
+ * 1 457 avaient réellement investi.
+ *
+ * L'entonnoir de référence est celui de /dashboard, dérivé des drapeaux SAH
+ * (registration_complete, onboarding_complete, souscriptions) : automatique,
+ * sans saisie, donc toujours juste.
+ *
+ * `pipeline_stage` reste utilisé comme champ de travail : exclusion des
+ * closed_won/closed_lost de la file d'appels, affichage sur la fiche,
+ * mise à jour depuis /rdv.
+ */
 
 export type CloserOption = { id: string; name: string | null; role: string };
 

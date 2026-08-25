@@ -15,8 +15,15 @@ const LOW_CTR = 0.5; // %
 const LOW_CTR_MIN_IMPR = 1000;
 const CPA_OUTLIER_FACTOR = 2; // coût/résultat > 2x la moyenne = anomalie
 
-/** Construit les alertes à partir des campagnes et du coût/résultat moyen global. */
-export function buildAdsAlerts(campaigns: AdCampaign[], blendedCpa: number | null): AdAlert[] {
+/**
+ * Construit les alertes à partir des campagnes et du coût/résultat moyen RÉGIE.
+ *
+ * `regieCpa` vient des conversions du pixel, que le reste du module considère
+ * comme gonflées. Il ne sert ici qu'à comparer les campagnes ENTRE ELLES
+ * (repérer une campagne 2× plus chère que la moyenne) — jamais comme un coût
+ * d'acquisition réel. Le coût réel vient du bloc croisé SAH.
+ */
+export function buildAdsAlerts(campaigns: AdCampaign[], regieCpa: number | null): AdAlert[] {
   const alerts: AdAlert[] = [];
   for (const c of campaigns) {
     const d = derive(rawOf(c));
@@ -30,15 +37,15 @@ export function buildAdsAlerts(campaigns: AdCampaign[], blendedCpa: number | nul
       });
     } else if (
       d.cpa !== null &&
-      blendedCpa !== null &&
-      blendedCpa > 0 &&
-      d.cpa > blendedCpa * CPA_OUTLIER_FACTOR &&
+      regieCpa !== null &&
+      regieCpa > 0 &&
+      d.cpa > regieCpa * CPA_OUTLIER_FACTOR &&
       c.spend >= WASTE_SPEND_FLOOR
     ) {
       alerts.push({
         level: 'warning',
         title: who,
-        detail: `Coût/résultat ${d.cpa.toFixed(0)} € — environ ${(d.cpa / blendedCpa).toFixed(1)}× la moyenne (${blendedCpa.toFixed(0)} €).`,
+        detail: `Coût/résultat ${d.cpa.toFixed(0)} € — environ ${(d.cpa / regieCpa).toFixed(1)}× la moyenne (${regieCpa.toFixed(0)} €).`,
       });
     }
 
