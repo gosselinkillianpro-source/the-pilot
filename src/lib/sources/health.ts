@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { investors } from '@/lib/db/schema';
 import { getBrevoAccount } from '@/lib/integrations/brevo/client';
+import { isCalendlyConfigured } from '@/lib/integrations/calendly/client';
 import { getGoogleAdsConfig } from '@/lib/integrations/google-ads/client';
 import { getMetaConfig } from '@/lib/integrations/meta-ads/client';
 import { classifyFreshness, formatAgo, type SourceHealth } from './freshness';
@@ -13,7 +14,8 @@ import { classifyFreshness, formatAgo, type SourceHealth } from './freshness';
  * - base SAH : fraîcheur = max(investors.updated_at) (dernière écriture de sync).
  * - Brevo : appel API live → ok/down/non configuré.
  * - Meta/Google : présence des clés (l'appel réel se fait sur /ads).
- * - GA4 / Calendly / WhatsApp : ANNONCÉS mais NON branchés → état explicite « non connecté ».
+ * - Calendly : présence du token (l'appel réel se fait sur /rdv).
+ * - GA4 / WhatsApp : ANNONCÉS mais NON branchés → état explicite « non connecté ».
  *
  * Règle : jamais présenter une donnée figée comme fraîche. Une source en échec → état affiché.
  */
@@ -92,6 +94,19 @@ function probeRegie(
   };
 }
 
+/** Calendly : le token suffit ici, l'appel réel à l'API se fait sur /rdv. */
+function probeCalendly(): SourceHealth {
+  const configured = isCalendlyConfigured();
+  return {
+    key: 'calendly',
+    label: 'Calendly',
+    status: configured ? 'ok' : 'not_configured',
+    freshness: configured ? 'temps réel (API)' : '—',
+    freshnessAt: null,
+    detail: configured ? 'token présent' : 'CALENDLY_TOKEN absent',
+  };
+}
+
 function notConnected(key: SourceHealth['key'], label: string): SourceHealth {
   return {
     key,
@@ -118,8 +133,8 @@ export async function probeAllSources(now: number = Date.now()): Promise<SourceH
       google.configured,
       google.configured ? undefined : google.reason,
     ),
+    probeCalendly(),
     notConnected('ga4', 'Google Analytics 4'),
-    notConnected('calendly', 'Calendly'),
     notConnected('whatsapp', 'WhatsApp'),
   ];
 }

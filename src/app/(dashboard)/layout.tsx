@@ -1,5 +1,4 @@
 import { sql } from 'drizzle-orm';
-import { Bell, ChevronDown, Search } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -74,12 +73,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             />
           </Link>
 
-          <div className="view-topbar-search" style={{ width: '100%', minWidth: 0 }}>
-            <Search size={14} />
-            <span style={{ flex: 1 }}>Recherche</span>
-            <kbd>Ctrl K</kbd>
-          </div>
-
           <NavContent role={user.role} />
 
           <UserMenu name={name} role={user.role} initials={initials} />
@@ -104,12 +97,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           )}
           <div className="view-topbar">
             <MobileNav role={user.role} name={name} initials={initials} />
-            <div className="view-topbar-breadcrumb">
-              <span className="crumb">Workspace</span>
-              <ChevronDown size={12} style={{ transform: 'rotate(-90deg)' }} />
-              <span className="crumb active">THE PILOT</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
               {freshness && (
                 <div
                   title="Dernière mise à jour des données depuis Seven At Home"
@@ -137,32 +125,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 </div>
               )}
               <SyncButton />
-              <div className="view-topbar-search">
-                <Search size={14} />
-                <span style={{ flex: 1 }}>Rechercher</span>
-                <kbd>Ctrl K</kbd>
-              </div>
-              <button
-                type="button"
-                aria-label="Notifications"
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: 'var(--glass-bg-strong)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative',
-                  cursor: 'pointer',
-                }}
-              >
-                {/* Point rouge retiré : il était codé en dur (fausse notification permanente).
-                    Il reviendra branché sur de vraies données (centre de notifications). */}
-                <Bell size={14} />
-              </button>
             </div>
           </div>
 
