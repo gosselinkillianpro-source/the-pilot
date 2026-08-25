@@ -121,6 +121,12 @@ export function AttendeeRow({
             {attendee.investorId && (
               <span style={{ color: 'var(--success)', marginLeft: 6 }}>· compte SAH</span>
             )}
+            {attendee.investedAfterWebinar > 0 && (
+              <span style={{ color: 'var(--success)', fontWeight: 700, marginLeft: 6 }}>
+                · a investi {Math.round(attendee.investedAfterWebinar).toLocaleString('fr-FR')} €
+                depuis
+              </span>
+            )}
           </span>
         </span>
 

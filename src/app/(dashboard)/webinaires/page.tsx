@@ -1,8 +1,12 @@
-import { CalendarClock, Radio, Users } from 'lucide-react';
+import { CalendarClock, Euro, Radio, Users } from 'lucide-react';
 import Link from 'next/link';
 import { listWebinars } from '@/lib/db/queries/webinars';
 
 export const dynamic = 'force-dynamic';
+
+function money(n: number): string {
+  return `${Math.round(n).toLocaleString('fr-FR')} €`;
+}
 
 function fmtDate(d: Date | null): string {
   if (!d) return 'date inconnue';
@@ -97,8 +101,35 @@ export default async function WebinairesPage() {
                         value={`${rate} %`}
                         tone={rate >= 30 ? 'var(--success)' : 'var(--warning)'}
                       />
+                      <Stat
+                        label="Collecte"
+                        value={money(w.attributedRevenue)}
+                        tone={w.attributedRevenue > 0 ? 'var(--success)' : 'var(--text-3)'}
+                        icon={<Euro size={13} />}
+                      />
                     </div>
                   </div>
+
+                  {w.attributedRevenue > 0 && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 10,
+                        borderTop: '1px solid var(--border)',
+                        fontSize: 12,
+                        color: 'var(--text-3)',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--success)' }}>
+                        {money(w.attributedRevenue)}
+                      </strong>{' '}
+                      souscrits par <strong>{w.attributedInvestors}</strong> inscrit
+                      {w.attributedInvestors > 1 ? 's' : ''}{' '}
+                      <span style={{ color: 'var(--text-4)' }}>
+                        — uniquement ce qui a été signé APRÈS ce webinaire
+                      </span>
+                    </div>
+                  )}
 
                   {w.linkedToSah > 0 && (
                     <div

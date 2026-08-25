@@ -61,10 +61,20 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <div className="kpi-grid">
-        <Kpi label="En direct" value={webinar.live} accent="var(--success)" />
-        <Kpi label="Replay seul" value={webinar.replay} accent="var(--brand)" />
-        <Kpi label="Absents" value={webinar.noShow} accent="var(--text-3)" />
-        <Kpi label="Comptes SAH" value={webinar.linkedToSah} accent="var(--ai)" />
+        <Kpi label="En direct" value={String(webinar.live)} accent="var(--success)" />
+        <Kpi label="Replay seul" value={String(webinar.replay)} accent="var(--brand)" />
+        <Kpi label="Absents" value={String(webinar.noShow)} accent="var(--text-3)" />
+        <Kpi label="Comptes SAH" value={String(webinar.linkedToSah)} accent="var(--ai)" />
+        <Kpi
+          label="Collecte attribuée"
+          value={`${Math.round(webinar.attributedRevenue).toLocaleString('fr-FR')} €`}
+          accent="var(--success)"
+          hint={
+            webinar.attributedInvestors > 0
+              ? `${webinar.attributedInvestors} investisseur${webinar.attributedInvestors > 1 ? 's' : ''} · signé après ce webinaire`
+              : 'aucune souscription depuis ce webinaire'
+          }
+        />
       </div>
 
       {groups.map((group) => (
@@ -102,12 +112,23 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
   );
 }
 
-function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
+function Kpi({
+  label,
+  value,
+  accent,
+  hint,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  hint?: string;
+}) {
   return (
     <div className="view-card">
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, color: accent }}>{label}</span>
         <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-1)' }}>{value}</span>
+        {hint ? <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{hint}</span> : null}
       </div>
     </div>
   );

@@ -21,10 +21,59 @@ export type WebinarSummary = {
   replay: number;
   noShow: number;
   linkedToSah: number;
+  /**
+   * Collecte réellement attribuable à ce webinaire : uniquement les
+   * souscriptions signées APRÈS lui, par un inscrit relié à une fiche SAH.
+   * Voir ATTRIBUTION_RULE pour la règle complète.
+   */
+  attributedRevenue: number;
+  attributedInvestors: number;
 };
+
+/**
+ * Règle d'attribution de la collecte à un webinaire.
+ *
+ * Une souscription n'est comptée que si :
+ *   - elle est signée APRÈS la date du webinaire — sinon on créditerait un
+ *     webinaire d'août pour de l'argent placé en juin ;
+ *   - elle n'est pas annulée ;
+ *   - son investisseur est relié à une inscription à ce webinaire.
+ *
+ * Quand une personne a suivi PLUSIEURS webinaires avant d'investir, la
+ * souscription est créditée au DERNIER qui précède la signature (last-touch) :
+ * une souscription n'est jamais comptée deux fois.
+ *
+ * ⚠️ Mesuré sur les données réelles, la somme naïve « tout ce que les inscrits
+ * ont investi » gonflait le webinaire du 17/08 d'un facteur 70 — l'essentiel
+ * ayant été placé avant, par des investisseurs déjà clients.
+ */
+const ATTRIBUTION_CTE = sql`
+  attributed as (
+    select distinct on (s.id)
+      w.id as webinar_id,
+      s.id as sub_id,
+      s.amount,
+      s.investor_id
+    from subscriptions s
+    join webinar_registrations r on r.investor_id = s.investor_id
+    join webinars w on w.id = r.webinar_id
+    where s.status <> 'cancelled'
+      and s.signed_at is not null
+      and w.scheduled_at is not null
+      and s.signed_at > w.scheduled_at
+    order by s.id, w.scheduled_at desc
+  )
+`;
 
 export async function listWebinars(): Promise<WebinarSummary[]> {
   const rows = await db.execute(sql`
+    with ${ATTRIBUTION_CTE},
+    revenue as (
+      select webinar_id,
+        coalesce(sum(amount), 0)::float as revenue,
+        count(distinct investor_id)::int as investors
+      from attributed group by webinar_id
+    )
     select
       w.id::text as id,
       w.title,
@@ -35,9 +84,12 @@ export async function listWebinars(): Promise<WebinarSummary[]> {
       count(*) filter (where r.watched_live)::int as live,
       count(*) filter (where r.watched_replay and not r.watched_live)::int as replay,
       count(*) filter (where not r.watched)::int as no_show,
-      count(r.investor_id)::int as linked_to_sah
+      count(r.investor_id)::int as linked_to_sah,
+      coalesce(max(rev.revenue), 0)::float as attributed_revenue,
+      coalesce(max(rev.investors), 0)::int as attributed_investors
     from webinars w
     left join webinar_registrations r on r.webinar_id = w.id
+    left join revenue rev on rev.webinar_id = w.id
     group by w.id
     order by w.scheduled_at desc nulls last
   `);
@@ -53,6 +105,8 @@ export async function listWebinars(): Promise<WebinarSummary[]> {
     replay: number;
     no_show: number;
     linked_to_sah: number;
+    attributed_revenue: number;
+    attributed_investors: number;
   };
 
   return (rows as unknown as Raw[]).map((r) => ({
@@ -66,6 +120,8 @@ export async function listWebinars(): Promise<WebinarSummary[]> {
     replay: r.replay,
     noShow: r.no_show,
     linkedToSah: r.linked_to_sah,
+    attributedRevenue: Number(r.attributed_revenue) || 0,
+    attributedInvestors: Number(r.attributed_investors) || 0,
   }));
 }
 
@@ -91,6 +147,8 @@ export type WebinarAttendee = {
   sahRegistrationComplete: boolean | null;
   sahOnboardingComplete: boolean | null;
   totalInvested: number | null;
+  /** Ce que cette personne a souscrit APRÈS ce webinaire — la vraie conversion. */
+  investedAfterWebinar: number;
   assignedCloserName: string | null;
 
   /** Dernier appel passé à cette personne, tous canaux d'origine confondus. */
@@ -106,6 +164,14 @@ export async function getWebinar(
 ): Promise<{ webinar: WebinarSummary; attendees: WebinarAttendee[] } | null> {
   const head = await db.select().from(webinars).where(eq(webinars.id, id)).limit(1);
   if (!head[0]) return null;
+
+  // Sans date de webinaire, aucune attribution n'a de sens : on ne peut pas
+  // savoir ce qui a été souscrit « après ». Une date impossible à dépasser
+  // donne alors une collecte nulle, plutôt qu'un chiffre inventé.
+  //
+  // ⚠️ En chaîne ISO, pas en objet Date : le pilote Postgres refuse un Date
+  // comme paramètre de requête brute (« Received an instance of Date »).
+  const webinarDate = (head[0].scheduledAt ?? new Date('9999-01-01')).toISOString();
 
   const rows = await db.execute(sql`
     select
@@ -128,6 +194,23 @@ export async function getWebinar(
       i.onboarding_complete,
       (select coalesce(sum(s.amount), 0) from subscriptions s
         where s.investor_id = i.id and s.status <> 'cancelled')::float as total_invested,
+      -- Souscrit APRÈS ce webinaire ET attribuable à LUI (last-touch) : on
+      -- exclut ce qui a été signé après un webinaire plus récent auquel la
+      -- personne s'est aussi inscrite. Sans ce garde-fou, quelqu'un ayant
+      -- suivi deux webinaires serait compté dans les deux, et la page de
+      -- détail afficherait un total différent de celui de la liste.
+      (select coalesce(sum(s.amount), 0) from subscriptions s
+        where s.investor_id = i.id and s.status <> 'cancelled'
+          and s.signed_at is not null
+          and s.signed_at > ${webinarDate}
+          and not exists (
+            select 1 from webinar_registrations r2
+            join webinars w2 on w2.id = r2.webinar_id
+            where r2.investor_id = i.id
+              and w2.scheduled_at > ${webinarDate}
+              and w2.scheduled_at < s.signed_at
+          )
+      )::float as invested_after,
       u.full_name as assigned_closer_name,
       lc.created_at as last_call_at,
       lc.outcome as last_call_outcome,
@@ -172,6 +255,7 @@ export async function getWebinar(
       r.registration_complete == null ? null : r.registration_complete === true,
     sahOnboardingComplete: r.onboarding_complete == null ? null : r.onboarding_complete === true,
     totalInvested: r.total_invested != null ? Number(r.total_invested) : null,
+    investedAfterWebinar: Number(r.invested_after) || 0,
     assignedCloserName: r.assigned_closer_name ? String(r.assigned_closer_name) : null,
     lastCallAt: r.last_call_at ? new Date(String(r.last_call_at)) : null,
     lastCallOutcome: r.last_call_outcome ? String(r.last_call_outcome) : null,
@@ -191,6 +275,9 @@ export async function getWebinar(
     replay: attendees.filter((a) => a.watchedReplay && !a.watchedLive).length,
     noShow: attendees.filter((a) => !a.watchedLive && !a.watchedReplay).length,
     linkedToSah: attendees.filter((a) => a.investorId).length,
+    // Somme des souscriptions postérieures au webinaire, chez ses inscrits.
+    attributedRevenue: attendees.reduce((sum, a) => sum + a.investedAfterWebinar, 0),
+    attributedInvestors: attendees.filter((a) => a.investedAfterWebinar > 0).length,
   };
 
   return { webinar, attendees };
