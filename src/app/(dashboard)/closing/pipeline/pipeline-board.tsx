@@ -85,6 +85,10 @@ export function PipelineBoard({ cards, myId }: { cards: ClosingCard[]; myId: str
       // Bordure verte : la personne a investi mais dort dans une autre colonne.
       isHighlighted={(c) => c.totalInvested > 0 && c.realStage !== 'closed_won'}
       renderCard={(card) => <CardBody card={card} mine={card.ownerId === myId} />}
+      // Les sortis de file ne prennent pas une colonne à l'écran : le but est
+      // de vider les listes, pas d'admirer les pertes. Un clic les rouvre.
+      collapsedStages={['closed_lost']}
+      collapsedLabel="les sortis de la file"
       emptyLabel="Personne ici."
     />
   );

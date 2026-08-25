@@ -39,6 +39,7 @@ export async function syncNowAction() {
       projects: result.projects,
       investors: result.investors,
       subscriptions: result.subscriptions,
+      autoMoves: result.autoMoves,
       errors: result.errors,
     };
   } catch (e) {
