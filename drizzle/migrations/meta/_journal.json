@@ -127,6 +127,13 @@
       "when": 1787640806739,
       "tag": "0017_webinars",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787641600109,
+      "tag": "0018_webinar_contacts",
+      "breakpoints": true
     }
   ]
 }

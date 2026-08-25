@@ -90,47 +90,77 @@ async function call(path: string): Promise<unknown> {
 
 export type WgBroadcast = {
   id: string;
-  webinarId: string | null;
   title: string;
   startsAt: Date | null;
+  /** Durée réelle de la diffusion (WebinarGeek la donne en secondes). */
   durationMinutes: number | null;
+  cancelled: boolean;
+  hasEnded: boolean;
+  subscriptionsCount: number;
 };
 
-function parseBroadcast(raw: unknown): WgBroadcast | null {
+/**
+ * Une diffusion ne porte NI titre NI référence au webinaire parent : vérifié
+ * sur les données réelles. Le titre vient donc de `/webinars`, rapproché
+ * après coup. Le champ de date s'appelle `date`, pas `starts_at`.
+ */
+function parseBroadcast(raw: unknown): Omit<WgBroadcast, 'title'> | null {
   if (!isRecord(raw)) return null;
   const id = raw.id != null ? String(raw.id) : null;
   if (!id) return null;
 
-  // Le titre peut vivre sur la diffusion ou sur le webinaire parent.
-  const webinar = isRecord(raw.webinar) ? raw.webinar : null;
-  const title = str(raw.title) ?? (webinar ? str(webinar.title) : null) ?? `Webinaire ${id}`;
-
+  const durationS = num(raw.duration);
   return {
     id,
-    webinarId:
-      raw.webinar_id != null
-        ? String(raw.webinar_id)
-        : webinar?.id != null
-          ? String(webinar.id)
-          : null,
-    title,
-    startsAt: ts(raw.starts_at) ?? ts(raw.start_time) ?? ts(raw.scheduled_at),
-    durationMinutes: num(raw.duration) ?? num(raw.duration_minutes),
+    startsAt: ts(raw.date),
+    durationMinutes: durationS != null ? Math.round(durationS / 60) : null,
+    cancelled: bool(raw.cancelled),
+    hasEnded: bool(raw.has_ended),
+    subscriptionsCount: num(raw.subscriptions_count) ?? 0,
   };
 }
 
+function collectionOf(data: unknown, key: string): unknown[] {
+  if (isRecord(data) && Array.isArray(data[key])) return data[key];
+  if (isRecord(data) && Array.isArray(data.data)) return data.data;
+  return Array.isArray(data) ? data : [];
+}
+
+/** Titre du webinaire parent le plus probable (un seul webinaire actif chez SAH). */
+async function fetchWebinarTitle(): Promise<string | null> {
+  try {
+    const data = await call('/webinars?per_page=20');
+    const items = collectionOf(data, 'webinars');
+    for (const w of items) {
+      if (isRecord(w)) {
+        const title = str(w.title);
+        // On ignore les webinaires de test, qui polluent la liste des closers.
+        if (title && title.toLowerCase() !== 'test') return title;
+      }
+    }
+  } catch {
+    // Titre indisponible : on retombera sur un libellé daté, ce n'est pas bloquant.
+  }
+  return null;
+}
+
 export async function listBroadcasts(limit = 50): Promise<WgBroadcast[]> {
-  const data = await call(`/broadcasts?per_page=${Math.min(limit, MAX_PER_PAGE)}`);
-  const collection = isRecord(data)
-    ? Array.isArray(data.broadcasts)
-      ? data.broadcasts
-      : Array.isArray(data.data)
-        ? data.data
-        : []
-    : Array.isArray(data)
-      ? data
-      : [];
-  return collection.map(parseBroadcast).filter((b): b is WgBroadcast => b !== null);
+  const [data, fallbackTitle] = await Promise.all([
+    call(`/broadcasts?per_page=${Math.min(limit, MAX_PER_PAGE)}`),
+    fetchWebinarTitle(),
+  ]);
+
+  return collectionOf(data, 'broadcasts')
+    .map(parseBroadcast)
+    .filter((b): b is Omit<WgBroadcast, 'title'> => b !== null)
+    .map((b) => ({
+      ...b,
+      title:
+        fallbackTitle ??
+        (b.startsAt
+          ? `Webinaire du ${b.startsAt.toLocaleDateString('fr-FR')}`
+          : `Webinaire ${b.id}`),
+    }));
 }
 
 /* ============================================================

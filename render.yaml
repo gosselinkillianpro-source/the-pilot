@@ -91,3 +91,22 @@ services:
     envVars:
       - key: SYNC_URL_SUBS
         sync: false
+
+  # --- Cron 3 : webinaires WebinarGeek, toutes les heures ---
+  # Remplace l'export CSV manuel des « abonnés ». Récupère inscrits, engagement
+  # (durée de visionnage, CTA, sondages), crée une fiche contact par personne et
+  # la relie à sa fiche investisseur SAH quand l'e-mail correspond.
+  # SYNC_URL_WEBINARS à renseigner dans le dashboard Render :
+  #   https://<domaine-de-l-app>/api/cron/webinar-sync?token=<CRON_SECRET>
+  - type: cron
+    name: the-pilot-sync-webinars
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: '20 * * * *'
+    buildCommand: 'echo no-build'
+    startCommand: >-
+      node -e "fetch(process.env.SYNC_URL_WEBINARS).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: SYNC_URL_WEBINARS
+        sync: false

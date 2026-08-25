@@ -449,14 +449,26 @@ export const calendlyConnections = pgTable('calendly_connections', {
    lui donne une fiche (notes, actions) en attendant, et porte le
    LIEN MANUEL vers l'investisseur quand les e-mails diffèrent.
    ============================================================ */
+export const contactSourceEnum = pgEnum('contact_source', ['calendly', 'webinar', 'manuel']);
+
 export const rdvContacts = pgTable('rdv_contacts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  // Le closer propriétaire du RDV (celui dont c'est l'agenda).
-  ownerUserId: uuid('owner_user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  // E-mail utilisé sur Calendly — la clé de rapprochement automatique.
-  calendlyEmail: text('calendly_email').notNull(),
+  /**
+   * Closer propriétaire. NULLABLE : un inscrit à un webinaire n'appartient à
+   * personne tant qu'un closer ne l'a pas pris en charge, contrairement à un
+   * RDV Calendly qui a toujours un agenda d'origine.
+   */
+  ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** D'où vient ce contact — conditionne l'écran qui le présente. */
+  source: contactSourceEnum('source').notNull().default('calendly'),
+  /**
+   * Clé de rapprochement avec une fiche investisseur SAH.
+   * ⚠️ La colonne s'appelle encore `calendly_email` en base : la table est née
+   * pour les RDV Calendly avant d'accueillir les inscrits webinaire. Renommer
+   * exigerait une confirmation interactive de drizzle-kit, impossible ici — la
+   * propriété TypeScript porte le bon nom, c'est ce que lit le code.
+   */
+  email: text('calendly_email').notNull(),
   fullName: text('full_name'),
   phone: text('phone'),
   notes: text('notes'),

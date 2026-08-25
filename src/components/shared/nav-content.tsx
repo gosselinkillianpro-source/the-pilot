@@ -38,6 +38,10 @@ export function NavContent({ role }: { role: string }) {
           Équipe
         </SidebarLink>
       )}
+      <SidebarLink href="/webinaires">
+        <Radio />
+        Webinaires
+      </SidebarLink>
       <SidebarLink href="/projects">
         <Building2 />
         Projets
