@@ -18,6 +18,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -448,14 +449,26 @@ export const calendlyConnections = pgTable('calendly_connections', {
    lui donne une fiche (notes, actions) en attendant, et porte le
    LIEN MANUEL vers l'investisseur quand les e-mails diffèrent.
    ============================================================ */
+export const contactSourceEnum = pgEnum('contact_source', ['calendly', 'webinar', 'manuel']);
+
 export const rdvContacts = pgTable('rdv_contacts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  // Le closer propriétaire du RDV (celui dont c'est l'agenda).
-  ownerUserId: uuid('owner_user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  // E-mail utilisé sur Calendly — la clé de rapprochement automatique.
-  calendlyEmail: text('calendly_email').notNull(),
+  /**
+   * Closer propriétaire. NULLABLE : un inscrit à un webinaire n'appartient à
+   * personne tant qu'un closer ne l'a pas pris en charge, contrairement à un
+   * RDV Calendly qui a toujours un agenda d'origine.
+   */
+  ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
+  /** D'où vient ce contact — conditionne l'écran qui le présente. */
+  source: contactSourceEnum('source').notNull().default('calendly'),
+  /**
+   * Clé de rapprochement avec une fiche investisseur SAH.
+   * ⚠️ La colonne s'appelle encore `calendly_email` en base : la table est née
+   * pour les RDV Calendly avant d'accueillir les inscrits webinaire. Renommer
+   * exigerait une confirmation interactive de drizzle-kit, impossible ici — la
+   * propriété TypeScript porte le bon nom, c'est ce que lit le code.
+   */
+  email: text('calendly_email').notNull(),
   fullName: text('full_name'),
   phone: text('phone'),
   notes: text('notes'),
@@ -470,3 +483,83 @@ export const rdvContacts = pgTable('rdv_contacts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ============================================================
+   WEBINAIRES — miroir WebinarGeek
+   Remplace l'export CSV manuel. Une session = un `webinars`,
+   un inscrit = un `webinar_registrations` portant TOUT son
+   engagement (présence, durée, sondages, CTA cliqués).
+   ============================================================ */
+export const webinars = pgTable('webinars', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** Identifiant de la diffusion côté WebinarGeek — clé de synchro. */
+  wgBroadcastId: text('wg_broadcast_id').notNull().unique(),
+  wgWebinarId: text('wg_webinar_id'),
+  title: text('title').notNull(),
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  durationMinutes: integer('duration_minutes'),
+  /** Dernière synchro réussie depuis l'API — pour afficher une fraîcheur honnête. */
+  syncedAt: timestamp('synced_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const webinarRegistrations = pgTable(
+  'webinar_registrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    webinarId: uuid('webinar_id')
+      .notNull()
+      .references(() => webinars.id, { onDelete: 'cascade' }),
+    /** Identifiant de l'inscription côté WebinarGeek. */
+    wgSubscriptionId: text('wg_subscription_id').notNull(),
+
+    // --- Identité (telle que saisie au formulaire) ---
+    email: text('email').notNull(),
+    firstName: text('first_name'),
+    lastName: text('last_name'),
+    phone: text('phone'),
+    company: text('company'),
+    jobTitle: text('job_title'),
+
+    // --- Engagement : le cœur de ce que l'export CSV apportait ---
+    watched: boolean('watched').notNull().default(false),
+    watchedLive: boolean('watched_live').notNull().default(false),
+    watchedReplay: boolean('watched_replay').notNull().default(false),
+    /** Durée réelle de visionnage en direct, en secondes. */
+    watchDurationS: integer('watch_duration_s'),
+    watchDurationReplayS: integer('watch_duration_replay_s'),
+    watchStart: timestamp('watch_start', { withTimezone: true }),
+    watchEnd: timestamp('watch_end', { withTimezone: true }),
+
+    // --- Réponses et actions (JSON brut de WebinarGeek) ---
+    /** Champs libres du formulaire : le questionnaire d'onboarding. */
+    extraFields: jsonb('extra_fields'),
+    /** Consentements cochés — base légale d'une relance marketing. */
+    consentFields: jsonb('consent_fields'),
+    pollVotes: jsonb('poll_votes'),
+    quizAnswers: jsonb('quiz_answers'),
+    evaluationAnswers: jsonb('evaluation_answers'),
+    /** CTA cliqués, horodatés : le signal d'intérêt le plus fort. */
+    callsToAction: jsonb('calls_to_action'),
+    questions: jsonb('questions'),
+
+    // --- Rattachement CRM ---
+    /** Investisseur SAH correspondant (par e-mail, ou `external_id`). */
+    investorId: uuid('investor_id').references(() => investors.id, { onDelete: 'set null' }),
+    /** Sinon, fiche prospect locale — un inscrit n'a pas forcément de compte SAH. */
+    rdvContactId: uuid('rdv_contact_id').references(() => rdvContacts.id, {
+      onDelete: 'set null',
+    }),
+
+    unsubscribed: boolean('unsubscribed').notNull().default(false),
+    registeredAt: timestamp('registered_at', { withTimezone: true }),
+    syncedAt: timestamp('synced_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Une inscription WebinarGeek n'existe qu'une fois par webinaire.
+    uniqueIndex('webinar_registrations_wg_key').on(t.webinarId, t.wgSubscriptionId),
+    index('webinar_registrations_email_idx').on(t.email),
+    index('webinar_registrations_investor_idx').on(t.investorId),
+  ],
+);
