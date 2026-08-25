@@ -134,6 +134,13 @@
       "when": 1787641600109,
       "tag": "0018_webinar_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787649650685,
+      "tag": "0019_furry_stingray",
+      "breakpoints": true
     }
   ]
 }

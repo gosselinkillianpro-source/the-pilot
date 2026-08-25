@@ -451,6 +451,24 @@ export const calendlyConnections = pgTable('calendly_connections', {
    ============================================================ */
 export const contactSourceEnum = pgEnum('contact_source', ['calendly', 'webinar', 'manuel']);
 
+/**
+ * Colonnes du tableau de suivi (kanban) d'un inscrit pris en charge.
+ *
+ * L'ordre est celui du parcours réel : on prend la personne, on l'appelle, on
+ * qualifie son intérêt, elle finalise son compte SAH (KYC), elle investit.
+ * `lost` est à part : c'est une sortie, pas une étape.
+ *
+ * La règle de progression vit dans `webinars/pipeline.ts` (module testé).
+ */
+export const contactStageEnum = pgEnum('contact_stage', [
+  'taken',
+  'called',
+  'interested',
+  'account_ready',
+  'invested',
+  'lost',
+]);
+
 export const rdvContacts = pgTable('rdv_contacts', {
   id: uuid('id').primaryKey().defaultRandom(),
   /**
@@ -480,6 +498,16 @@ export const rdvContacts = pgTable('rdv_contacts', {
   investorId: uuid('investor_id').references(() => investors.id, { onDelete: 'set null' }),
   linkedBy: uuid('linked_by').references(() => users.id),
   linkedAt: timestamp('linked_at', { withTimezone: true }),
+  /**
+   * Colonne du tableau de suivi. NULL = la personne n'est pas encore suivie :
+   * elle vit dans la liste du webinaire, pas dans le kanban. Une carte naît
+   * quand un closer prend la fiche ou enregistre un appel.
+   */
+  pipelineStage: contactStageEnum('pipeline_stage'),
+  /** Entrée dans le suivi — sert à mesurer le temps total du parcours. */
+  pipelineEnteredAt: timestamp('pipeline_entered_at', { withTimezone: true }),
+  /** Dernier changement de colonne — sert à repérer les cartes qui dorment. */
+  pipelineStageUpdatedAt: timestamp('pipeline_stage_updated_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

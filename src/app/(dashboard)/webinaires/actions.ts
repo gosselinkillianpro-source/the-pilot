@@ -7,6 +7,11 @@ import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
+import {
+  contactIdForInvestor,
+  progressStage,
+  progressStageAfterCall,
+} from '@/lib/db/queries/webinar-pipeline';
 import { closerTasks, interactions, rdvContacts } from '@/lib/db/schema';
 
 /**
@@ -68,6 +73,12 @@ export async function logWebinarCall(input: z.infer<typeof logCallSchema>) {
     userId: user.id,
   });
 
+  // Un appel enregistré fait entrer la personne dans le tableau de suivi — ou
+  // l'y fait avancer. Sans ça, l'appel n'existerait que dans l'historique et le
+  // closer devrait recréer sa carte à la main.
+  const contactId = parsed.contactId ?? (await contactIdForInvestor(parsed.investorId));
+  if (contactId) await progressStageAfterCall(contactId, parsed.outcome);
+
   await logAudit({
     userId: user.id,
     userEmail: user.email,
@@ -79,6 +90,7 @@ export async function logWebinarCall(input: z.infer<typeof logCallSchema>) {
   });
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
+  revalidatePath('/webinaires/suivi');
   return { success: true };
 }
 
@@ -117,6 +129,7 @@ export async function scheduleWebinarCallback(input: z.infer<typeof scheduleSche
   });
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
+  revalidatePath('/webinaires/suivi');
   return { success: true };
 }
 
@@ -156,9 +169,12 @@ const claimSchema = z.object({
 });
 
 /**
- * Prise en charge d'un prospect par un closer.
- * Un inscrit au webinaire n'appartient à personne au départ : c'est ce bouton
- * qui évite que deux closers appellent la même personne.
+ * « Je prends » : prise en charge d'un inscrit par un closer.
+ *
+ * Deux effets, indissociables : la fiche est verrouillée (deux closers
+ * n'appellent pas la même personne) ET une carte apparaît dans le tableau de
+ * suivi, colonne « Pris en charge ». Avant, le bouton ne faisait que poser un
+ * propriétaire invisible à l'écran : cliquer semblait sans effet.
  */
 export async function claimWebinarContact(input: z.infer<typeof claimSchema>) {
   const user = await getAuthenticatedUser();
@@ -183,6 +199,8 @@ export async function claimWebinarContact(input: z.infer<typeof claimSchema>) {
     return { success: false, error: 'Cette personne est déjà suivie par un autre closer.' };
   }
 
+  const stage = await progressStage(parsed.contactId, 'taken');
+
   await logAudit({
     userId: user.id,
     userEmail: user.email,
@@ -190,8 +208,47 @@ export async function claimWebinarContact(input: z.infer<typeof claimSchema>) {
     action: 'webinar.contact_claimed',
     resourceType: 'rdv_contact',
     resourceId: parsed.contactId,
+    metadata: { stage },
   });
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
+  revalidatePath('/webinaires/suivi');
+  return { success: true };
+}
+
+/** Libère la fiche pour un collègue. La carte de suivi, elle, reste où elle est. */
+export async function releaseWebinarContact(input: z.infer<typeof claimSchema>) {
+  const user = await getAuthenticatedUser();
+  const parsed = claimSchema.parse(input);
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+
+  // Un admin peut débloquer une fiche coincée sur un closer absent ; un closer
+  // ne libère que la sienne.
+  const scope =
+    user.role === 'admin'
+      ? eq(rdvContacts.id, parsed.contactId)
+      : and(eq(rdvContacts.id, parsed.contactId), eq(rdvContacts.ownerUserId, user.id));
+
+  const updated = await db
+    .update(rdvContacts)
+    .set({ ownerUserId: null, updatedAt: new Date() })
+    .where(scope)
+    .returning({ id: rdvContacts.id });
+
+  if (updated.length === 0) {
+    return { success: false, error: 'Cette fiche est suivie par un autre closer.' };
+  }
+
+  await logAudit({
+    userId: user.id,
+    userEmail: user.email,
+    userRole: user.role,
+    action: 'webinar.contact_released',
+    resourceType: 'rdv_contact',
+    resourceId: parsed.contactId,
+  });
+
+  revalidatePath(`/webinaires/${parsed.webinarId}`);
+  revalidatePath('/webinaires/suivi');
   return { success: true };
 }

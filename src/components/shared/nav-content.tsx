@@ -3,6 +3,7 @@ import {
   BarChart3,
   Building2,
   CalendarClock,
+  KanbanSquare,
   LayoutGrid,
   Mail,
   Radio,
@@ -38,9 +39,13 @@ export function NavContent({ role }: { role: string }) {
           Équipe
         </SidebarLink>
       )}
-      <SidebarLink href="/webinaires">
+      <SidebarLink href="/webinaires" exact>
         <Radio />
         Webinaires
+      </SidebarLink>
+      <SidebarLink href="/webinaires/suivi">
+        <KanbanSquare />
+        Suivi webinaires
       </SidebarLink>
       <SidebarLink href="/projects">
         <Building2 />
