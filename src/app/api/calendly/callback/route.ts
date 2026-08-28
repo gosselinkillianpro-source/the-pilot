@@ -107,8 +107,6 @@ async function resolveTargetUser(
     .where(eq(users.id, requested))
     .limit(1);
   const row = rows[0];
-  if (!row || !row.active || !['admin', 'closer', 'closer_junior'].includes(row.role)) {
-    return userId;
-  }
-  return row.id;
+  const eligible = row?.active && ['admin', 'closer', 'closer_junior'].includes(row.role);
+  return eligible ? row.id : userId;
 }
