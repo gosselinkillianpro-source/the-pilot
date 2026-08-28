@@ -234,7 +234,12 @@ export default async function RdvPage({
       )}
 
       {access.state === 'not_connected' && (
-        <ConnectPrompt targetName={targetName} isOtherUser={isOtherUser} />
+        <ConnectPrompt
+          targetName={targetName}
+          isOtherUser={isOtherUser}
+          targetUserId={access.target.userId}
+          canDelegate={user.role === 'admin'}
+        />
       )}
       {access.state === 'connection_broken' && <BrokenConnection message={access.message} />}
 

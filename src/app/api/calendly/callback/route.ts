@@ -1,14 +1,17 @@
 import { timingSafeEqual } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { type NextRequest, NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
 import {
   exchangeCodeForTokens,
   fetchCalendlyIdentity,
   getOAuthConfig,
   saveConnection,
 } from '@/lib/integrations/calendly/oauth';
-import { STATE_COOKIE } from '../connect/route';
+import { STATE_COOKIE, TARGET_COOKIE } from '../connect/route';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,31 +53,62 @@ export async function GET(request: NextRequest) {
   const config = getOAuthConfig();
   if (!config) return back('erreur=oauth_non_configure');
 
+  // Connexion déléguée : le cookie dit POUR QUI, mais il ne fait pas foi à lui
+  // seul. On revérifie ici le rôle de l'appelant et l'éligibilité de la cible —
+  // un cookie forgé ne doit pas suffire à détourner l'agenda d'un collègue.
+  const requestedTarget = request.cookies.get(TARGET_COOKIE)?.value;
+  const targetUserId = await resolveTargetUser(user.id, user.role, requestedTarget);
+  const delegated = targetUserId !== user.id;
+
   try {
     const tokens = await exchangeCodeForTokens(config, code);
     const identity = await fetchCalendlyIdentity(tokens.access_token);
-    await saveConnection({ userId: user.id, tokens, identity });
+    await saveConnection({ userId: targetUserId, tokens, identity });
 
     await logAudit({
       userId: user.id,
-      action: 'calendly.connect.success',
+      action: delegated ? 'calendly.connect.success_delegated' : 'calendly.connect.success',
       resourceType: 'calendly_connection',
-      resourceId: user.id,
+      resourceId: targetUserId,
       // Jamais de jeton dans l'audit : uniquement de quoi savoir quel compte.
-      metadata: { calendlyEmail: identity.email },
+      metadata: { calendlyEmail: identity.email, ...(delegated ? { parAdmin: user.id } : {}) },
     });
   } catch (e) {
     await logAudit({
       userId: user.id,
       action: 'calendly.connect.failure',
       resourceType: 'calendly_connection',
-      resourceId: user.id,
+      resourceId: targetUserId,
       metadata: { message: e instanceof Error ? e.message : 'erreur inconnue' },
     });
     return back(`erreur=echange&detail=${encodeURIComponent(e instanceof Error ? e.message : '')}`);
   }
 
-  const response = back('calendly=connecte');
+  // On revient sur l'agenda concerné, pas sur celui de l'admin : il doit voir
+  // tout de suite le résultat de ce qu'il vient de connecter.
+  const response = back(
+    delegated ? `calendly=connecte&closer=${targetUserId}` : 'calendly=connecte',
+  );
   response.cookies.delete(STATE_COOKIE);
+  response.cookies.delete(TARGET_COOKIE);
   return response;
+}
+
+/** Même règle qu'au départ du flux : seul un admin délègue, vers du staff actif. */
+async function resolveTargetUser(
+  userId: string,
+  role: string,
+  requested: string | undefined,
+): Promise<string> {
+  if (!requested || requested === userId || role !== 'admin') return userId;
+  const rows = await db
+    .select({ id: users.id, role: users.role, active: users.active })
+    .from(users)
+    .where(eq(users.id, requested))
+    .limit(1);
+  const row = rows[0];
+  if (!row || !row.active || !['admin', 'closer', 'closer_junior'].includes(row.role)) {
+    return userId;
+  }
+  return row.id;
 }
