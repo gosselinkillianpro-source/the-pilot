@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
@@ -8,6 +8,8 @@ import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investors } from '@/lib/db/schema';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 /**
  * Compte-rendu post-RDV : note libre + intention de dépôt (montant/fourchette/échéance)
@@ -154,4 +156,84 @@ export async function recordRdvOutcomeAction(
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
   }
+}
+
+/* ============================================================
+   RAPPELS — un rendez-vous avec soi-même
+   ============================================================ */
+
+const reminderSchema = z.object({
+  /** Cible : une fiche investisseur SAH, ou une fiche prospect. */
+  targetId: z.string().uuid(),
+  targetKind: z.enum(['investor', 'contact']),
+  /** Date et heure locales du navigateur, converties en ISO à l'envoi. */
+  dueAt: z.string().datetime(),
+  note: z.string().trim().max(500).optional(),
+});
+
+/** Crée un rappel : il apparaîtra dans l'agenda et dans le cockpit du jour. */
+export async function createReminderAction(input: z.infer<typeof reminderSchema>) {
+  const user = await getAuthenticatedUser();
+  const parsed = reminderSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? 'Données invalides.' };
+  }
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  await ensureUserRecord(user);
+
+  const { targetId, targetKind, dueAt, note } = parsed.data;
+  await db.insert(closerTasks).values({
+    // Exactement une cible renseignée : la contrainte en base le vérifie aussi.
+    investorId: targetKind === 'investor' ? targetId : null,
+    rdvContactId: targetKind === 'contact' ? targetId : null,
+    closerId: user.id,
+    type: 'callback',
+    dueAt: new Date(dueAt),
+    note: note ?? null,
+    createdBy: user.id,
+  });
+
+  await logAudit({
+    userId: user.id,
+    userEmail: user.email,
+    userRole: user.role,
+    action: 'rdv.reminder_created',
+    resourceType: targetKind === 'investor' ? 'investor' : 'rdv_contact',
+    resourceId: targetId,
+    metadata: { dueAt },
+  });
+
+  revalidatePath('/rdv');
+  revalidatePath('/closing/today');
+  await notifyChange(SYNC_TOPICS.closing);
+  return { success: true };
+}
+
+const completeSchema = z.object({ reminderId: z.string().uuid() });
+
+/** Marque un rappel comme fait. Seul son propriétaire peut le clore. */
+export async function completeReminderAction(input: { reminderId: string }) {
+  const user = await getAuthenticatedUser();
+  const parsed = completeSchema.safeParse(input);
+  if (!parsed.success) return { success: false, error: 'Rappel introuvable.' };
+  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+
+  const done = await db
+    .update(closerTasks)
+    .set({ status: 'done', completedAt: new Date() })
+    .where(
+      and(
+        eq(closerTasks.id, parsed.data.reminderId),
+        eq(closerTasks.closerId, user.id),
+        eq(closerTasks.status, 'pending'),
+      ),
+    )
+    .returning({ id: closerTasks.id });
+
+  if (done.length === 0) return { success: false, error: 'Ce rappel ne t’appartient pas.' };
+
+  revalidatePath('/rdv');
+  revalidatePath('/closing/today');
+  await notifyChange(SYNC_TOPICS.closing);
+  return { success: true };
 }

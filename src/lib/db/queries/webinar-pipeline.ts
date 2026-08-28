@@ -70,7 +70,17 @@ function toDate(value: unknown): Date | null {
  * Le filtre par webinaire s'applique au DERNIER webinaire suivi : c'est celui
  * qui a motivé l'appel, donc celui sous lequel le closer cherche sa carte.
  */
-export async function listPipelineCards(webinarId?: string): Promise<PipelineCard[]> {
+/**
+ * Source des fiches suivies : inscrits webinaire ou leads issus d'un RDV.
+ * Le tableau, les colonnes et les gestes sont les mêmes — seule la population
+ * change, d'où un paramètre plutôt qu'un second écran presque identique.
+ */
+export type ContactSource = 'webinar' | 'calendly';
+
+export async function listPipelineCards(
+  webinarId?: string,
+  source: ContactSource = 'webinar',
+): Promise<PipelineCard[]> {
   const rows = await db.execute(sql`
     select
       c.id::text as contact_id,
@@ -125,7 +135,7 @@ export async function listPipelineCards(webinarId?: string): Promise<PipelineCar
         and (ct.rdv_contact_id = c.id or (c.investor_id is not null and ct.investor_id = c.investor_id))
       order by ct.due_at asc limit 1
     ) na on true
-    where c.source = 'webinar'
+    where c.source = ${source}
       and c.pipeline_stage is not null
       ${webinarId ? sql`and reg.webinar_id = ${webinarId}` : sql``}
     order by c.pipeline_stage_updated_at desc nulls last
