@@ -48,14 +48,24 @@ describe('faut-il alerter', () => {
     expect(res.send).toBe(false);
   });
 
-  test('tôt le matin (7 h) : pas encore', () => {
-    const tot = new Date('2026-09-15T05:00:00Z');
-    expect(shouldAlert(lead({ createdAt: tot }), tot).send).toBe(false);
+  test('8 h du matin : le closer n’est pas encore en poste', () => {
+    const huit = new Date('2026-09-15T06:00:00Z');
+    expect(shouldAlert(lead({ createdAt: huit }), huit).send).toBe(false);
   });
 
-  test('8 h pile : on peut y aller', () => {
-    const huitHeures = new Date('2026-09-15T06:00:00Z');
-    expect(shouldAlert(lead({ createdAt: huitHeures }), huitHeures)).toEqual({ send: true });
+  test('9 h pile : on peut y aller', () => {
+    const neuf = new Date('2026-09-15T07:00:00Z');
+    expect(shouldAlert(lead({ createdAt: neuf }), neuf)).toEqual({ send: true });
+  });
+
+  test('19 h : encore dans la plage de travail', () => {
+    const dixNeuf = new Date('2026-09-15T17:00:00Z');
+    expect(shouldAlert(lead({ createdAt: dixNeuf }), dixNeuf)).toEqual({ send: true });
+  });
+
+  test('20 h pile : plus personne ne décroche, on n’alerte plus', () => {
+    const vingt = new Date('2026-09-15T18:00:00Z');
+    expect(shouldAlert(lead({ createdAt: vingt }), vingt).send).toBe(false);
   });
 
   test('une inscription trop ancienne ne fait plus sonner un téléphone', () => {

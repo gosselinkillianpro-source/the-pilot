@@ -14,10 +14,16 @@
  * c'est ce module qu'il faudrait revoir — pas le canal.
  */
 
-/** Heure locale (Europe/Paris) à partir de laquelle on peut alerter. */
-export const QUIET_HOURS_END = 8;
-/** Heure locale après laquelle on n'alerte plus. */
-export const QUIET_HOURS_START = 22;
+/**
+ * Plage sans alerte (heure de Paris) : 20 h → 9 h.
+ *
+ * Choix de Killian, plus large que la nuit stricte : passé 20 h un inscrit ne
+ * décroche plus, et avant 9 h le closer n'est pas en poste. Un lead arrivé
+ * dans cette plage n'est PAS marqué — son alerte part à la réouverture, avec
+ * l'ancienneté réelle affichée dans le message.
+ */
+export const QUIET_HOURS_END = 9;
+export const QUIET_HOURS_START = 20;
 /**
  * Âge maximal d'une inscription pour valoir une alerte poussée.
  *
