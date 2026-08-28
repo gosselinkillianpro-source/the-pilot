@@ -147,8 +147,17 @@ type SahInvestor = {
   onboarding_complet: boolean | null;
 };
 
-async function syncInvestors(): Promise<number> {
+/**
+ * @param sinceMinutes ne remonter que les comptes créés depuis N minutes.
+ *   Utilisé par le détecteur « nouveau lead » qui tourne toutes les 2 minutes :
+ *   relire les 3 000 investisseurs à ce rythme martyriserait la réplique SAH
+ *   pour trouver, en moyenne, zéro ou une ligne.
+ */
+async function syncInvestors(sinceMinutes?: number): Promise<number> {
   const sahDb = getSahClient();
+  const recentOnly = sinceMinutes
+    ? sahDb`and u.created_at > now() - (${sinceMinutes} * interval '1 minute')`
+    : sahDb``;
   // Un investisseur = une personne (users). Le statut profil/KYC vit sur users_profiles
   // (une personne peut avoir plusieurs profils) → on agrège au "plus avancé".
   // On ne lit JAMAIS encrypted_password, virtual_iban/bic (KYC bancaire interdit).
@@ -212,6 +221,7 @@ async function syncInvestors(): Promise<number> {
     left join distributor_legal_entities dle on dle.id = u.distributor_id
     left join users inv on inv.id = u.invited_by_id and u.invited_by_type = 'User'
     where u.email is not null
+    ${recentOnly}
     group by u.id, u.email, u.civility, u.first_name, u.last_name, u.phone_number,
              u.birthdate, u.nationality, u.country, u.street_address_and_number,
              u.additional_address, u.city, u.zip_code, u.tax_residency_country,
@@ -549,6 +559,20 @@ async function syncSubscriptions(onlyNew = false): Promise<number> {
  * - `full` (manuel) : tout, avec upsert complet des souscriptions.
  */
 export type SyncScope = 'light' | 'subscriptions' | 'full';
+
+/**
+ * Synchronise UNIQUEMENT les inscriptions des dernières minutes.
+ *
+ * Sert l'alerte « nouveau lead » : la fiche doit exister dans THE PILOT au
+ * moment où le closer reçoit la notification, sinon le lien qu'elle contient
+ * ouvre une page vide et il perd les minutes qui comptent.
+ *
+ * @returns les identifiants SAH des comptes vus, pour que l'appelant sache
+ *   lesquels viennent d'arriver sans relire toute la table.
+ */
+export async function syncRecentInvestors(sinceMinutes: number): Promise<number> {
+  return syncInvestors(sinceMinutes);
+}
 
 export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult> {
   const errors: string[] = [];
