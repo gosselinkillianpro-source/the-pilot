@@ -61,10 +61,9 @@ if (authErr) {
   process.exit(1);
 }
 
-const { error: dbErr } = await admin.from('users').upsert(
-  { id: target.id, email: target.email, role },
-  { onConflict: 'id' },
-);
+const { error: dbErr } = await admin
+  .from('users')
+  .upsert({ id: target.id, email: target.email, role }, { onConflict: 'id' });
 if (dbErr) {
   console.error('⚠  app_metadata mis à jour mais public.users a échoué :', dbErr.message);
 }

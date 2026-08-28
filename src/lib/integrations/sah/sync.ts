@@ -611,7 +611,8 @@ export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult>
   // synchro elle-même : les données sont importées, c'est le principal.
   try {
     const moved = await applyAutomaticMoves();
-    autoMoves = moved.closingInvested + moved.webinarInvested + moved.webinarAccountReady;
+    autoMoves =
+      moved.linkedToSah + moved.closingInvested + moved.webinarInvested + moved.webinarAccountReady;
   } catch (e) {
     errors.push(`rangement des suivis: ${e instanceof Error ? e.message : String(e)}`);
   }

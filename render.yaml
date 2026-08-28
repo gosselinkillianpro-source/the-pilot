@@ -72,6 +72,11 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
 
+  # Les trois crons appellent l'app via scripts/cron-call.mjs : plusieurs
+  # tentatives (un redéploiement ne doit pas déclencher un mail d'échec), un
+  # timeout explicite, et surtout un ÉCHEC RÉEL quand l'app répond une erreur —
+  # les anciens scripts sortaient en succès même sur un HTTP 500.
+  #
   # --- Cron 1 : profils + statuts d'inscription, toutes les 15 minutes ---
   # Le cron NE touche PAS SAH : il appelle l'app web (qui a les IP whitelistées).
   # SYNC_URL à renseigner dans le dashboard Render (scope=light = projets + investisseurs) :
@@ -83,8 +88,7 @@ services:
     plan: starter
     schedule: '*/15 * * * *'
     buildCommand: 'echo no-build'
-    startCommand: >-
-      node -e "fetch(process.env.SYNC_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    startCommand: node scripts/cron-call.mjs SYNC_URL
     envVars:
       - key: SYNC_URL
         sync: false
@@ -106,8 +110,7 @@ services:
     plan: starter
     schedule: '0 * * * *'
     buildCommand: 'echo no-build'
-    startCommand: >-
-      node -e "const urls=[process.env.SYNC_URL_SUBS,process.env.SYNC_URL_WEBINARS].filter(Boolean);let bad=0;(async()=>{for(const u of urls){try{const r=await fetch(u);console.log(await r.text())}catch(e){bad++;console.error('ECHEC',e.message)}}process.exit(bad?1:0)})()"
+    startCommand: node scripts/cron-call.mjs SYNC_URL_SUBS SYNC_URL_WEBINARS
     envVars:
       - key: SYNC_URL_SUBS
         sync: false
@@ -129,8 +132,7 @@ services:
     plan: starter
     schedule: '*/2 * * * *'
     buildCommand: 'echo no-build'
-    startCommand: >-
-      node -e "fetch(process.env.NEW_LEADS_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    startCommand: node scripts/cron-call.mjs NEW_LEADS_URL
     envVars:
       - key: NEW_LEADS_URL
         sync: false
