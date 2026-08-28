@@ -13,22 +13,41 @@ import type { ConnectedCloser } from '@/lib/rdv/access';
 export function ConnectPrompt({
   targetName,
   isOtherUser,
+  targetUserId,
+  canDelegate = false,
 }: {
   targetName: string;
   isOtherUser: boolean;
+  /** Compte dont on affiche l'agenda — cible de la connexion déléguée. */
+  targetUserId?: string;
+  /** Admin : peut connecter l'agenda d'un closer à sa place. */
+  canDelegate?: boolean;
 }) {
-  // On ne propose jamais à l'admin de connecter le Calendly d'un tiers : c'est
-  // au closer lui-même d'autoriser l'accès à son agenda.
   if (isOtherUser) {
     return (
       <div className="view-card" style={{ borderColor: 'var(--warning)' }}>
-        <div className="view-card-body" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <PlugZap size={18} style={{ color: 'var(--warning)', flexShrink: 0 }} />
-          <div style={{ fontSize: 13 }}>
+        <div
+          className="view-card-body"
+          style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}
+        >
+          <PlugZap size={18} style={{ color: 'var(--warning)', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 13, flex: 1, minWidth: 220 }}>
             <strong>{targetName} n'a pas encore relié son Calendly.</strong>
             <div style={{ color: 'var(--text-3)', marginTop: 4 }}>
-              Seul {targetName} peut autoriser l'accès à son agenda, depuis sa propre page RDV.
+              {canDelegate
+                ? `Le plus simple reste que ${targetName} le fasse depuis sa propre page RDV. Si tu détiens son accès Calendly, tu peux le connecter à sa place : tu t'authentifieras chez Calendly avec SON compte, et l'agenda sera rangé sur le sien — pas sur le tien.`
+                : `Seul ${targetName} peut autoriser l'accès à son agenda, depuis sa propre page RDV.`}
             </div>
+            {canDelegate && targetUserId && (
+              <a
+                href={`/api/calendly/connect?pour=${targetUserId}`}
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 10 }}
+              >
+                <PlugZap size={14} />
+                Connecter le Calendly de {targetName}
+              </a>
+            )}
           </div>
         </div>
       </div>
