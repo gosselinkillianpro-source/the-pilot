@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { runSahSync } from '@/lib/integrations/sah/sync';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 // Garde anti-chevauchement (par instance serveur) : évite deux synchros simultanées.
 let running = false;
@@ -34,6 +36,9 @@ export async function syncNowAction() {
     });
     // Rafraîchit toutes les pages du dashboard (les données ont potentiellement changé partout).
     revalidatePath('/', 'layout');
+    // Et prévient les écrans des collègues : la synchro a pu déplacer des
+    // cartes (souscription détectée) sans qu'ils aient rien fait.
+    await notifyChange(SYNC_TOPICS.sah);
     return {
       ok: true as const,
       projects: result.projects,

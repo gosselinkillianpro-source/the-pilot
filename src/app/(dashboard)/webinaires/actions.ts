@@ -13,6 +13,8 @@ import {
   progressStageAfterCall,
 } from '@/lib/db/queries/webinar-pipeline';
 import { closerTasks, interactions, rdvContacts } from '@/lib/db/schema';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 /**
  * Suivi des inscrits d'un webinaire.
@@ -91,6 +93,7 @@ export async function logWebinarCall(input: z.infer<typeof logCallSchema>) {
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
   revalidatePath('/webinaires/suivi');
+  await notifyChange(SYNC_TOPICS.webinars);
   return { success: true };
 }
 
@@ -130,6 +133,7 @@ export async function scheduleWebinarCallback(input: z.infer<typeof scheduleSche
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
   revalidatePath('/webinaires/suivi');
+  await notifyChange(SYNC_TOPICS.webinars);
   return { success: true };
 }
 
@@ -213,6 +217,7 @@ export async function claimWebinarContact(input: z.infer<typeof claimSchema>) {
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
   revalidatePath('/webinaires/suivi');
+  await notifyChange(SYNC_TOPICS.webinars);
   return { success: true };
 }
 
@@ -250,5 +255,6 @@ export async function releaseWebinarContact(input: z.infer<typeof claimSchema>) 
 
   revalidatePath(`/webinaires/${parsed.webinarId}`);
   revalidatePath('/webinaires/suivi');
+  await notifyChange(SYNC_TOPICS.webinars);
   return { success: true };
 }

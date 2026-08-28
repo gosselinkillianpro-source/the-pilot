@@ -26,6 +26,8 @@ import { applyQualification, enterPipeline } from '@/lib/db/queries/closing-pipe
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investorAssets, investors } from '@/lib/db/schema';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 /**
  * Propriété « collante » : dès qu'un closer traite une personne (appel, action planifiée),
@@ -443,6 +445,7 @@ export async function assignCloserAction(input: {
     });
     revalidatePath(`/closing/investor/${parsed.investorId}`);
     revalidatePath('/closing/queue');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -491,6 +494,7 @@ export async function claimLeadAction(input: { investorId: string }): Promise<Ca
       return { ok: false, message: 'Déjà pris par un autre closer.' };
     }
     revalidatePath('/closing/queue');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -517,6 +521,7 @@ export async function releaseLeadAction(input: { investorId: string }): Promise<
       .set({ claimedById: null, claimedAt: null })
       .where(and(eq(investors.id, parsed.investorId), eq(investors.claimedById, user.id)));
     revalidatePath('/closing/queue');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -581,6 +586,9 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
     revalidatePath('/closing/pipeline');
+    // Le lead sort de la file pour tout le monde : les autres closers doivent
+    // le voir disparaître de leur écran, pas l'appeler une seconde fois.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true, interactionId: inserted[0]?.id ?? '', assignedNow };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -744,6 +752,7 @@ export async function qualifyCallAction(input: {
     revalidatePath('/closing/today');
     revalidatePath('/closing/queue');
     revalidatePath(`/closing/investor/${investorId}`);
+    await notifyChange(SYNC_TOPICS.closing);
     // `moved` dit au closer où la personne vient d'être rangée — sinon
     // l'automatisme est invisible et il croit que rien ne s'est passé.
     return { ok: true, moved: move ?? undefined };
