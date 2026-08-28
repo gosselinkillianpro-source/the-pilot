@@ -1,16 +1,17 @@
 import {
   AlertTriangle,
-  BellRing,
   CalendarClock,
   CalendarX2,
   CheckCircle2,
-  Clock,
   RotateCcw,
   TrendingUp,
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { upsertRdvContacts } from '@/lib/db/queries/rdv-contacts';
+import { listReminders, listReminderTargets } from '@/lib/db/queries/reminders';
+import { listPipelineCards } from '@/lib/db/queries/webinar-pipeline';
 import {
   autoAssignRdvLeads,
   getRdvBoard,
@@ -19,8 +20,20 @@ import {
   type RdvStatut,
 } from '@/lib/integrations/calendly/rdv';
 import { listRdvCloser, resolveRdvAccess } from '@/lib/rdv/access';
+import { Agenda, type AgendaItem, NextUp } from './agenda';
 import { BrokenConnection, CloserSwitcher, ConnectPrompt } from './connection-panel';
+import { LeadsBoard } from './leads-board';
 import { SuiviTable } from './rdv-suivi';
+import { Reminders } from './reminders';
+
+/** Ce qu'on lit sous le nom, dans une case d'agenda. */
+const STATUT_AGENDA: Record<string, string> = {
+  a_venir: 'à venir',
+  honore: 'honoré',
+  no_show: 'no-show',
+  reporte: 'reporté',
+  annule: 'annulé',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -37,14 +50,6 @@ const EUR = new Intl.NumberFormat('fr-FR', {
   currency: 'EUR',
   maximumFractionDigits: 0,
 });
-
-function fmtJour(d: Date): string {
-  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-}
-function fmtHeure(d: Date): string {
-  return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
-
 function statutBadge(s: RdvStatut): { label: string; cls: string } {
   switch (s) {
     case 'a_venir':
@@ -58,89 +63,6 @@ function statutBadge(s: RdvStatut): { label: string; cls: string } {
     case 'annule':
       return { label: 'Annulé', cls: 'badge-neutral' };
   }
-}
-
-interface Reminder {
-  investorId: string;
-  lead: string;
-  kind: 'programme' | 'reprogrammer' | 'depot' | 'finaliser';
-  reason: string;
-  when: Date | null;
-  overdue: boolean;
-}
-
-/** Construit les rappels programmés + les relances intelligentes (1 par lead). */
-function computeReminders(rdvs: RdvReel[]): Reminder[] {
-  const now = Date.now();
-  const out: Reminder[] = [];
-  const seen = new Set<string>();
-  // Le plus récent d'abord pour qu'un lead avec plusieurs RDV soit jugé sur le dernier.
-  const ordered = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
-
-  for (const r of ordered) {
-    if (!r.investorId || seen.has(r.investorId)) continue;
-
-    // 1. Rappel déjà programmé → prioritaire, on n'ajoute pas de suggestion en plus.
-    if (r.prochainRappel) {
-      seen.add(r.investorId);
-      out.push({
-        investorId: r.investorId,
-        lead: r.lead,
-        kind: 'programme',
-        reason: r.prochainRappel.note?.trim() || 'Rappel programmé',
-        when: r.prochainRappel.dueAt,
-        overdue: new Date(r.prochainRappel.dueAt).getTime() < now,
-      });
-      continue;
-    }
-
-    // 2. Suggestions intelligentes (lead non converti).
-    if (!r.converti) {
-      if (r.statut === 'no_show' || r.statut === 'annule' || r.statut === 'reporte') {
-        seen.add(r.investorId);
-        out.push({
-          investorId: r.investorId,
-          lead: r.lead,
-          kind: 'reprogrammer',
-          reason: `RDV ${statutBadge(r.statut).label.toLowerCase()} — reprogrammer un créneau`,
-          when: null,
-          overdue: false,
-        });
-      } else if (r.depotSouhaite && (r.montantInvestiEur == null || r.montantInvestiEur === 0)) {
-        seen.add(r.investorId);
-        const fourchette =
-          r.depotSouhaite.minEur != null
-            ? `${r.depotSouhaite.minEur.toLocaleString('fr-FR')} €`
-            : 'montant évoqué';
-        out.push({
-          investorId: r.investorId,
-          lead: r.lead,
-          kind: 'depot',
-          reason: `Dépôt souhaité (${fourchette}${r.depotSouhaite.quand ? `, ${r.depotSouhaite.quand}` : ''}) non concrétisé — relancer`,
-          when: null,
-          overdue: false,
-        });
-      } else if (r.statut === 'honore') {
-        seen.add(r.investorId);
-        out.push({
-          investorId: r.investorId,
-          lead: r.lead,
-          kind: 'finaliser',
-          reason: 'RDV honoré — relancer pour finaliser',
-          when: null,
-          overdue: false,
-        });
-      }
-    }
-  }
-
-  // Programmés en retard d'abord, puis programmés à venir, puis suggestions.
-  return out.sort((a, b) => {
-    const rank = (x: Reminder) => (x.kind === 'programme' ? (x.overdue ? 0 : 1) : 2);
-    if (rank(a) !== rank(b)) return rank(a) - rank(b);
-    if (a.when && b.when) return a.when.getTime() - b.when.getTime();
-    return 0;
-  });
 }
 
 export default async function RdvPage({
@@ -263,20 +185,32 @@ export default async function RdvPage({
       ) : null}
 
       {board.state === 'ok' ? (
-        <Board rdvs={board.board.rdvs} userName={board.board.user.name} assign={assign} />
+        <Board
+          rdvs={board.board.rdvs}
+          userName={board.board.user.name}
+          assign={assign}
+          ownerUserId={access.state === 'no_target' ? user.id : access.target.userId}
+          viewerId={user.id}
+        />
       ) : null}
     </>
   );
 }
 
-function Board({
+async function Board({
   rdvs,
   userName,
   assign,
+  ownerUserId,
+  viewerId,
 }: {
   rdvs: RdvReel[];
   userName: string;
   assign: RdvAssignResult | null;
+  /** Compte dont on lit l'agenda : c'est LUI qui possède les fiches et les rappels. */
+  ownerUserId: string;
+  /** Utilisateur connecté, pour distinguer « ma fiche » de celle d'un collègue. */
+  viewerId: string;
 }) {
   // Total investi par les leads Calendly de Guillaume (1 fois par investisseur, vraies souscriptions).
   const investiParInvestisseur = new Map<string, number>();
@@ -302,17 +236,54 @@ function Board({
   // Suivi : on trie du plus récent au plus ancien.
   const suivi = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  // Rappels programmés + relances intelligentes.
-  const reminders = computeReminders(rdvs);
+  // Chaque personne rencontrée reçoit une fiche : c'est elle qui porte le
+  // suivi (notes, étape, rappels) une fois le rendez-vous passé. Sans ça, le
+  // tableau ci-dessous resterait désespérément vide.
+  await upsertRdvContacts(
+    rdvs.map((r) => ({
+      email: r.email ?? '',
+      fullName: r.lead,
+      statut: r.statut,
+      investorId: r.investorId,
+    })),
+    ownerUserId,
+  );
 
-  // Agenda groupé par jour.
-  const parJour = new Map<string, RdvReel[]>();
-  for (const r of aVenir) {
-    const key = fmtJour(r.date);
-    const arr = parJour.get(key) ?? [];
-    arr.push(r);
-    parJour.set(key, arr);
-  }
+  const [leadCards, reminders, reminderTargets] = await Promise.all([
+    listPipelineCards(undefined, 'calendly'),
+    listReminders(ownerUserId),
+    listReminderTargets(ownerUserId),
+  ]);
+
+  // L'agenda mêle rendez-vous et rappels : la journée d'un closer, c'est les
+  // deux, et les séparer garantit qu'on en oublie la moitié.
+  const agendaItems: AgendaItem[] = [
+    ...rdvs.map((r) => ({
+      id: `rdv-${r.id}`,
+      kind: 'rdv' as const,
+      at: r.date,
+      title: r.lead,
+      detail: STATUT_AGENDA[r.statut] ?? null,
+      href: r.investorId ? `/closing/investor/${r.investorId}` : null,
+      tone:
+        r.statut === 'no_show' || r.statut === 'annule'
+          ? ('danger' as const)
+          : r.statut === 'reporte'
+            ? ('warning' as const)
+            : r.statut === 'honore'
+              ? ('done' as const)
+              : ('normal' as const),
+    })),
+    ...reminders.map((rem) => ({
+      id: `rappel-${rem.id}`,
+      kind: 'rappel' as const,
+      at: rem.dueAt,
+      title: rem.who ?? 'Rappel',
+      detail: rem.note,
+      href: rem.investorId ? `/closing/investor/${rem.investorId}` : null,
+      tone: rem.overdue ? ('danger' as const) : ('normal' as const),
+    })),
+  ];
 
   return (
     <>
@@ -368,114 +339,40 @@ function Board({
         />
       </div>
 
-      {/* Rappels & relances intelligentes */}
-      <div className="view-card" style={{ marginBottom: 16 }}>
-        <div className="view-card-header">
-          <div
-            className="view-card-title"
-            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-          >
-            <BellRing size={15} style={{ color: 'var(--ai)' }} />
-            Rappels & relances intelligentes
-          </div>
-          <span className="badge badge-neutral">{reminders.length}</span>
-        </div>
-        <div className="view-card-body" style={{ padding: 0 }}>
-          {reminders.length === 0 ? (
-            <Empty>Aucune relance à prévoir pour l'instant.</Empty>
-          ) : (
-            reminders.map((rem, idx) => (
-              <ReminderRow key={rem.investorId} rem={rem} last={idx === reminders.length - 1} />
-            ))
-          )}
-        </div>
+      {/* L'agenda d'abord : ce qui arrive, puis la semaine entière. */}
+      <div style={{ marginBottom: 16 }}>
+        <NextUp items={agendaItems} />
       </div>
 
-      {/* Agenda à venir */}
+      <div style={{ marginBottom: 16 }}>
+        <Agenda items={agendaItems} />
+      </div>
+
+      {/* Les rappels : en créer, les voir arriver, les clore. */}
+      <div style={{ marginBottom: 16 }}>
+        <Reminders reminders={reminders} targets={reminderTargets} />
+      </div>
+
+      {/* Le suivi des leads, mêmes gestes que le tableau des webinaires. */}
       <div className="view-card" style={{ marginBottom: 16 }}>
         <div className="view-card-header">
-          <div
-            className="view-card-title"
-            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-          >
-            <CalendarClock size={15} />
-            Agenda — prochains RDV
+          <div>
+            <div className="view-card-title">Suivi des leads rencontrés</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
+              Une carte par personne vue en rendez-vous. Glisse-la de colonne, ou utilise le
+              sélecteur sur la carte.
+            </div>
           </div>
-          <span className="badge badge-neutral">{aVenir.length}</span>
+          <span className="badge badge-neutral">{leadCards.length}</span>
         </div>
-        <div className="view-card-body" style={{ padding: 0 }}>
-          {aVenir.length === 0 ? (
-            <Empty>Aucun RDV à venir.</Empty>
+        <div className="view-card-body">
+          {leadCards.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+              Aucun lead suivi pour l'instant. Chaque rendez-vous Calendly crée sa fiche ici dès la
+              prochaine ouverture de cette page.
+            </div>
           ) : (
-            Array.from(parJour.entries()).map(([jour, items]) => (
-              <div key={jour}>
-                <div
-                  style={{
-                    padding: '8px 20px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.4,
-                    color: 'var(--text-4)',
-                    background: 'var(--glass-bg-strong)',
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  {jour}
-                </div>
-                {items.map((r) => (
-                  <div
-                    key={r.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '12px 20px',
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: 'var(--text-1)',
-                        minWidth: 64,
-                      }}
-                    >
-                      <Clock size={13} style={{ color: 'var(--text-4)' }} />
-                      {fmtHeure(r.date)}
-                    </span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <span
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-                      >
-                        <LeadName r={r} />
-                        {r.statutInscription ? (
-                          <span className="badge badge-neutral" style={{ fontSize: 10 }}>
-                            {r.statutInscription}
-                          </span>
-                        ) : null}
-                        {r.score != null ? (
-                          <span className="badge badge-brand" style={{ fontSize: 10 }}>
-                            score {r.score}
-                          </span>
-                        ) : null}
-                      </span>
-                      <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
-                        {r.source}
-                        {r.derniereAction ? ` · dernière action : ${r.derniereAction.label}` : ''}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
-                      {r.montantInvestiEur != null ? EUR.format(r.montantInvestiEur) : '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ))
+            <LeadsBoard cards={leadCards} myId={viewerId} />
           )}
         </div>
       </div>
@@ -513,7 +410,13 @@ function Board({
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <LeadName r={r} />
                     <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
-                      RDV du {fmtJour(r.date)} · {r.source}
+                      RDV du{' '}
+                      {r.date.toLocaleDateString('fr-FR', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                      })}{' '}
+                      · {r.source}
                     </div>
                   </div>
                   <span className={`badge ${b.cls}`}>{b.label}</span>
@@ -545,65 +448,6 @@ function Board({
         </div>
       </div>
     </>
-  );
-}
-
-function ReminderRow({ rem, last }: { rem: Reminder; last: boolean }) {
-  const color =
-    rem.kind === 'programme'
-      ? rem.overdue
-        ? 'var(--danger)'
-        : 'var(--brand)'
-      : rem.kind === 'depot'
-        ? 'var(--success)'
-        : 'var(--warning)';
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '12px 20px',
-        borderBottom: last ? 'none' : '1px solid var(--border)',
-      }}
-    >
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: color,
-          flexShrink: 0,
-        }}
-      />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <Link
-          href={`/closing/investor/${rem.investorId}`}
-          style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand)', textDecoration: 'none' }}
-        >
-          {rem.lead}
-        </Link>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{rem.reason}</div>
-      </div>
-      {rem.kind === 'programme' && rem.when ? (
-        <span
-          className={`badge ${rem.overdue ? 'badge-danger' : 'badge-brand'}`}
-          style={{ fontSize: 11, whiteSpace: 'nowrap' }}
-        >
-          {rem.overdue ? 'En retard · ' : ''}
-          {new Date(rem.when).toLocaleString('fr-FR', {
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-      ) : (
-        <span className="badge badge-neutral" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-          Suggestion
-        </span>
-      )}
-    </div>
   );
 }
 
