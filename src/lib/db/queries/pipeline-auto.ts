@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { linkContactsToInvestors } from '@/lib/webinars/sync';
 
 /**
  * Rangement automatique des tableaux de suivi d'après les FAITS venus de SAH.
@@ -19,9 +20,15 @@ import { db } from '@/lib/db';
  * « Injoignable » qui finit par souscrire remonte en « A investi ». C'est un
  * constat, pas une opinion — et laisser 20 000 € dans la colonne des perdus
  * fausserait la lecture du tableau.
+ *
+ * Les trois jalons suivis sont ceux que SAH connaît et nous pas : l'INSCRIPTION
+ * (le compte existe enfin), le KYC (la personne peut investir), la SOUSCRIPTION
+ * (elle l'a fait). Un closer n'a pas à recopier ces trois-là à la main.
  */
 
 export type AutoMoveResult = {
+  /** Fiches rattachées à un compte SAH créé après l'échange. */
+  linkedToSah: number;
   /** Cartes du suivi des appels passées en « A investi ». */
   closingInvested: number;
   /** Cartes du suivi webinaire passées en « A investi ». */
@@ -34,6 +41,12 @@ export type AutoMoveResult = {
 const SIGNED_REF = sql`coalesce(s.signed_at, s.paid_at, s.created_at)`;
 
 export async function applyAutomaticMoves(): Promise<AutoMoveResult> {
+  // 0. RATTACHEMENT — quelqu'un rencontré en rendez-vous ou inscrit à un
+  //    webinaire qui crée SON COMPTE ensuite doit être relié à sa fiche SAH.
+  //    Cette fonction ne tournait qu'après la synchro webinaire ; côté RDV,
+  //    une personne qui s'inscrivait restait éternellement « pas de compte
+  //    SAH » à l'écran, et aucun jalon suivant ne pouvait la faire avancer.
+  const linkedToSah = await linkContactsToInvestors();
   // 1. Suivi des appels : a souscrit depuis son entrée dans le tableau.
   const closing = await db.execute(sql`
     update investors i
@@ -70,9 +83,9 @@ export async function applyAutomaticMoves(): Promise<AutoMoveResult> {
     returning c.id
   `);
 
-  // 3. Suivi webinaire : KYC validé côté SAH → la personne PEUT investir.
-  //    On n'avance que depuis les colonnes d'attente : quelqu'un déjà classé
-  //    « Intéressé » par un closer ne recule pas, et un investi ne bouge plus.
+  // 3. Suivi (webinaire ET rendez-vous) : KYC validé côté SAH → la personne
+  //    PEUT investir. On avance depuis les colonnes qui précèdent ce jalon ;
+  //    une carte « A investi » ou « Perdu », elle, ne bouge plus.
   const ready = await db.execute(sql`
     update rdv_contacts c
     set pipeline_stage = 'account_ready',
@@ -81,11 +94,12 @@ export async function applyAutomaticMoves(): Promise<AutoMoveResult> {
     from investors i
     where i.id = c.investor_id
       and i.onboarding_complete
-      and c.pipeline_stage in ('taken', 'called')
+      and c.pipeline_stage in ('taken', 'called', 'interested')
     returning c.id
   `);
 
   return {
+    linkedToSah,
     closingInvested: (closing as unknown as unknown[]).length,
     webinarInvested: (webinar as unknown as unknown[]).length,
     webinarAccountReady: (ready as unknown as unknown[]).length,
