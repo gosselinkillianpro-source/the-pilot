@@ -56,3 +56,6 @@ next-env.d.ts
 # Local dev
 .env.local
 *.local
+
+# Scripts de diagnostic jetables (vérifications ponctuelles sur la base)
+.tmp/

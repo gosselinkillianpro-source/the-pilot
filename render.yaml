@@ -64,8 +64,12 @@ services:
       # --- WebinarGeek : inscrits, présence, engagement ---
       - key: WEBINARGEEK_API_TOKEN
         sync: false
-      # Secret partagé avec le cron de synchro (protège /api/cron/sah-sync)
+      # Secret partagé avec les crons (protège /api/cron/*)
       - key: CRON_SECRET
+        sync: false
+      # --- Alerte « nouveau lead » : bot Telegram (@BotFather) ---
+      # Absent = aucune alerte n'est envoyée, le reste de l'app fonctionne.
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
 
   # --- Cron 1 : profils + statuts d'inscription, toutes les 15 minutes ---
@@ -110,3 +114,23 @@ services:
       - key: SYNC_URL_WEBINARS
         sync: false
 
+  # --- Cron 3 : nouveaux leads BREACH, toutes les 2 minutes ---
+  # Un lead rappelé dans les 5 minutes convertit bien mieux qu'un lead rappelé
+  # le lendemain : la synchro du quart d'heure est trop lente pour cette
+  # fenêtre. Ce passage ne lit QUE les inscriptions des dernières minutes
+  # (quelques lignes), puis pousse l'alerte Telegram aux closers.
+  #
+  # NEW_LEADS_URL :
+  #   https://<domaine-de-l-app>/api/cron/new-leads?token=<CRON_SECRET>
+  - type: cron
+    name: the-pilot-new-leads
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: '*/2 * * * *'
+    buildCommand: 'echo no-build'
+    startCommand: >-
+      node -e "fetch(process.env.NEW_LEADS_URL).then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
+    envVars:
+      - key: NEW_LEADS_URL
+        sync: false

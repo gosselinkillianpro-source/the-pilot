@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  BellRing,
   Building2,
   CalendarClock,
   KanbanSquare,
@@ -70,6 +71,10 @@ export function NavContent({ role }: { role: string }) {
       <SidebarLink href="/performance">
         <BarChart3 />
         Performance
+      </SidebarLink>
+      <SidebarLink href="/alertes">
+        <BellRing />
+        Mes alertes
       </SidebarLink>
       <SidebarLink href="/sources">
         <Radio />

@@ -148,6 +148,11 @@ export const users = pgTable('users', {
   sahUserId: text('sah_user_id'),
   avatarUrl: text('avatar_url'),
   phone: text('phone'),
+  /**
+   * Identifiant de conversation Telegram, pour l'alerte « nouveau lead ».
+   * Renseigné par chaque closer depuis /equipe. NULL = pas d'alerte poussée.
+   */
+  telegramChatId: text('telegram_chat_id'),
   active: boolean('active').notNull().default(true),
   settings: jsonb('settings'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -229,6 +234,12 @@ export const investors = pgTable('investors', {
   pipelineSource: text('pipeline_source'),
   /** Entrée dans le tableau de suivi — mesure la durée réelle du parcours. */
   pipelineEnteredAt: timestamp('pipeline_entered_at', { withTimezone: true }),
+  /**
+   * Alerte « nouveau lead » envoyée aux closers. Write-once : c'est ce qui
+   * garantit qu'une inscription ne déclenche qu'UNE notification, même si le
+   * détecteur repasse toutes les 2 minutes sur la même personne.
+   */
+  newLeadAlertedAt: timestamp('new_lead_alerted_at', { withTimezone: true }),
   communicationConsent: boolean('communication_consent').notNull().default(false),
   lastEmailOpenedAt: timestamp('last_email_opened_at', { withTimezone: true }),
   lastPageVisitAt: timestamp('last_page_visit_at', { withTimezone: true }),
