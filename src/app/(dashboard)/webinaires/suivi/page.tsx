@@ -1,7 +1,9 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { LiveSync } from '@/components/shared/live-sync';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { listPipelineCards, listPipelineWebinars } from '@/lib/db/queries/webinar-pipeline';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 import { stageColumn } from '@/lib/webinars/pipeline';
 import { KanbanBoard } from './kanban-board';
 
@@ -54,7 +56,10 @@ export default async function WebinarPipelinePage({
           <ArrowLeft size={13} />
           Tous les webinaires
         </Link>
-        <h1 className="page-title">Suivi des inscrits</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h1 className="page-title">Suivi des inscrits</h1>
+          <LiveSync topics={[SYNC_TOPICS.webinars, SYNC_TOPICS.sah]} showBadge />
+        </div>
         <div className="page-desc">
           Une carte par personne prise en charge. Elle entre à gauche dès qu'un closer s'en occupe
           ou enregistre un appel, et se déplace jusqu'à la souscription.

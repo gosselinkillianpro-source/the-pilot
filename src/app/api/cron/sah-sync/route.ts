@@ -1,5 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { runSahSync, type SyncScope } from '@/lib/integrations/sah/sync';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 const SCOPES: SyncScope[] = ['light', 'subscriptions', 'full'];
 
@@ -46,6 +48,8 @@ async function handle(req: NextRequest): Promise<Response> {
   const startedAt = Date.now();
   try {
     const result = await runSahSync(scope);
+    // Les écrans ouverts se mettent à jour sans que personne n'ait à recharger.
+    await notifyChange(SYNC_TOPICS.sah);
     return Response.json({ ok: true, scope, durationMs: Date.now() - startedAt, ...result });
   } catch (e) {
     return Response.json(

@@ -1,8 +1,10 @@
 import { ArrowLeft, KanbanSquare } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { LiveSync } from '@/components/shared/live-sync';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getWebinar } from '@/lib/db/queries/webinars';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 import { groupByBucket } from '@/lib/webinars/call-order';
 import { AttendeeRow } from './attendee-row';
 
@@ -80,6 +82,8 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
           </Link>
         </div>
       </div>
+
+      <LiveSync topics={[SYNC_TOPICS.webinars, SYNC_TOPICS.sah]} />
 
       <div className="kpi-grid">
         <Kpi label="En direct" value={String(webinar.live)} accent="var(--success)" />

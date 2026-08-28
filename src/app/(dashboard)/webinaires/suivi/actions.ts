@@ -8,6 +8,8 @@ import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { setStage } from '@/lib/db/queries/webinar-pipeline';
 import { rdvContacts } from '@/lib/db/schema';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 import { ALL_STAGES, stageColumn } from '@/lib/webinars/pipeline';
 
 /**
@@ -55,5 +57,6 @@ export async function moveCardAction(input: z.infer<typeof moveSchema>) {
   });
 
   revalidatePath('/webinaires/suivi');
+  await notifyChange(SYNC_TOPICS.webinars);
   return { success: true, label: stageColumn(stage).label };
 }

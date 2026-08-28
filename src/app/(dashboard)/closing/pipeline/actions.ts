@@ -6,6 +6,8 @@ import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
 import { CLOSING_STAGE_LABELS, type ClosingStage, isClosingStage } from '@/lib/closing/pipeline';
 import { setClosingStage } from '@/lib/db/queries/closing-pipeline';
+import { notifyChange } from '@/lib/realtime/broadcast';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 
 /**
  * Déplacements de cartes dans le tableau de suivi des appels.
@@ -39,5 +41,6 @@ export async function moveClosingCardAction(input: { investorId: string; stage: 
 
   revalidatePath('/closing/pipeline');
   revalidatePath('/closing/queue');
+  await notifyChange(SYNC_TOPICS.closing);
   return { success: true, label: CLOSING_STAGE_LABELS[stage] };
 }
