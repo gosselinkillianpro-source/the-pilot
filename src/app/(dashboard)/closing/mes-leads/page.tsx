@@ -26,13 +26,27 @@ export default async function MyLeadsPage({
   const [sp, user] = await Promise.all([searchParams, getAuthenticatedUser()]);
 
   // Un closer ne voit que SON tableau ; admin et direction choisissent le closer.
+  // Les admins figurent AUSSI dans le sélecteur : la propriété collante peut
+  // attitrer un lead à un admin qui appelle — sans entrée ici, ces leads
+  // n'apparaissaient dans aucun tableau personnel.
   const canPick = user.role === 'admin' || user.role === 'executive';
-  const closers = canPick ? await getClosers() : [];
-  const pickable = closers.filter((c) => c.role !== 'admin');
+  const pickable = canPick
+    ? [...(await getClosers())].sort((a, b) =>
+        a.role === b.role
+          ? (a.name ?? '').localeCompare(b.name ?? '')
+          : a.role === 'admin'
+            ? 1
+            : -1,
+      )
+    : [];
   const requested = canPick && sp.closer ? pickable.find((c) => c.id === sp.closer) : undefined;
-  const viewedId = requested?.id ?? (canPick ? (pickable[0]?.id ?? user.id) : user.id);
+  const fallbackId = user.role === 'admin' ? user.id : (pickable[0]?.id ?? user.id);
+  const viewedId = requested?.id ?? (canPick ? fallbackId : user.id);
   const viewedName = requested?.name ?? pickable.find((c) => c.id === viewedId)?.name ?? null;
   const isMine = viewedId === user.id;
+  // La direction consulte sans toucher : les déplacements sont refusés côté
+  // serveur (rôle), autant l'annoncer plutôt que de laisser essayer.
+  const readOnly = user.role === 'executive';
 
   const cards = await listClosingCards({ ownerId: viewedId, network: 'all' });
 
@@ -99,8 +113,20 @@ export default async function MyLeadsPage({
               style={{ textDecoration: 'none' }}
             >
               {c.name ?? 'Sans nom'}
+              {c.role === 'admin' ? ' (admin)' : ''}
             </Link>
           ))}
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="alert alert-info">
+          <div className="alert-body">
+            <div className="alert-description">
+              Vue direction : consultation seule — les déplacements de cartes sont réservés aux
+              closers et à l'admin.
+            </div>
+          </div>
         </div>
       )}
 

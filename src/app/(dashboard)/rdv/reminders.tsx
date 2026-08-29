@@ -40,9 +40,16 @@ function defaultDue(): string {
 export function Reminders({
   reminders,
   targets,
+  ownerUserId,
 }: {
   reminders: Reminder[];
   targets: ReminderTarget[];
+  /**
+   * Closer propriétaire de l'agenda affiché. Les rappels listés sont les siens :
+   * créer et clore doivent viser SON compte, pas celui de l'admin qui consulte
+   * — sinon « Fait » échoue et le rappel créé part chez la mauvaise personne.
+   */
+  ownerUserId: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -58,14 +65,23 @@ export function Reminders({
       toast('Choisis la personne à rappeler.', { variant: 'error' });
       return;
     }
+    // Un champ datetime-local vidé donne '' → new Date('') est une Invalid Date
+    // dont toISOString() lèverait une RangeError dans la transition, sans aucun
+    // retour à l'écran. On valide ici, avec un message clair.
+    const due = new Date(dueAt);
+    if (!dueAt || Number.isNaN(due.getTime())) {
+      toast('Choisis une date de rappel.', { variant: 'error' });
+      return;
+    }
     startTransition(async () => {
       const res = await createReminderAction({
         targetId: target.id,
         targetKind: target.kind,
         // `datetime-local` donne une heure locale sans fuseau : on la convertit
         // ici, côté navigateur, sinon un rappel de 10 h serait posé à 8 h UTC.
-        dueAt: new Date(dueAt).toISOString(),
+        dueAt: due.toISOString(),
         note: note.trim() || undefined,
+        ownerUserId,
       });
       if (res.success) {
         setOpen(false);
@@ -80,7 +96,7 @@ export function Reminders({
 
   function complete(r: Reminder) {
     startTransition(async () => {
-      const res = await completeReminderAction({ reminderId: r.id });
+      const res = await completeReminderAction({ reminderId: r.id, ownerUserId });
       if (res.success) {
         router.refresh();
         toast('Rappel classé.', { variant: 'success' });

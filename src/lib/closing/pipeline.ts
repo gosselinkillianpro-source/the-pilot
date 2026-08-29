@@ -127,10 +127,20 @@ export const CLOSING_STAGE_LABELS: Record<ClosingStage, string> = {
   dormant: 'En sommeil',
 };
 
-const ALL_STAGES = Object.keys(CLOSING_STAGE_LABELS) as ClosingStage[];
+/**
+ * Toutes les étapes, exportées pour les schémas zod des server actions.
+ * Une seule source de vérité : un sélecteur d'étape côté UI et le schéma qui
+ * le valide doivent accepter EXACTEMENT la même liste — c'est un désaccord
+ * entre les deux qui rendait la qualification « À rappeler » impossible
+ * (bug corrigé le 29/08/2026).
+ */
+export const CLOSING_STAGES = Object.keys(CLOSING_STAGE_LABELS) as [
+  ClosingStage,
+  ...ClosingStage[],
+];
 
 export function isClosingStage(value: string): value is ClosingStage {
-  return (ALL_STAGES as string[]).includes(value);
+  return (CLOSING_STAGES as string[]).includes(value);
 }
 
 /**

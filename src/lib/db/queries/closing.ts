@@ -2,6 +2,7 @@ import 'server-only';
 import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
+import { appendEmailContacts } from '@/lib/db/queries/attribution-contacts';
 import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
 import { type Delta, delta, type ResolvedPeriod } from '@/lib/period';
 
@@ -387,6 +388,8 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
     list.push({ kind, at: c.at, userId: c.userId });
     contactsByInvestor.set(c.investorId, list);
   }
+  // Les ouvertures/clics email (webhook Brevo) — le vrai last-touch.
+  await appendEmailContacts(contactsByInvestor);
 
   const attributedByUser = new Map<string, { subs: number; amount: number }>();
   let unattrCount = 0;

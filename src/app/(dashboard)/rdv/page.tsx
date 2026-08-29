@@ -8,18 +8,21 @@ import {
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import { LiveSync } from '@/components/shared/live-sync';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { upsertRdvContacts } from '@/lib/db/queries/rdv-contacts';
 import { listReminders, listReminderTargets } from '@/lib/db/queries/reminders';
-import { listPipelineCards } from '@/lib/db/queries/webinar-pipeline';
+import { listPipelineCards, type PipelineCard } from '@/lib/db/queries/webinar-pipeline';
 import {
   autoAssignRdvLeads,
   getRdvBoard,
   type RdvAssignResult,
+  type RdvBoardResult,
   type RdvReel,
   type RdvStatut,
 } from '@/lib/integrations/calendly/rdv';
 import { listRdvCloser, resolveRdvAccess } from '@/lib/rdv/access';
+import { SYNC_TOPICS } from '@/lib/realtime/topics';
 import { Agenda, type AgendaItem, NextUp } from './agenda';
 import { BrokenConnection, CloserSwitcher, ConnectPrompt } from './connection-panel';
 import { LeadsBoard } from './leads-board';
@@ -65,6 +68,19 @@ function statutBadge(s: RdvStatut): { label: string; cls: string } {
   }
 }
 
+/**
+ * Appel Calendly blindé : une panne inattendue (réseau, API) devient un état
+ * d'erreur affichable — jamais une page morte. Les rappels et le suivi des
+ * leads vivent en base, ils doivent rester visibles quoi qu'il arrive.
+ */
+async function safeGetRdvBoard(accessToken?: string): Promise<RdvBoardResult> {
+  try {
+    return await getRdvBoard(accessToken);
+  } catch (e) {
+    return { state: 'error', message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export default async function RdvPage({
   searchParams,
 }: {
@@ -78,11 +94,15 @@ export default async function RdvPage({
   const access = await resolveRdvAccess(user, params.closer);
   const closers = await listRdvCloser(user);
 
-  const board =
+  const board: RdvBoardResult =
     access.state === 'connected'
-      ? await getRdvBoard(access.accessToken)
-      : access.state === 'not_connected' || access.state === 'connection_broken'
-        ? ({ state: 'not_configured' } as const)
+      ? await safeGetRdvBoard(access.accessToken)
+      : access.state === 'not_connected'
+        ? // Pas de connexion OAuth propre : getRdvBoard sans jeton retombe sur
+          // l'ancien token global CALENDLY_TOKEN s'il est encore posé (la page
+          // historique de Guillaume, le temps que chacun relie son compte), et
+          // répond not_configured sinon.
+          await safeGetRdvBoard()
         : ({ state: 'not_configured' } as const);
 
   // Assignation auto : les leads issus d'un RDV reviennent au closer de l'agenda.
@@ -104,13 +124,28 @@ export default async function RdvPage({
   return (
     <>
       {/* En-tête */}
-      <div style={{ marginBottom: 16 }}>
-        <h1 className="page-title">{isOtherUser ? `RDV — ${targetName}` : 'Mes rendez-vous'}</h1>
-        <div className="page-desc">
-          {isOtherUser
-            ? `Agenda Calendly de ${targetName}, consulté en tant qu'administrateur.`
-            : 'Ton agenda Calendly, le suivi de chaque contact et les leads issus des rendez-vous.'}
+      <div
+        style={{
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <h1 className="page-title">{isOtherUser ? `RDV — ${targetName}` : 'Mes rendez-vous'}</h1>
+          <div className="page-desc">
+            {isOtherUser
+              ? `Agenda Calendly de ${targetName}, consulté en tant qu'administrateur.`
+              : 'Ton agenda Calendly, le suivi de chaque contact et les leads issus des rendez-vous.'}
+          </div>
         </div>
+        {/* Plusieurs mains sur les mêmes leads : le kanban partagé émet sur
+            `webinars` (moveCardAction), rappels et comptes-rendus sur `closing`,
+            et la synchro SAH horaire sur `sah`. Sans cette écoute, l'écran d'un
+            closer restait figé sur l'état de son dernier chargement. */}
+        <LiveSync topics={[SYNC_TOPICS.closing, SYNC_TOPICS.webinars, SYNC_TOPICS.sah]} showBadge />
       </div>
 
       {closers.length > 0 && (
@@ -169,7 +204,7 @@ export default async function RdvPage({
         <Panel
           tone="danger"
           icon={<XCircle size={18} />}
-          title="Connexion Calendly en échec"
+          title="Agenda Calendly indisponible"
           body={
             <>
               <div style={{ marginBottom: 6 }}>
@@ -178,6 +213,7 @@ export default async function RdvPage({
               <code style={{ fontSize: 12, wordBreak: 'break-word' }}>{board.message}</code>
               <div style={{ marginTop: 8, fontSize: 12 }}>
                 Pistes : token invalide/expiré, ou forfait Calendly sans accès API (Standard min.).
+                Les rappels et le suivi des leads restent affichés ci-dessous.
               </div>
             </>
           }
@@ -192,7 +228,35 @@ export default async function RdvPage({
           ownerUserId={access.state === 'no_target' ? user.id : access.target.userId}
           viewerId={user.id}
         />
+      ) : access.state !== 'no_target' ? (
+        // Calendly absent, non relié ou en panne : les rappels et les fiches de
+        // suivi vivent en base, pas chez Calendly — on les affiche quoi qu'il
+        // arrive. Seul l'agenda (RDV lus en direct) dépend de l'API.
+        <LocalBoard ownerUserId={access.target.userId} viewerId={user.id} />
       ) : null}
+    </>
+  );
+}
+
+/**
+ * La partie de la page qui vit chez NOUS : rappels + suivi des leads rencontrés.
+ * Rendue seule quand Calendly est injoignable — un rappel « rappeler Mme X
+ * mercredi » ne doit jamais disparaître de toutes les vues parce qu'un token
+ * a été révoqué.
+ */
+async function LocalBoard({ ownerUserId, viewerId }: { ownerUserId: string; viewerId: string }) {
+  const [leadCards, reminders, reminderTargets] = await Promise.all([
+    listPipelineCards(undefined, 'calendly'),
+    listReminders(ownerUserId),
+    listReminderTargets(ownerUserId),
+  ]);
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <Reminders reminders={reminders} targets={reminderTargets} ownerUserId={ownerUserId} />
+      </div>
+      <LeadsCard cards={leadCards} viewerId={viewerId} />
     </>
   );
 }
@@ -239,15 +303,22 @@ async function Board({
   // Chaque personne rencontrée reçoit une fiche : c'est elle qui porte le
   // suivi (notes, étape, rappels) une fois le rendez-vous passé. Sans ça, le
   // tableau ci-dessous resterait désespérément vide.
-  await upsertRdvContacts(
-    rdvs.map((r) => ({
-      email: r.email ?? '',
-      fullName: r.lead,
-      statut: r.statut,
-      investorId: r.investorId,
-    })),
-    ownerUserId,
-  );
+  // Best-effort : une fiche qui ne se crée pas (contrainte, concurrence) ne
+  // doit jamais faire tomber l'agenda — on log et la page continue avec
+  // l'existant.
+  try {
+    await upsertRdvContacts(
+      rdvs.map((r) => ({
+        email: r.email ?? '',
+        fullName: r.lead,
+        statut: r.statut,
+        investorId: r.investorId,
+      })),
+      ownerUserId,
+    );
+  } catch (e) {
+    console.error('upsertRdvContacts failed:', e instanceof Error ? e.message : e);
+  }
 
   const [leadCards, reminders, reminderTargets] = await Promise.all([
     listPipelineCards(undefined, 'calendly'),
@@ -350,32 +421,11 @@ async function Board({
 
       {/* Les rappels : en créer, les voir arriver, les clore. */}
       <div style={{ marginBottom: 16 }}>
-        <Reminders reminders={reminders} targets={reminderTargets} />
+        <Reminders reminders={reminders} targets={reminderTargets} ownerUserId={ownerUserId} />
       </div>
 
       {/* Le suivi des leads, mêmes gestes que le tableau des webinaires. */}
-      <div className="view-card" style={{ marginBottom: 16 }}>
-        <div className="view-card-header">
-          <div>
-            <div className="view-card-title">Suivi des leads rencontrés</div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
-              Une carte par personne vue en rendez-vous. Glisse-la de colonne, ou utilise le
-              sélecteur sur la carte.
-            </div>
-          </div>
-          <span className="badge badge-neutral">{leadCards.length}</span>
-        </div>
-        <div className="view-card-body">
-          {leadCards.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
-              Aucun lead suivi pour l'instant. Chaque rendez-vous Calendly crée sa fiche ici dès la
-              prochaine ouverture de cette page.
-            </div>
-          ) : (
-            <LeadsBoard cards={leadCards} myId={viewerId} />
-          )}
-        </div>
-      </div>
+      <LeadsCard cards={leadCards} viewerId={viewerId} />
 
       {/* À relancer */}
       <div className="view-card" style={{ marginBottom: 16 }}>
@@ -448,6 +498,34 @@ async function Board({
         </div>
       </div>
     </>
+  );
+}
+
+/** Carte « Suivi des leads rencontrés » — partagée entre Board et LocalBoard. */
+function LeadsCard({ cards, viewerId }: { cards: PipelineCard[]; viewerId: string }) {
+  return (
+    <div className="view-card" style={{ marginBottom: 16 }}>
+      <div className="view-card-header">
+        <div>
+          <div className="view-card-title">Suivi des leads rencontrés</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
+            Une carte par personne vue en rendez-vous. Glisse-la de colonne, ou utilise le sélecteur
+            sur la carte.
+          </div>
+        </div>
+        <span className="badge badge-neutral">{cards.length}</span>
+      </div>
+      <div className="view-card-body">
+        {cards.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+            Aucun lead suivi pour l'instant. Chaque rendez-vous Calendly crée sa fiche ici dès la
+            prochaine ouverture de cette page.
+          </div>
+        ) : (
+          <LeadsBoard cards={cards} myId={viewerId} />
+        )}
+      </div>
+    </div>
   );
 }
 

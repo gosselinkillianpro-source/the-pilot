@@ -14,13 +14,15 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useToast } from '@/components/shared/toast';
 import type { CallBrief } from '@/lib/ai/call-brief';
 import {
+  claimLeadAction,
   draftCallBriefAction,
   markCalledAction,
   qualifyCallAction,
+  releaseLeadAction,
 } from '../investor/[id]/actions';
 
 export type SessionLead = {
@@ -64,6 +66,8 @@ const OUTCOMES: { key: Outcome; label: string; icon: typeof PhoneCall; color: st
 
 const STAGES: { value: string; label: string }[] = [
   { value: 'contacted', label: 'Contacté' },
+  { value: 'interested', label: 'Intéressé' },
+  { value: 'to_call_back', label: 'À rappeler' },
   { value: 'meeting_booked', label: 'RDV pris' },
   { value: 'meeting_done', label: 'RDV fait' },
   { value: 'proposal_sent', label: 'Proposition envoyée' },
@@ -83,6 +87,11 @@ function money(n: number): string {
 
 export function SessionClient({ leads }: { leads: SessionLead[] }) {
   const { toast, runWithActivity } = useToast();
+  // La liste est FIGÉE au lancement : le temps réel (LiveSync) re-rend la page
+  // pendant la session, et une liste qui se réordonne sous les pieds du closer
+  // ferait enregistrer le résultat sur le MAUVAIS lead. On avance par index
+  // dans cette photo — un lead pris entre-temps est refusé au moment d'écrire.
+  const [sessionLeads] = useState(leads);
   const [index, setIndex] = useState(0);
   const [done, setDone] = useState(0);
   const [brief, setBrief] = useState<CallBrief | null>(null);
@@ -90,9 +99,37 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
   const [note, setNote] = useState('');
   const [nextStage, setNextStage] = useState('');
   const [callbackAt, setCallbackAt] = useState('');
+  // Appel déjà enregistré (markCalled réussi) mais qualification échouée :
+  // au retry on ne recrée PAS un deuxième appel, on requalifie le même.
+  const [pendingCallId, setPendingCallId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const lead = leads[index];
+  const lead = sessionLeads[index];
+
+  // « Je prends » automatique sur le lead affiché : les collègues le voient
+  // grisé dans leur file et leurs sessions ne le proposent plus. Si le claim
+  // échoue (déjà pris pendant qu'on lisait la fiche), on passe au suivant.
+  const leadId = lead?.id ?? null;
+  useEffect(() => {
+    if (!leadId) return;
+    let cancelled = false;
+    claimLeadAction({ investorId: leadId }).then((res) => {
+      if (!res.ok && !cancelled) {
+        toast('Ce lead vient d’être pris par un collègue — on passe au suivant.', {
+          variant: 'info',
+          duration: 3500,
+        });
+        setIndex((i) => i + 1);
+      }
+    });
+    return () => {
+      cancelled = true;
+      // Lead quitté (suivant, ou sortie de session) : on rend le verrou. Après
+      // un appel enregistré, il est déjà levé côté serveur — libérer à nouveau
+      // est sans effet (on ne libère jamais que son propre verrou).
+      void releaseLeadAction({ investorId: leadId });
+    };
+  }, [leadId, toast]);
 
   function reset() {
     setBrief(null);
@@ -100,6 +137,7 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
     setNote('');
     setNextStage('');
     setCallbackAt('');
+    setPendingCallId(null);
   }
 
   function next() {
@@ -125,19 +163,30 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
     if (!lead || !outcome) return;
     const current = lead;
     const chosen = outcome;
+    // Le rappel n'est envoyé que si son champ était VISIBLE pour ce résultat :
+    // une date saisie pour « Pas de réponse » puis un basculement sur « Joint »
+    // ne doit pas créer un rappel fantôme.
+    const callbackVisible =
+      chosen === 'no_answer' || chosen === 'voicemail' || chosen === 'in_progress';
     startTransition(async () => {
       const ok = await runWithActivity('Enregistrement de l’appel…', async () => {
-        const called = await markCalledAction({ investorId: current.id });
-        if (!called.ok) {
-          toast(called.message, { variant: 'error' });
-          return false;
+        let callId = pendingCallId;
+        if (!callId) {
+          const called = await markCalledAction({ investorId: current.id });
+          if (!called.ok) {
+            toast(called.message, { variant: 'error' });
+            return false;
+          }
+          callId = called.interactionId;
+          setPendingCallId(callId);
         }
         const q = await qualifyCallAction({
-          callId: called.interactionId,
+          callId,
           outcome: chosen,
           note: note.trim() || undefined,
           nextStage: chosen === 'reached' && nextStage ? nextStage : undefined,
-          callbackAt: callbackAt ? new Date(callbackAt).toISOString() : undefined,
+          callbackAt:
+            callbackVisible && callbackAt ? new Date(callbackAt).toISOString() : undefined,
         });
         if (!q.ok) {
           toast(q.message, { variant: 'error' });
@@ -148,7 +197,8 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
       if (ok) {
         setDone((d) => d + 1);
         toast('Appel enregistré.', { variant: 'success', duration: 2500 });
-        next();
+        reset();
+        setIndex((i) => i + 1);
       }
     });
   }
@@ -186,7 +236,7 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
             Session terminée
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
-            {done} appel(s) enregistré(s) sur {leads.length} lead(s).
+            {done} appel(s) enregistré(s) sur {sessionLeads.length} lead(s).
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Link href="/closing/queue" className="btn btn-secondary">
@@ -214,7 +264,8 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
         }}
       >
         <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-          Appel <strong style={{ color: 'var(--text-1)' }}>{index + 1}</strong> / {leads.length}
+          Appel <strong style={{ color: 'var(--text-1)' }}>{index + 1}</strong> /{' '}
+          {sessionLeads.length}
           {done > 0 ? ` · ${done} enregistré(s)` : ''}
         </div>
         <Link href="/closing/queue" className="btn btn-ghost btn-sm">

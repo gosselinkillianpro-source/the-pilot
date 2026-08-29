@@ -8,6 +8,7 @@ import {
   PhoneOutgoing,
 } from 'lucide-react';
 import Link from 'next/link';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { getTodayCallCount } from '@/lib/db/queries/closing';
 import { getFollowUp } from '@/lib/db/queries/follow-up';
 import { QualifyCall } from '../suivi/qualify-call';
@@ -57,9 +58,16 @@ const TASK_META: Record<string, { label: string; icon: React.ReactNode }> = {
 type Callback = Awaited<ReturnType<typeof getFollowUp>>['callbacks'][number];
 
 export default async function TodayPage() {
+  // Chaque closer voit SON cockpit : ses leads attitrés à qualifier, ses
+  // rappels, ses appels du jour. Sans ce filtre, les 4 closers voyaient la
+  // même liste et se marchaient dessus (« c'est à qui, ce rappel ? »).
+  // L'admin et la direction gardent la vue d'ensemble.
+  const user = await getAuthenticatedUser();
+  const isCloser = user.role === 'closer' || user.role === 'closer_junior';
+  const scope = isCloser ? { closerId: user.id } : undefined;
   const [{ toQualify, callbacks, kpis }, callsToday] = await Promise.all([
-    getFollowUp(),
-    getTodayCallCount(),
+    getFollowUp(scope),
+    getTodayCallCount(scope),
   ]);
 
   // `callbacks` contient TOUTES les tâches en attente. On coupe en deux au

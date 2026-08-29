@@ -80,8 +80,13 @@ export function PipelineBoard({ cards, myId }: { cards: ClosingCard[]; myId: str
       cards={board}
       onMove={async (card, stage) => {
         const res = await moveClosingCardAction({ investorId: card.investorId, stage });
-        return { ok: res.success, label: res.label };
+        // L'échec doit revenir en toast d'erreur, jamais en fausse réussite :
+        // la carte optimiste reviendra d'elle-même à sa colonne au refresh.
+        return res.success ? { ok: true, label: res.label } : { ok: false, error: res.error };
       }}
+      // Comparer l'étape RÉELLE : une carte « RDV fait » repliée dans « RDV »
+      // doit pouvoir être ramenée à « RDV pris » (même colonne à l'écran).
+      isNoopMove={(card, stage) => card.realStage === stage}
       // Bordure verte : la personne a investi mais dort dans une autre colonne.
       isHighlighted={(c) => c.totalInvested > 0 && c.realStage !== 'closed_won'}
       renderCard={(card) => <CardBody card={card} mine={card.ownerId === myId} />}

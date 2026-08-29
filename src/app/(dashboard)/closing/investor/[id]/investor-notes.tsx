@@ -26,13 +26,16 @@ export function InvestorNotes({
   function save() {
     if (!dirty) return;
     const toSave = note;
+    // `savedValue` = la note telle qu'on l'a chargée/enregistrée : le serveur
+    // refuse d'écraser si un collègue a écrit autre chose entre-temps.
+    const base = savedValue;
     startTransition(async () => {
-      const res = await saveInternalNoteAction({ investorId, note: toSave });
+      const res = await saveInternalNoteAction({ investorId, note: toSave, baseNote: base });
       if (res.ok) {
         setSavedValue(toSave);
         toast('Note enregistrée.', { variant: 'success', duration: 3000 });
       } else {
-        toast(res.message, { variant: 'error' });
+        toast(res.message, { variant: 'error', duration: 8000 });
       }
     });
   }

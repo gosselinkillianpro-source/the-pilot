@@ -152,6 +152,14 @@ export async function recordRdvOutcomeAction(
     revalidatePath('/rdv');
     revalidatePath(`/closing/investor/${parsed.investorId}`);
     revalidatePath('/closing/suivi');
+    // L'étape pipeline écrite ici est celle que lit le board closing, et le
+    // rappel alimente le cockpit du jour : sans revalidation ni signal, un
+    // collègue voit l'ancienne étape jusqu'à 60 s et relance un lead déjà
+    // traité (même motif que qualifyCallAction).
+    revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
+    revalidatePath('/closing/today');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
@@ -169,6 +177,13 @@ const reminderSchema = z.object({
   /** Date et heure locales du navigateur, converties en ISO à l'envoi. */
   dueAt: z.string().datetime(),
   note: z.string().trim().max(500).optional(),
+  /**
+   * Closer PROPRIÉTAIRE de l'agenda affiché. Quand un admin consulte l'agenda
+   * d'un closer (?closer=), le rappel doit être posé chez ce closer — pas chez
+   * l'admin, sinon il disparaît de la vue et ne sonne jamais chez la bonne
+   * personne. Absent = son propre agenda.
+   */
+  ownerUserId: z.string().uuid().optional(),
 });
 
 /** Crée un rappel : il apparaîtra dans l'agenda et dans le cockpit du jour. */
@@ -181,12 +196,19 @@ export async function createReminderAction(input: z.infer<typeof reminderSchema>
   await requireRole(user, ['admin', 'closer', 'closer_junior']);
   await ensureUserRecord(user);
 
-  const { targetId, targetKind, dueAt, note } = parsed.data;
+  const { targetId, targetKind, dueAt, note, ownerUserId } = parsed.data;
+  // Poser un rappel dans l'agenda d'un autre est réservé à l'admin — même
+  // règle d'accès que resolveRdvAccess pour la consultation.
+  const owner = ownerUserId ?? user.id;
+  if (owner !== user.id && user.role !== 'admin') {
+    return { success: false, error: 'Tu ne peux créer un rappel que dans ton propre agenda.' };
+  }
+
   await db.insert(closerTasks).values({
     // Exactement une cible renseignée : la contrainte en base le vérifie aussi.
     investorId: targetKind === 'investor' ? targetId : null,
     rdvContactId: targetKind === 'contact' ? targetId : null,
-    closerId: user.id,
+    closerId: owner,
     type: 'callback',
     dueAt: new Date(dueAt),
     note: note ?? null,
@@ -200,7 +222,7 @@ export async function createReminderAction(input: z.infer<typeof reminderSchema>
     action: 'rdv.reminder_created',
     resourceType: targetKind === 'investor' ? 'investor' : 'rdv_contact',
     resourceId: targetId,
-    metadata: { dueAt },
+    metadata: { dueAt, closerId: owner },
   });
 
   revalidatePath('/rdv');
@@ -209,14 +231,27 @@ export async function createReminderAction(input: z.infer<typeof reminderSchema>
   return { success: true };
 }
 
-const completeSchema = z.object({ reminderId: z.string().uuid() });
+const completeSchema = z.object({
+  reminderId: z.string().uuid(),
+  /** Propriétaire de l'agenda affiché (vue admin) — voir createReminderAction. */
+  ownerUserId: z.string().uuid().optional(),
+});
 
-/** Marque un rappel comme fait. Seul son propriétaire peut le clore. */
-export async function completeReminderAction(input: { reminderId: string }) {
+/**
+ * Marque un rappel comme fait. Seul son propriétaire peut le clore — ou un
+ * admin depuis l'agenda de ce propriétaire, sinon le bouton « Fait » de la vue
+ * admin échouerait systématiquement (les rappels affichés sont ceux du closer).
+ */
+export async function completeReminderAction(input: { reminderId: string; ownerUserId?: string }) {
   const user = await getAuthenticatedUser();
   const parsed = completeSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: 'Rappel introuvable.' };
   await requireRole(user, ['admin', 'closer', 'closer_junior']);
+
+  const owner = parsed.data.ownerUserId ?? user.id;
+  if (owner !== user.id && user.role !== 'admin') {
+    return { success: false, error: 'Ce rappel ne t’appartient pas.' };
+  }
 
   const done = await db
     .update(closerTasks)
@@ -224,13 +259,26 @@ export async function completeReminderAction(input: { reminderId: string }) {
     .where(
       and(
         eq(closerTasks.id, parsed.data.reminderId),
-        eq(closerTasks.closerId, user.id),
+        eq(closerTasks.closerId, owner),
         eq(closerTasks.status, 'pending'),
       ),
     )
     .returning({ id: closerTasks.id });
 
   if (done.length === 0) return { success: false, error: 'Ce rappel ne t’appartient pas.' };
+
+  // Trace : un admin qui clôt le rappel d'un autre closer, ça doit se voir.
+  if (owner !== user.id) {
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'rdv.reminder_completed',
+      resourceType: 'closer_task',
+      resourceId: parsed.data.reminderId,
+      metadata: { onBehalfOf: owner },
+    });
+  }
 
   revalidatePath('/rdv');
   revalidatePath('/closing/today');

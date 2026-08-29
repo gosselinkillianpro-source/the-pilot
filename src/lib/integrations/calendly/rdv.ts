@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
 import { CLOSING_STAGE_LABELS, isClosingStage } from '@/lib/closing/pipeline';
@@ -461,13 +461,20 @@ async function findOwnerById(userId: string): Promise<{ id: string; name: string
 }
 
 /**
- * Assigne au propriétaire de l'agenda TOUS les leads (présents en base) issus de
- * ses RDV Calendly. Force la propriété : même un lead déjà assigné à un autre
- * closer bascule vers lui — c'est lui qui a tenu le rendez-vous.
+ * Assigne au propriétaire de l'agenda les leads ORPHELINS (présents en base,
+ * sans closer) issus de ses RDV Calendly. Même philosophie « collante » que
+ * assignOwnershipIfFree côté closing : le premier closer qui traite la personne
+ * la garde, on ne vole jamais le lead d'un collègue.
  *
- * Idempotent : ne touche que les fiches dont le closer diffère déjà du propriétaire,
- * donc en régime établi l'UPDATE ne modifie 0 ligne. Audit loggé uniquement quand
- * au moins une fiche change. Best-effort : n'interrompt jamais l'affichage.
+ * ⚠️ La version précédente forçait la bascule (isNull OU ≠ propriétaire) : un
+ * simple affichage de /rdv réassignait des fiches déjà attribuées, et un lead
+ * vu par deux closers oscillait entre eux au gré des consultations — stats et
+ * classement avec. Un conflit d'attribution se règle par un admin
+ * (assignCloserAction), jamais par un GET.
+ *
+ * Idempotent : en régime établi l'UPDATE ne modifie 0 ligne. Audit loggé
+ * uniquement quand au moins une fiche change. Best-effort : n'interrompt
+ * jamais l'affichage.
  */
 export async function autoAssignRdvLeads(
   board: RdvBoard,
@@ -492,12 +499,7 @@ export async function autoAssignRdvLeads(
   const changed = await db
     .update(investors)
     .set({ assignedCloserId: owner.id })
-    .where(
-      and(
-        inArray(investors.id, ids),
-        or(isNull(investors.assignedCloserId), ne(investors.assignedCloserId, owner.id)),
-      ),
-    )
+    .where(and(inArray(investors.id, ids), isNull(investors.assignedCloserId)))
     .returning({ id: investors.id });
 
   if (changed.length > 0) {

@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
@@ -19,10 +19,14 @@ import {
 import { logLlmCall } from '@/lib/ai/log-llm';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
-import { queueSourceKey } from '@/lib/closing/pipeline';
+import { CLOSING_STAGES, queueSourceKey } from '@/lib/closing/pipeline';
 import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN, getInvestorScored } from '@/lib/db/queries/call-queue';
-import { applyQualification, enterPipeline } from '@/lib/db/queries/closing-pipeline';
+import {
+  applyQualification,
+  enterPipeline,
+  setClosingStage,
+} from '@/lib/db/queries/closing-pipeline';
 import { getInvestableProjects, getInvestorById } from '@/lib/db/queries/investors';
 import { ensureUserRecord } from '@/lib/db/queries/users';
 import { closerTasks, interactions, investorAssets, investors } from '@/lib/db/schema';
@@ -73,7 +77,11 @@ export type DraftProposalResult =
 export async function draftProposalEmailAction(investorId: string): Promise<DraftProposalResult> {
   // 1. Auth + permission (closers et admin uniquement ; direction = lecture seule)
   const user = await getAuthenticatedUser();
-  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Action réservée aux closers.' };
+  }
   await ensureUserRecord(user);
 
   // 2. Données investisseur réelles (synchronisées depuis SAH)
@@ -166,16 +174,50 @@ export async function draftProposalEmailAction(investorId: string): Promise<Draf
    Enregistrement d'appel + rappels (boucle de travail closer)
    ============================================================ */
 
-const PIPELINE_STAGES = [
-  'new',
-  'contacted',
-  'meeting_booked',
-  'meeting_done',
-  'proposal_sent',
-  'closed_won',
-  'closed_lost',
-  'dormant',
-] as const;
+/**
+ * Étapes acceptées par les schémas = TOUTES les étapes du suivi (une seule
+ * source de vérité, lib/closing/pipeline.ts). L'ancienne liste locale omettait
+ * « À rappeler » et « Intéressé » : le formulaire de qualification les proposait
+ * mais le serveur répondait « Données invalides » — bouton cassé sur le
+ * parcours principal.
+ */
+const PIPELINE_STAGES = CLOSING_STAGES;
+
+/**
+ * Verrou « Je prends » : un lead activement pris par un AUTRE closer ne doit
+ * pas être appelé une deuxième fois — ni voir son verrou écrasé en silence.
+ * Renvoie le message d'erreur à montrer, ou null si la voie est libre.
+ */
+async function claimConflictMessage(investorId: string, userId: string): Promise<string | null> {
+  const rows = await db
+    .select({ claimedById: investors.claimedById, claimedAt: investors.claimedAt })
+    .from(investors)
+    .where(eq(investors.id, investorId))
+    .limit(1);
+  const claim = rows[0];
+  if (!claim?.claimedById || claim.claimedById === userId) return null;
+  const cutoff = Date.now() - CLAIM_TTL_MIN * 60_000;
+  if (!claim.claimedAt || new Date(claim.claimedAt).getTime() < cutoff) return null; // expiré
+  return 'Un autre closer travaille cette fiche en ce moment (« Je prends » actif).';
+}
+
+/** Libère le verrou seulement s'il est à nous ou expiré — jamais celui d'un collègue. */
+async function releaseOwnOrExpiredClaim(investorId: string, userId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - CLAIM_TTL_MIN * 60_000);
+  await db
+    .update(investors)
+    .set({ claimedById: null, claimedAt: null })
+    .where(
+      and(
+        eq(investors.id, investorId),
+        or(
+          isNull(investors.claimedById),
+          eq(investors.claimedById, userId),
+          lt(investors.claimedAt, cutoff),
+        ),
+      ),
+    );
+}
 
 const logCallSchema = z.object({
   investorId: z.string().uuid(),
@@ -224,6 +266,11 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
 
   try {
     await ensureUserRecord(user);
+    // 0. Verrou : si un autre closer a « pris » la fiche, on n'enregistre pas
+    //    un deuxième appel par-dessus son travail en cours.
+    const conflict = await claimConflictMessage(parsed.investorId, user.id);
+    if (conflict) return { ok: false, message: conflict };
+
     const stageAtCall = await getCurrentStage(parsed.investorId);
     // 1. L'appel lui-même (alimente timeline + attribution). On mémorise l'étape pipeline
     //    au moment de l'appel pour mesurer plus tard une progression attribuée à cet appel.
@@ -248,22 +295,25 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
       });
     }
 
-    // 3. Avancement pipeline (optionnel) + libération du verrou (l'appel est fait).
-    //    « Profil incompatible » sort le lead de la file → étape « Perdu » (sauf étape explicite).
-    const effectiveStage =
-      parsed.nextStage ?? (parsed.outcome === 'profile_incompatible' ? 'closed_lost' : undefined);
-    await db
-      .update(investors)
-      .set({
-        claimedById: null,
-        claimedAt: null,
-        ...(effectiveStage
-          ? { pipelineStage: effectiveStage, pipelineStageUpdatedAt: new Date() }
-          : {}),
-      })
-      .where(eq(investors.id, parsed.investorId));
+    // 3. MÊME parcours que « Appelé » + qualification : entrée dans le tableau
+    //    de suivi puis rangement automatique selon le résultat. Sans ça, un
+    //    appel enregistré depuis la fiche laissait le lead en étape « new » —
+    //    hors file (appelé < 3 j), hors suivi, hors « Mes leads », hors
+    //    « À qualifier » (résultat déjà saisi) : invisible PARTOUT pendant
+    //    3 jours. C'était le pire bug de l'audit du 29/08/2026.
+    const scored = await getInvestorScored(parsed.investorId);
+    await enterPipeline(parsed.investorId, queueSourceKey(scored?.scored.queueBucket));
+    const move = await applyQualification(
+      parsed.investorId,
+      parsed.outcome,
+      parsed.nextStage,
+      user.id,
+    );
 
-    // 4. Propriété collante : ce closer devient le correspondant attitré (si lead libre).
+    // 4. Libération du verrou — le nôtre uniquement, jamais celui d'un collègue.
+    await releaseOwnOrExpiredClaim(parsed.investorId, user.id);
+
+    // 5. Propriété collante : ce closer devient le correspondant attitré (si lead libre).
     await assignOwnershipIfFree(parsed.investorId, user.id);
 
     await logAudit({
@@ -277,17 +327,19 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
         outcome: parsed.outcome,
         callbackAt: parsed.callbackAt ?? null,
         nextStage: parsed.nextStage ?? null,
+        stageApplied: move?.stage ?? null,
       },
     });
 
     revalidatePath(`/closing/investor/${parsed.investorId}`);
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
-    revalidatePath('/closing/suivi');
+    revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
     // Les autres closers doivent voir l'appel tout de suite (verrou levé,
     // carte déplacée) — sans signal, leur écran mentirait jusqu'au prochain refresh.
     await notifyChange(SYNC_TOPICS.closing);
-    return { ok: true };
+    return { ok: true, moved: move ?? undefined };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
   }
@@ -358,7 +410,11 @@ export type CallBriefActionResult =
 /** Génère un brief d'appel IA (script + objections + projets) calé sur le score. */
 export async function draftCallBriefAction(investorId: string): Promise<CallBriefActionResult> {
   const user = await getAuthenticatedUser();
-  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Action réservée aux closers.' };
+  }
   await ensureUserRecord(user);
 
   const investor = await getInvestorById(investorId);
@@ -446,10 +502,7 @@ export async function updateStageAction(input: {
   }
   try {
     await ensureUserRecord(user);
-    await db
-      .update(investors)
-      .set({ pipelineStage: parsed.stage, pipelineStageUpdatedAt: new Date() })
-      .where(eq(investors.id, parsed.investorId));
+    await setClosingStage(parsed.investorId, parsed.stage, user.id);
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -459,8 +512,10 @@ export async function updateStageAction(input: {
       resourceId: parsed.investorId,
       metadata: { stage: parsed.stage },
     });
-    revalidatePath('/closing/board');
+    revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
     revalidatePath(`/closing/investor/${parsed.investorId}`);
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -613,6 +668,11 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
   }
   try {
     await ensureUserRecord(user);
+    // Verrou : ne jamais enregistrer un appel par-dessus le « Je prends » actif
+    // d'un collègue — c'est exactement le double-appel qu'on veut empêcher.
+    const conflict = await claimConflictMessage(parsed.investorId, user.id);
+    if (conflict) return { ok: false, message: conflict };
+
     const stageAtCall = await getCurrentStage(parsed.investorId);
     const inserted = await db
       .insert(interactions)
@@ -626,10 +686,7 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
       .returning({ id: interactions.id });
     // Propriété collante : ce closer devient le correspondant attitré (si lead libre).
     const assignedNow = await assignOwnershipIfFree(parsed.investorId, user.id);
-    await db
-      .update(investors)
-      .set({ claimedById: null, claimedAt: null })
-      .where(eq(investors.id, parsed.investorId));
+    await releaseOwnOrExpiredClaim(parsed.investorId, user.id);
     // La personne entre dans le tableau de suivi, colonne « Appelé ». On fige
     // au passage la file d'où elle venait : le score se recalcule en continu,
     // donc dans trois semaines plus rien ne dira pourquoi on l'a appelée.
@@ -647,6 +704,7 @@ export async function markCalledAction(input: { investorId: string }): Promise<M
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
     revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
     // Le lead sort de la file pour tout le monde : les autres closers doivent
     // le voir disparaître de leur écran, pas l'appeler une seconde fois.
     await notifyChange(SYNC_TOPICS.closing);
@@ -697,10 +755,36 @@ export async function undoCallAction(input: {
         .set({ assignedCloserId: null })
         .where(and(eq(investors.id, investorId), eq(investors.assignedCloserId, user.id)));
     }
+    // « Appelé » avait fait entrer la personne dans le suivi (étape « Appelé »).
+    // Si c'était son PREMIER appel, l'annulation doit défaire aussi cette entrée,
+    // sinon une carte fantôme « Appelé · 0 appel » traîne dans le tableau.
+    const remaining = await db
+      .select({ n: count() })
+      .from(interactions)
+      .where(
+        and(
+          eq(interactions.investorId, investorId),
+          inArray(interactions.type, ['call_outbound', 'call_inbound']),
+        ),
+      );
+    if ((Number(remaining[0]?.n) || 0) === 0) {
+      await db
+        .update(investors)
+        .set({
+          pipelineStage: 'new',
+          pipelineStageUpdatedAt: new Date(),
+          pipelineEnteredAt: null,
+          pipelineSource: null,
+        })
+        .where(and(eq(investors.id, investorId), eq(investors.pipelineStage, 'contacted')));
+    }
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
-    revalidatePath('/closing/suivi');
+    revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
     revalidatePath(`/closing/investor/${investorId}`);
+    // Le lead réapparaît dans la file : les autres closers doivent le revoir.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -791,7 +875,7 @@ export async function qualifyCallAction(input: {
     // suivi : pas de réponse → « À rappeler » (et sortie de file à la 3e
     // tentative), profil incompatible ou mauvais numéro → sortie immédiate.
     // Une étape choisie à la main par le closer prime sur la règle.
-    const move = await applyQualification(investorId, parsed.outcome, parsed.nextStage);
+    const move = await applyQualification(investorId, parsed.outcome, parsed.nextStage, user.id);
     await assignOwnershipIfFree(investorId, user.id);
 
     await logAudit({
@@ -810,6 +894,7 @@ export async function qualifyCallAction(input: {
     });
 
     revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
     revalidatePath('/closing/today');
     revalidatePath('/closing/queue');
     revalidatePath(`/closing/investor/${investorId}`);
@@ -847,6 +932,8 @@ export async function completeTaskAction(input: { taskId: string }): Promise<Cal
       .where(eq(closerTasks.id, parsed.taskId));
     revalidatePath('/closing/today');
     revalidatePath('/closing/suivi');
+    // Un rappel coché « fait » doit disparaître aussi des écrans des collègues.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -874,6 +961,7 @@ export async function reopenTaskAction(input: { taskId: string }): Promise<CallA
       .where(eq(closerTasks.id, parsed.taskId));
     revalidatePath('/closing/today');
     revalidatePath('/closing/suivi');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -942,6 +1030,10 @@ export async function planActionAction(input: {
     revalidatePath(`/closing/investor/${parsed.investorId}`);
     revalidatePath('/closing/today');
     revalidatePath('/closing/suivi');
+    revalidatePath('/closing/queue');
+    // La planification peut rattacher le lead (propriété collante) : les files
+    // et cockpits des collègues doivent le refléter tout de suite.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true, taskId: inserted[0]?.id ?? '' };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -975,6 +1067,7 @@ export async function cancelTaskAction(input: { taskId: string }): Promise<CallA
     if (rows[0]?.investorId) revalidatePath(`/closing/investor/${rows[0].investorId}`);
     revalidatePath('/closing/today');
     revalidatePath('/closing/suivi');
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -988,12 +1081,20 @@ export async function cancelTaskAction(input: { taskId: string }): Promise<CallA
 const saveNoteSchema = z.object({
   investorId: z.string().uuid(),
   note: z.string().max(8000),
+  /**
+   * La note telle que le closer l'avait CHARGÉE. Si la base contient autre
+   * chose au moment d'écrire, c'est qu'un collègue a modifié entre-temps :
+   * on refuse plutôt que d'écraser son texte en silence (deux closers sur la
+   * même fiche = perte de données invisible, constat de l'audit du 29/08/2026).
+   */
+  baseNote: z.string().max(8000),
 });
 
 /** Enregistre la note libre d'un investisseur (bloc-notes persistant de la fiche). */
 export async function saveInternalNoteAction(input: {
   investorId: string;
   note: string;
+  baseNote: string;
 }): Promise<CallActionResult> {
   let parsed: z.infer<typeof saveNoteSchema>;
   try {
@@ -1009,10 +1110,26 @@ export async function saveInternalNoteAction(input: {
   }
   try {
     const trimmed = parsed.note.trim();
-    await db
+    // Écriture conditionnelle : seulement si la note en base est encore celle
+    // qu'on avait sous les yeux. Sinon, quelqu'un est passé entre-temps.
+    const expected = parsed.baseNote.trim() || null;
+    const updated = await db
       .update(investors)
       .set({ internalNote: trimmed || null })
-      .where(eq(investors.id, parsed.investorId));
+      .where(
+        and(
+          eq(investors.id, parsed.investorId),
+          expected === null ? isNull(investors.internalNote) : eq(investors.internalNote, expected),
+        ),
+      )
+      .returning({ id: investors.id });
+    if (updated.length === 0) {
+      return {
+        ok: false,
+        message:
+          "La note a été modifiée par quelqu'un d'autre entre-temps. Recharge la fiche, puis reporte ton ajout.",
+      };
+    }
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -1022,6 +1139,9 @@ export async function saveInternalNoteAction(input: {
       resourceId: parsed.investorId,
     });
     revalidatePath(`/closing/investor/${parsed.investorId}`);
+    revalidatePath('/closing/queue');
+    // La note apparaît aussi dans la file d'appels des collègues.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
@@ -1058,21 +1178,19 @@ export async function generateProposalAssetAction(input: {
     return { ok: false, reason: 'error', message: 'Données invalides.' };
   }
   const user = await getAuthenticatedUser();
-  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Action réservée aux closers.' };
+  }
   await ensureUserRecord(user);
 
   const investor = await getInvestorById(parsed.investorId);
   if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
 
-  // Remplace l'email actuel : efface les précédents puis insère une ligne « en cours ».
-  await db
-    .delete(investorAssets)
-    .where(
-      and(
-        eq(investorAssets.investorId, parsed.investorId),
-        eq(investorAssets.kind, 'email_proposal'),
-      ),
-    );
+  // On insère la ligne « en cours » SANS toucher à l'email actuel : si la
+  // génération échoue, l'ancien document reste intact (avant, on effaçait
+  // d'abord — un échec IA détruisait le travail existant).
   const created = await db
     .insert(investorAssets)
     .values({
@@ -1133,6 +1251,16 @@ export async function generateProposalAssetAction(input: {
         updatedAt: new Date(),
       })
       .where(eq(investorAssets.id, assetId));
+    // Le nouveau document remplace l'ancien SEULEMENT maintenant qu'il existe.
+    await db
+      .delete(investorAssets)
+      .where(
+        and(
+          eq(investorAssets.investorId, parsed.investorId),
+          eq(investorAssets.kind, 'email_proposal'),
+          sql`${investorAssets.id} <> ${assetId}`,
+        ),
+      );
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -1150,10 +1278,9 @@ export async function generateProposalAssetAction(input: {
       : e instanceof Error
         ? e.message
         : 'Erreur de génération.';
-    await db
-      .update(investorAssets)
-      .set({ status: 'error', error: message, updatedAt: new Date() })
-      .where(eq(investorAssets.id, assetId));
+    // Échec : on retire la ligne « en cours » — l'ancien document (s'il existe)
+    // redevient l'actuel, rien n'est perdu. L'erreur part dans le toast.
+    await db.delete(investorAssets).where(eq(investorAssets.id, assetId));
     await logLlmCall({
       userId: user.id,
       model: 'claude-opus-4-7',
@@ -1178,17 +1305,18 @@ export async function generateCallScriptAssetAction(input: {
     return { ok: false, reason: 'error', message: 'Données invalides.' };
   }
   const user = await getAuthenticatedUser();
-  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, reason: 'error', message: 'Action réservée aux closers.' };
+  }
   await ensureUserRecord(user);
 
   const investor = await getInvestorById(parsed.investorId);
   if (!investor) return { ok: false, reason: 'not_found', message: 'Investisseur introuvable.' };
 
-  await db
-    .delete(investorAssets)
-    .where(
-      and(eq(investorAssets.investorId, parsed.investorId), eq(investorAssets.kind, 'call_script')),
-    );
+  // Comme pour l'email : le script actuel n'est remplacé qu'après une
+  // génération RÉUSSIE — un échec IA ne détruit plus l'existant.
   const created = await db
     .insert(investorAssets)
     .values({
@@ -1256,6 +1384,16 @@ export async function generateCallScriptAssetAction(input: {
         updatedAt: new Date(),
       })
       .where(eq(investorAssets.id, assetId));
+    // Le nouveau script remplace l'ancien seulement maintenant qu'il existe.
+    await db
+      .delete(investorAssets)
+      .where(
+        and(
+          eq(investorAssets.investorId, parsed.investorId),
+          eq(investorAssets.kind, 'call_script'),
+          sql`${investorAssets.id} <> ${assetId}`,
+        ),
+      );
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -1273,10 +1411,8 @@ export async function generateCallScriptAssetAction(input: {
       : e instanceof Error
         ? e.message
         : 'Erreur de génération.';
-    await db
-      .update(investorAssets)
-      .set({ status: 'error', error: message, updatedAt: new Date() })
-      .where(eq(investorAssets.id, assetId));
+    // Échec : la ligne « en cours » disparaît, l'ancien script reste l'actuel.
+    await db.delete(investorAssets).where(eq(investorAssets.id, assetId));
     await logLlmCall({
       userId: user.id,
       model: 'claude-opus-4-7',

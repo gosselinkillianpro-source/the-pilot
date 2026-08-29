@@ -345,7 +345,10 @@ function NightLeadsPanel({ leads, myId }: { leads: NightLead[]; myId: string }) 
               </div>
             </div>
             {!claimedByOther && (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              // flexWrap : à 375 px, « Je prends » + numéro + « Appelé » ne
+              // tiennent pas sur une ligne — sans repli, le dernier bouton
+              // débordait de l'écran.
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 <ClaimControl investorId={lead.id} claimedByMe={claimedByMe} />
                 <a
                   href={`tel:${lead.phone}`}

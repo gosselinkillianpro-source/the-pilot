@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronUp, NotebookPen } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Fragment, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import type { RdvReel, RdvStatut } from '@/lib/integrations/calendly/rdv';
 import { recordRdvOutcomeAction } from './actions';
 
@@ -52,28 +52,35 @@ function etapeBadge(label: string): string {
 export function SuiviTable({ rows }: { rows: RdvReel[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // Le formulaire de compte-rendu vit SOUS le tableau, pas dans une ligne :
+  // `.table-scroll` force la table à sa largeur intrinsèque (~1000 px sur
+  // 8 colonnes) et un <td colSpan> en hériterait — textarea hors écran et
+  // saisie à l'aveugle sur mobile. Sous la table, il prend la largeur de la
+  // carte et reste utilisable à 375 px.
+  const openRow = rows.find((r) => r.id === openId && r.investorId != null) ?? null;
+
   return (
-    <div className="table-scroll">
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', color: 'var(--text-4)' }}>
-            <Th>Lead</Th>
-            <Th>Inscription</Th>
-            <Th>Source</Th>
-            <Th>Date RDV</Th>
-            <Th>RDV</Th>
-            <Th>Étape</Th>
-            <Th align="right">Investi</Th>
-            <Th align="right">Compte-rendu</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const b = statutBadge(r.statut);
-            const open = openId === r.id;
-            return (
-              <Fragment key={r.id}>
-                <tr style={{ borderTop: '1px solid var(--border)' }}>
+    <>
+      <div className="table-scroll">
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', color: 'var(--text-4)' }}>
+              <Th>Lead</Th>
+              <Th>Inscription</Th>
+              <Th>Source</Th>
+              <Th>Date RDV</Th>
+              <Th>RDV</Th>
+              <Th>Étape</Th>
+              <Th align="right">Investi</Th>
+              <Th align="right">Compte-rendu</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const b = statutBadge(r.statut);
+              const open = openId === r.id;
+              return (
+                <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <Td>
                     {r.investorId ? (
                       <Link
@@ -153,23 +160,42 @@ export function SuiviTable({ rows }: { rows: RdvReel[] }) {
                     )}
                   </Td>
                 </tr>
-                {open && r.investorId ? (
-                  <tr>
-                    <td colSpan={8} style={{ padding: 0, background: 'var(--glass-bg-strong)' }}>
-                      <OutcomeForm
-                        investorId={r.investorId}
-                        rdv={r}
-                        onDone={() => setOpenId(null)}
-                      />
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {openRow?.investorId ? (
+        <div style={{ borderTop: '1px solid var(--border)', background: 'var(--glass-bg-strong)' }}>
+          {/* Rappel de la ligne concernée : le formulaire n'est plus collé à elle. */}
+          <div
+            style={{
+              padding: '12px 16px 0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+              Compte-rendu — {openRow.lead}
+            </span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpenId(null)}>
+              Fermer
+            </button>
+          </div>
+          {/* key : changer de lead remet le formulaire à zéro, sinon la note
+              tapée pour l'un fuiterait dans le compte-rendu de l'autre. */}
+          <OutcomeForm
+            key={openRow.id}
+            investorId={openRow.investorId}
+            rdv={openRow}
+            onDone={() => setOpenId(null)}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

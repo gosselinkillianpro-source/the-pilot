@@ -19,6 +19,8 @@ const OUTCOMES: { value: Outcome; label: string }[] = [
 
 const STAGES: { value: NonNullable<LogCallInput['nextStage']>; label: string }[] = [
   { value: 'contacted', label: 'Contacté' },
+  { value: 'interested', label: 'Intéressé' },
+  { value: 'to_call_back', label: 'À rappeler' },
   { value: 'meeting_booked', label: 'RDV pris' },
   { value: 'meeting_done', label: 'RDV fait' },
   { value: 'proposal_sent', label: 'Proposition envoyée' },
@@ -49,12 +51,15 @@ export function CallLogPanel({ investorId }: { investorId: string }) {
       };
       const res = await logCallAction(input);
       if (res.ok) {
-        setMsg({ ok: true, text: 'Appel enregistré.' });
+        // Dire OÙ la personne vient d'être rangée : le rangement automatique
+        // (suivi, à rappeler, sortie de file) serait invisible sinon.
+        const where = res.moved ? ` ${res.moved.reason}` : '';
+        setMsg({ ok: true, text: `Appel enregistré.${where}` });
         setNote('');
         setNextStage('');
         setCallbackAt('');
         router.refresh();
-        toast('Appel enregistré.', { variant: 'success' });
+        toast(`Appel enregistré.${where}`, { variant: 'success' });
       } else {
         setMsg({ ok: false, text: res.message });
         toast(res.message, { variant: 'error' });

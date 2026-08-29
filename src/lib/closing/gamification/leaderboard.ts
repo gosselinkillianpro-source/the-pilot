@@ -2,6 +2,7 @@ import 'server-only';
 import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
+import { appendEmailContacts } from '@/lib/db/queries/attribution-contacts';
 import {
   closerBadges,
   gamificationEvents,
@@ -65,8 +66,13 @@ export function sortEntries(entries: LeaderboardEntry[], by: LeaderboardSort): L
     if (by === 'amount') return e.amountEur;
     return e.xpPeriod;
   };
-  // Copie triée (pas de mutation) ; l'XP départage les ex æquo.
-  return [...entries].sort((a, b) => keyOf(b) - keyOf(a) || b.xpPeriod - a.xpPeriod);
+  // Copie triée (pas de mutation) ; l'XP départage les ex æquo, puis
+  // l'identifiant : sans départage TOTAL, deux closers à égalité changeaient
+  // de place à chaque refresh — et le « Roi de la semaine » se tirait au sort.
+  return [...entries].sort(
+    (a, b) =>
+      keyOf(b) - keyOf(a) || b.xpPeriod - a.xpPeriod || a.closerId.localeCompare(b.closerId),
+  );
 }
 
 /** Jour civil parisien « 2026-08-29 » d'un instant. */
@@ -264,6 +270,10 @@ export async function getLeaderboardForPeriod(
       if (stats) stats.fastCallbacks += 1;
     }
   }
+
+  // Ouvertures/clics email (webhook Brevo) : le last-touch honnête — un appel
+  // dans la fenêtre prime toujours, donc ça ne retire jamais rien à un closer.
+  await appendEmailContacts(contactsByInvestor);
 
   // Souscriptions attribuées (appel prime, 30 j) — les € qui classent.
   for (const s of subRows) {
