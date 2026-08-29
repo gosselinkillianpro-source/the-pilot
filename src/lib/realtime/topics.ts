@@ -22,6 +22,8 @@ export const SYNC_TOPICS = {
   webinars: 'webinars',
   /** Synchro SAH terminée : chiffres, listes et cartes ont pu bouger partout. */
   sah: 'sah',
+  /** Classement des closers : souscription closée, badge décroché, XP à jour. */
+  gamification: 'gamification',
 } as const;
 
 export type SyncTopic = (typeof SYNC_TOPICS)[keyof typeof SYNC_TOPICS];
