@@ -114,7 +114,10 @@ export default async function LeaderboardPage({
 
   return (
     <>
-      <ConfettiOnClose latestCloseId={latestClose?.id ?? null} />
+      <ConfettiOnClose
+        latestCloseId={latestClose?.id ?? null}
+        latestCloseAt={latestClose ? new Date(latestClose.createdAt).toISOString() : null}
+      />
 
       <div
         style={{

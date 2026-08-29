@@ -10,7 +10,11 @@ export default async function CallSessionPage() {
   if (!['admin', 'closer', 'closer_junior'].includes(user.role)) notFound();
 
   const queue = await getCallQueue({ excludeWon: true });
-  const leads: SessionLead[] = queue.slice(0, 60).map((r) => ({
+  // À 4 closers en simultané, une session ne doit JAMAIS proposer un lead
+  // qu'un collègue a « pris » : c'est le double-appel assuré. Le verrou expiré
+  // est déjà remis à null par getCallQueue (TTL), donc le filtre est sûr.
+  const available = queue.filter((r) => r.claimedById == null || r.claimedById === user.id);
+  const leads: SessionLead[] = available.slice(0, 60).map((r) => ({
     id: r.id,
     fullName: r.fullName,
     email: r.email,

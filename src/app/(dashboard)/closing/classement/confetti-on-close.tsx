@@ -30,7 +30,16 @@ type Piece = {
   spin: number;
 };
 
-export function ConfettiOnClose({ latestCloseId }: { latestCloseId: string | null }) {
+/** Au-delà, la victoire est froide : on ne célèbre pas un closing d'avant-hier. */
+const FRESH_MS = 15 * 60_000;
+
+export function ConfettiOnClose({
+  latestCloseId,
+  latestCloseAt,
+}: {
+  latestCloseId: string | null;
+  latestCloseAt: string | null;
+}) {
   const [pieces, setPieces] = useState<Piece[] | null>(null);
 
   useEffect(() => {
@@ -44,6 +53,11 @@ export function ConfettiOnClose({ latestCloseId }: { latestCloseId: string | nul
       return;
     }
     if (seen === null || seen === latestCloseId) return;
+    // Un événement pas encore vu mais VIEUX (retour de week-end, autre
+    // navigateur) est mémorisé sans célébration : les confettis fêtent
+    // l'instant, pas l'historique.
+    const at = latestCloseAt ? new Date(latestCloseAt).getTime() : 0;
+    if (!at || Date.now() - at > FRESH_MS) return;
 
     setPieces(
       Array.from({ length: PIECES }, (_, id) => ({
@@ -59,7 +73,7 @@ export function ConfettiOnClose({ latestCloseId }: { latestCloseId: string | nul
     );
     const timer = setTimeout(() => setPieces(null), DURATION_MS + 1500);
     return () => clearTimeout(timer);
-  }, [latestCloseId]);
+  }, [latestCloseId, latestCloseAt]);
 
   if (!pieces) return null;
 

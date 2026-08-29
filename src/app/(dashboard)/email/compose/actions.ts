@@ -1,9 +1,11 @@
 'use server';
 
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { scanAmfCompliance } from '@/lib/ai/amf-compliance';
 import { logAudit } from '@/lib/audit';
 import { getAuthenticatedUser, requireRole } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { getEmailConfig, pickSenderForUser } from '@/lib/email/config';
 import { listSenders } from '@/lib/email/senders';
 import { renderEmailTemplate, renderPersonalEmail } from '@/lib/email/template';
@@ -171,7 +173,27 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
       sentTo = description;
     }
 
-    // 7. Audit
+    // 7. Trace par destinataire : chaque envoi RÉEL à un investisseur connu
+    //    devient une interaction « email_sent » horodatée — c'est ce qui permet
+    //    de voir ensuite si la personne bouge (ouverture, visite, souscription).
+    //    Sans cette ligne, un email parti de la fiche était invisible partout.
+    //    (Le mode test n'atteint personne : rien à tracer.)
+    if (!config.testMode && realRecipients.length > 0) {
+      const recipientEmails = realRecipients.map((r) => r.email.toLowerCase());
+      await db.execute(sql`
+        insert into interactions (investor_id, type, user_id, metadata)
+        select i.id, 'email_sent'::interaction_type, ${actorId}::uuid,
+               ${JSON.stringify({ subject: data.subject, via: 'compose' })}::jsonb
+        from investors i
+        where i.deleted_at is null
+          and lower(i.email) in (${sql.join(
+            recipientEmails.map((e) => sql`${e}`),
+            sql`, `,
+          )})
+      `);
+    }
+
+    // 8. Audit
     await logAudit({
       userId: actorId,
       userEmail: actorEmail,

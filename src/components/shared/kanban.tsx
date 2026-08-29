@@ -44,6 +44,7 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
   onMove,
   renderCard,
   isHighlighted,
+  isNoopMove,
   collapsedStages = [],
   collapsedLabel = 'les sortis',
   emptyLabel = 'Aucune fiche.',
@@ -55,6 +56,13 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
   renderCard: (card: C) => ReactNode;
   /** Carte à signaler (bordure verte) — ex. « a souscrit, à faire avancer ». */
   isHighlighted?: (card: C) => boolean;
+  /**
+   * Déplacement sans effet ? Par défaut : même colonne. Les tableaux dont des
+   * étapes sont REPLIÉES dans une colonne (« RDV fait » dans « RDV ») doivent
+   * comparer l'étape RÉELLE, sinon ramener une carte repliée vers l'étape
+   * porteuse de sa propre colonne est impossible.
+   */
+  isNoopMove?: (card: C, stage: S) => boolean;
   /**
    * Colonnes de SORTIE, masquées par défaut (perdus, injoignables).
    *
@@ -82,7 +90,7 @@ export function Kanban<S extends string, C extends KanbanItem<S>>({
   );
 
   function move(card: C, stage: S) {
-    if (card.stage === stage) return;
+    if (isNoopMove ? isNoopMove(card, stage) : card.stage === stage) return;
     startTransition(async () => {
       moveOptimistic({ id: card.id, stage });
       const res = await onMove(card, stage);

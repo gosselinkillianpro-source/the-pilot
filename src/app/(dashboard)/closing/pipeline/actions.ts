@@ -21,26 +21,48 @@ const moveSchema = z.object({
   stage: z.string().refine(isClosingStage, 'Colonne inconnue.'),
 });
 
-export async function moveClosingCardAction(input: { investorId: string; stage: string }) {
+export type MoveCardResult = { success: true; label: string } | { success: false; error: string };
+
+export async function moveClosingCardAction(input: {
+  investorId: string;
+  stage: string;
+}): Promise<MoveCardResult> {
+  // Tout échec doit revenir en { success: false } : une action serveur qui
+  // JETTE fait sauter la page du closer vers l'écran d'erreur — la carte
+  // semblait déplacée (optimiste) alors que rien n'était écrit.
+  let parsed: z.infer<typeof moveSchema>;
+  try {
+    parsed = moveSchema.parse(input);
+  } catch {
+    return { success: false, error: 'Colonne inconnue.' };
+  }
   const user = await getAuthenticatedUser();
-  const parsed = moveSchema.parse(input);
-  await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { success: false, error: 'Déplacement réservé aux closers (lecture seule direction).' };
+  }
 
-  const stage = parsed.stage as ClosingStage;
-  await setClosingStage(parsed.investorId, stage);
+  try {
+    const stage = parsed.stage as ClosingStage;
+    await setClosingStage(parsed.investorId, stage, user.id);
 
-  await logAudit({
-    userId: user.id,
-    userEmail: user.email,
-    userRole: user.role,
-    action: 'closing.pipeline_moved',
-    resourceType: 'investor',
-    resourceId: parsed.investorId,
-    metadata: { vers: stage },
-  });
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.pipeline_moved',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { vers: stage },
+    });
 
-  revalidatePath('/closing/pipeline');
-  revalidatePath('/closing/queue');
-  await notifyChange(SYNC_TOPICS.closing);
-  return { success: true, label: CLOSING_STAGE_LABELS[stage] };
+    revalidatePath('/closing/pipeline');
+    revalidatePath('/closing/mes-leads');
+    revalidatePath('/closing/queue');
+    await notifyChange(SYNC_TOPICS.closing);
+    return { success: true, label: CLOSING_STAGE_LABELS[stage] };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Déplacement impossible.' };
+  }
 }

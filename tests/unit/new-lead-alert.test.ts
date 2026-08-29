@@ -112,11 +112,25 @@ describe('numéro cliquable', () => {
 describe('le message poussé', () => {
   const APP = 'https://pilot.example.com';
 
-  test('porte le nom, le numéro cliquable et le lien vers la fiche', () => {
+  test('porte le nom, le numéro international et le lien vers la fiche', () => {
     const msg = buildAlertMessage(lead(), MIDI, APP);
     expect(msg).toContain('Claire Sibille');
-    expect(msg).toContain('tel:+33612345678');
+    expect(msg).toContain('+33612345678');
     expect(msg).toContain(`${APP}/closing/investor/11111111-1111-1111-1111-111111111111`);
+  });
+
+  test('JAMAIS de lien tel: — l’API Telegram rejette ce protocole et toute l’alerte avec', () => {
+    // Bug corrigé le 29/08/2026 : <a href="tel:..."> → 400 « Unsupported URL
+    // protocol », l'alerte réelle ne partait pas du tout. Le numéro en texte
+    // suffit : Telegram le rend cliquable de lui-même.
+    const msg = buildAlertMessage(lead(), MIDI, APP);
+    expect(msg).not.toContain('tel:');
+  });
+
+  test('la fenêtre d’alerte couvre TOUTE la plage calme (20 h → 9 h = 13 h)', () => {
+    // À 12 h de TTL, un inscrit de 20 h 05 était déjà « expiré » à 9 h : jamais
+    // alerté, silencieusement. Le TTL doit dépasser strictement 13 h.
+    expect(MAX_LEAD_AGE_MINUTES).toBeGreaterThan(13 * 60);
   });
 
   test('dit depuis quand la personne attend', () => {
@@ -136,5 +150,14 @@ describe('le message poussé', () => {
     const msg = buildAlertMessage(lead({ fullName: 'Durand & Fils <SARL>' }), MIDI, APP);
     expect(msg).toContain('Durand &amp; Fils &lt;SARL&gt;');
     expect(msg).not.toContain('Durand & Fils <SARL>');
+  });
+});
+
+describe('rattrapage du matin', () => {
+  test('un inscrit de 20 h 05 est alerté à la réouverture de 9 h', () => {
+    // Été : 18 h 05 UTC = 20 h 05 Paris la veille ; 7 h 00 UTC = 9 h 00 Paris.
+    // C'est LE cas que le TTL de 12 h faisait disparaître en silence.
+    const nightLead = lead({ createdAt: new Date('2026-08-28T18:05:00Z') });
+    expect(shouldAlert(nightLead, new Date('2026-08-29T07:00:00Z'))).toEqual({ send: true });
   });
 });

@@ -51,11 +51,21 @@ export async function runGamificationSweep(now: Date = new Date()): Promise<Swee
   }
 
   // --- 1 bis. Roi de la semaine ÉCOULÉE -------------------------------------
+  // UN SEUL roi par semaine : si le badge a déjà été décerné pour cette clé
+  // (même à un autre closer — les stats bougent après coup, synchro tardive),
+  // on ne couronne pas un deuxième roi.
   const prevWeek = previousPeriod('week', now);
-  const prevBoard = await getLeaderboardForPeriod(prevWeek, now);
-  const king = prevBoard.entries[0];
-  if (king && king.xpPeriod > 0) {
-    badgesAwarded += await awardBadge(king.closerId, 'roi_semaine', prevWeek.key);
+  const alreadyCrowned = await db
+    .select({ id: closerBadges.id })
+    .from(closerBadges)
+    .where(and(eq(closerBadges.badge, 'roi_semaine'), eq(closerBadges.periodKey, prevWeek.key)))
+    .limit(1);
+  if (alreadyCrowned.length === 0) {
+    const prevBoard = await getLeaderboardForPeriod(prevWeek, now);
+    const king = prevBoard.entries[0];
+    if (king && king.xpPeriod > 0) {
+      badgesAwarded += await awardBadge(king.closerId, 'roi_semaine', prevWeek.key);
+    }
   }
 
   // --- 2. Souscriptions récentes attribuées → événements du fil -------------
@@ -228,6 +238,16 @@ async function announcePendingEvents(now: Date): Promise<number> {
 
   let announced = 0;
   for (const ev of pending) {
+    // RÉSERVATION ATOMIQUE avant l'envoi : deux balayages concurrents (deux
+    // instances serveur) liraient la même liste — seul celui qui pose
+    // announced_at le premier envoie. Mieux une annonce perdue que doublée.
+    const claimed = await db
+      .update(gamificationEvents)
+      .set({ announcedAt: now })
+      .where(and(eq(gamificationEvents.id, ev.id), isNull(gamificationEvents.announcedAt)))
+      .returning({ id: gamificationEvents.id });
+    if (claimed.length === 0) continue;
+
     const closer = esc(ev.closerId ? (nameById.get(ev.closerId) ?? 'Un closer') : 'Un closer');
     let message: string | null = null;
     if (ev.kind === 'sub_closed' && ev.amount != null) {
@@ -244,10 +264,6 @@ async function announcePendingEvents(now: Date): Promise<number> {
         if (!res.ok) console.warn(`[gamification] annonce Telegram ratée : ${res.error}`);
       }
     }
-    await db
-      .update(gamificationEvents)
-      .set({ announcedAt: now })
-      .where(eq(gamificationEvents.id, ev.id));
     announced += 1;
   }
   return announced;

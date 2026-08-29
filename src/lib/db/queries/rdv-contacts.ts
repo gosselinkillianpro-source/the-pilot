@@ -48,6 +48,13 @@ export async function upsertRdvContacts(
 
     // Une fiche par e-mail et par source : deux rendez-vous de la même personne
     // ne doivent pas produire deux cartes dans le tableau de suivi.
+    //
+    // ⚠️ L'index unique en base (rdv_contacts_owner_email_key, migration 0016)
+    // porte sur (lower(calendly_email), owner_user_id) SANS la colonne source
+    // (ajoutée après, en 0018). Une fiche webinar du même e-mail chez le même
+    // closer passe donc le guard ci-dessous mais violerait l'index — et deux
+    // rendus concurrents de /rdv peuvent doubler l'insert. Dans les deux cas :
+    // on ne crée rien plutôt que de faire tomber toute la page.
     const rows = await db.execute(sql`
       insert into rdv_contacts (
         calendly_email, full_name, source, owner_user_id, investor_id,
@@ -59,6 +66,7 @@ export async function upsertRdvContacts(
         select 1 from rdv_contacts c
         where lower(c.calendly_email) = ${email} and c.source = 'calendly'
       )
+      on conflict (lower(calendly_email), owner_user_id) do nothing
       returning id
     `);
     if ((rows as unknown as unknown[]).length > 0) {

@@ -326,9 +326,12 @@ export default async function InvestorPage({ params, searchParams }: Props) {
                   {scored.scored.temperatureLabel}
                 </span>
               </div>
+              {/* flexWrap + minWidth:0 : sans eux, le badge facteur le plus
+                  long imposait sa largeur et poussait « Appeler » hors écran
+                  sur mobile — le bouton le plus important de la fiche. */}
               <div
                 className="view-card-body"
-                style={{ display: 'flex', alignItems: 'center', gap: 20 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}
               >
                 <div style={{ textAlign: 'center' }}>
                   <div
@@ -338,7 +341,15 @@ export default async function InvestorPage({ params, searchParams }: Props) {
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--text-4)' }}>/ 100</div>
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
                     {scored.scored.queueLabel}
                   </div>
@@ -347,7 +358,11 @@ export default async function InvestorPage({ params, searchParams }: Props) {
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
                     {scored.scored.factors.map((f) => (
-                      <span key={f} className="badge badge-neutral" style={{ fontSize: 10 }}>
+                      <span
+                        key={f}
+                        className="badge badge-neutral"
+                        style={{ fontSize: 10, whiteSpace: 'normal' }}
+                      >
                         {f}
                       </span>
                     ))}
@@ -631,15 +646,24 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             <Row label="Résidence fiscale" value={investor.taxResidencyCountry ?? '—'} />
           </Card>
 
-          {/* Suivi closing : assignation */}
+          {/* Suivi closing : assignation — décision ADMIN (assignCloserAction la
+              refuse aux autres rôles) ; afficher un sélecteur actif à un closer,
+              c'était lui promettre un geste qui échoue au clic. */}
           <Card title="Suivi closing">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Closer assigné</span>
-              <AssignCloser
-                investorId={investor.id}
-                current={investor.assignedCloserId}
-                closers={closers}
-              />
+              {user.role === 'admin' ? (
+                <AssignCloser
+                  investorId={investor.id}
+                  current={investor.assignedCloserId}
+                  closers={closers}
+                />
+              ) : (
+                <span style={{ fontSize: 12.5, color: 'var(--text-1)', fontWeight: 600 }}>
+                  {closers.find((c) => c.id === investor.assignedCloserId)?.name ??
+                    'Non assigné — le premier appel enregistré attitre le lead.'}
+                </span>
+              )}
             </div>
           </Card>
 

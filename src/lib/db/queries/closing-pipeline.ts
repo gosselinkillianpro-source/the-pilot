@@ -232,6 +232,34 @@ export async function missedAttemptsFor(investorId: string): Promise<number> {
 export type AppliedMove = { stage: ClosingStage; reason: string } | null;
 
 /**
+ * Étapes dont le PASSAGE vaut un événement tracé (interaction horodatée).
+ * C'est ce qui rend « RDV pris » visible dans la timeline, attribuable, et
+ * comptable pour l'XP du classement — avant, aucune interaction meeting_booked
+ * n'était jamais créée et le barème « RDV pris = 50 XP » était lettre morte.
+ */
+const STAGE_EVENTS: Partial<Record<ClosingStage, string>> = {
+  meeting_booked: 'meeting_booked',
+  meeting_done: 'meeting_done',
+  proposal_sent: 'proposal_sent',
+};
+
+/** Trace le passage d'étape marquant (RDV pris/fait, proposition) au nom du closer. */
+async function recordStageEvent(
+  investorId: string,
+  next: ClosingStage,
+  previous: ClosingStage,
+  actorId: string | undefined,
+): Promise<void> {
+  const type = STAGE_EVENTS[next];
+  if (!type || next === previous || !actorId) return;
+  await db.execute(sql`
+    insert into interactions (investor_id, type, user_id, metadata)
+    values (${investorId}, ${type}::interaction_type, ${actorId},
+            ${JSON.stringify({ auto: 'stage_move', from: previous })}::jsonb)
+  `);
+}
+
+/**
  * Range la personne après la qualification d'un appel.
  *
  * C'est le cœur du correctif : jusqu'ici, qualifier un appel « pas de réponse »
@@ -239,17 +267,20 @@ export type AppliedMove = { stage: ClosingStage; reason: string } | null;
  *
  * @param explicitStage étape choisie à la main par le closer ; elle prime
  *                      toujours sur la règle automatique.
+ * @param actorId closer à l'origine du mouvement (trace les passages d'étape marquants).
  */
 export async function applyQualification(
   investorId: string,
   outcome: string,
   explicitStage?: string,
+  actorId?: string,
 ): Promise<AppliedMove> {
   const current = (await currentStage(investorId)) ?? 'new';
 
   if (explicitStage && isClosingStage(explicitStage)) {
     if (explicitStage === current) return null;
     await writeStage(investorId, explicitStage);
+    await recordStageEvent(investorId, explicitStage, current, actorId);
     return { stage: explicitStage, reason: 'Étape choisie manuellement.' };
   }
 
@@ -261,6 +292,7 @@ export async function applyQualification(
   if (!shouldApplyMove(current, move.stage)) return null;
 
   await writeStage(investorId, move.stage);
+  await recordStageEvent(investorId, move.stage, current, actorId);
   return move;
 }
 
@@ -279,8 +311,14 @@ export async function enterPipeline(
 }
 
 /** Déplacement à la main depuis le tableau : il fait autorité, y compris en arrière. */
-export async function setClosingStage(investorId: string, stage: ClosingStage): Promise<void> {
+export async function setClosingStage(
+  investorId: string,
+  stage: ClosingStage,
+  actorId?: string,
+): Promise<void> {
+  const current = (await currentStage(investorId)) ?? 'new';
   await writeStage(investorId, stage);
+  await recordStageEvent(investorId, stage, current, actorId);
 }
 
 async function writeStage(

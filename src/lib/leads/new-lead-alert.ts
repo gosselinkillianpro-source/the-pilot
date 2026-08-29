@@ -31,8 +31,12 @@ export const QUIET_HOURS_START = 20;
  * reste dans la file d'appels, mais on ne fait plus sonner un téléphone pour
  * elle. Évite aussi qu'un incident de synchro déclenche une avalanche de
  * notifications sur des inscriptions vieilles de plusieurs jours.
+ *
+ * ⚠️ DOIT rester STRICTEMENT supérieur à la plage calme (20 h → 9 h = 13 h) :
+ * à 12 h, un inscrit de 20 h 05 avait déjà « expiré » à la réouverture de
+ * 9 h — jamais alerté, silencieusement. 14 h laisse une heure de marge.
  */
-export const MAX_LEAD_AGE_MINUTES = 12 * 60;
+export const MAX_LEAD_AGE_MINUTES = 14 * 60;
 
 export type NewLead = {
   investorId: string;
@@ -103,11 +107,15 @@ function minutesSince(from: Date, now: Date): number {
  * Le message poussé sur le portable du closer.
  *
  * Tout ce qu'il faut pour décrocher son téléphone SANS ouvrir l'app : le nom,
- * le numéro en clair et cliquable, l'ancienneté de l'inscription. Le lien vers
- * la fiche vient après, pour le contexte et pour enregistrer l'appel.
+ * le numéro, l'ancienneté de l'inscription. Le lien vers la fiche vient après,
+ * pour le contexte et pour enregistrer l'appel.
  *
  * Format Telegram HTML : seul un sous-ensemble de balises est accepté, et le
  * texte injecté doit être échappé (un nom contenant « & » casserait le message).
+ * ⚠️ PAS de <a href="tel:..."> : l'API Bot refuse ce protocole (400 « Unsupported
+ * URL protocol ») et l'alerte entière partait à la poubelle. Le numéro passe en
+ * texte au format international : les clients Telegram le rendent cliquable
+ * d'eux-mêmes.
  */
 export function buildAlertMessage(lead: NewLead, now: Date, appUrl: string): string {
   const age = minutesSince(lead.createdAt, now);
@@ -115,8 +123,7 @@ export function buildAlertMessage(lead: NewLead, now: Date, appUrl: string): str
   const nom = esc(lead.fullName?.trim() || lead.email);
   const lignes = [`🔥 <b>Nouveau lead BREACH</b> — inscrit ${quand}`, '', `<b>${nom}</b>`];
   if (lead.phone) {
-    const tel = telLink(lead.phone);
-    lignes.push(`📞 <a href="tel:${esc(tel)}">${esc(lead.phone)}</a>`);
+    lignes.push(`📞 ${esc(telLink(lead.phone))}`);
   }
   lignes.push(`✉️ ${esc(lead.email)}`);
   if (lead.city) lignes.push(`📍 ${esc(lead.city)}`);
