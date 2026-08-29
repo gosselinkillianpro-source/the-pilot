@@ -16,7 +16,10 @@ try {
   console.log('');
   // Un échantillon par statut
   const byStatus = {};
-  for (const r of rows) (byStatus[r.status] ??= []).push(r);
+  for (const r of rows) {
+    byStatus[r.status] ??= [];
+    byStatus[r.status].push(r);
+  }
   for (const [status, list] of Object.entries(byStatus)) {
     console.log(`=== ${status} (${list.length}) ===`);
     for (const r of list.slice(0, 4)) {

@@ -25,6 +25,7 @@ import { CallBriefPanel, type SavedScript, type ScriptBrief } from './call-brief
 import { CallLogPanel } from './call-log-panel';
 import { InvestorEmailPanel, type SavedEmail } from './investor-email-panel';
 import { InvestorNotes } from './investor-notes';
+import { TouchLogPanel } from './touch-log-panel';
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -474,6 +475,9 @@ export default async function InvestorPage({ params, searchParams }: Props) {
 
           {/* Enregistrer un appel */}
           <CallLogPanel investorId={investor.id} />
+
+          {/* Tracer un envoi (mail / SMS / WhatsApp) — pour suivre les suites */}
+          <TouchLogPanel investorId={investor.id} />
 
           {/* Actions planifiées (rappel / email / message / tâche) */}
           <div className="view-card">

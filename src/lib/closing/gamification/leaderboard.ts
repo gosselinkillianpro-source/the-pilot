@@ -218,8 +218,9 @@ export async function getLeaderboardForPeriod(
     const at = new Date(row.at);
     const isCall = row.type === 'call_outbound' || row.type === 'call_inbound';
 
-    if (row.investorId && (isCall || EMAIL_KIND[row.type])) {
-      const kind: ContactKind = isCall ? 'call' : EMAIL_KIND[row.type];
+    const emailKind = EMAIL_KIND[row.type];
+    if (row.investorId && (isCall || emailKind)) {
+      const kind: ContactKind = isCall ? 'call' : (emailKind ?? 'open');
       const list = contactsByInvestor.get(row.investorId) ?? [];
       list.push({ kind, at, userId: row.userId });
       contactsByInvestor.set(row.investorId, list);

@@ -30,7 +30,7 @@ function parisOffsetMinutes(at: Date): number {
     timeZoneName: 'shortOffset',
   }).format(at);
   const match = formatted.match(/UTC([+-]\d{1,2})(?::(\d{2}))?/);
-  if (!match) return 60; // filet : heure d'hiver française
+  if (!match?.[1]) return 60; // filet : heure d'hiver française
   const hours = Number.parseInt(match[1], 10);
   const minutes = match[2] ? Number.parseInt(match[2], 10) : 0;
   return hours * 60 + Math.sign(hours) * minutes;

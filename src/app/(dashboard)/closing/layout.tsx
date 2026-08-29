@@ -17,7 +17,10 @@ export default function ClosingLayout({ children }: { children: ReactNode }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <ClosingNav />
         </div>
-        <LiveSync topics={[SYNC_TOPICS.closing, SYNC_TOPICS.sah]} showBadge />
+        <LiveSync
+          topics={[SYNC_TOPICS.closing, SYNC_TOPICS.sah, SYNC_TOPICS.gamification]}
+          showBadge
+        />
       </div>
       {children}
     </div>

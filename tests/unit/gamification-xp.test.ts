@@ -83,7 +83,7 @@ describe('niveaux', () => {
     expect(levelFor(0).progressPct).toBe(0);
     expect(levelFor(LEVELS[1].floor - 1).progressPct).toBeLessThanOrEqual(100);
     // Dernier niveau : plus rien à viser, la barre est pleine.
-    const top = levelFor(LEVELS[LEVELS.length - 1].floor);
+    const top = levelFor(999_999);
     expect(top.next).toBeNull();
     expect(top.progressPct).toBe(100);
   });

@@ -84,16 +84,15 @@ export type Level = {
 
 export function levelFor(xp: number): Level {
   const safe = Math.max(0, xp);
+  let level: (typeof LEVELS)[number] = LEVELS[0];
   let index = 0;
-  for (let i = LEVELS.length - 1; i >= 0; i--) {
-    if (safe >= LEVELS[i].floor) {
+  LEVELS.forEach((candidate, i) => {
+    if (safe >= candidate.floor) {
+      level = candidate;
       index = i;
-      break;
     }
-  }
-  const level = LEVELS[index];
-  const nextLevel = LEVELS[index + 1] ?? null;
-  const next = nextLevel?.floor ?? null;
+  });
+  const next = LEVELS[index + 1]?.floor ?? null;
   const progressPct =
     next == null ? 100 : Math.floor(((safe - level.floor) / (next - level.floor)) * 100);
   return { name: level.name, emoji: level.emoji, index, floor: level.floor, next, progressPct };

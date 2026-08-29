@@ -92,6 +92,8 @@ const BREACH_PREDICATE = sql`(i.breach_level is not null or i.bonus_code ilike '
 export async function listClosingCards(opts?: {
   source?: string;
   network?: NetworkFilter;
+  /** Ne renvoyer que les leads attitrés à ce closer (kanban « Mes leads »). */
+  ownerId?: string;
 }): Promise<ClosingCard[]> {
   const source = opts?.source;
   const networkFilter =
@@ -141,6 +143,7 @@ export async function listClosingCards(opts?: {
     where i.deleted_at is null
       and i.pipeline_stage <> 'new'
       ${source ? sql`and i.pipeline_source = ${source}` : sql``}
+      ${opts?.ownerId ? sql`and i.assigned_closer_id = ${opts.ownerId}` : sql``}
       ${networkFilter}
     order by i.pipeline_stage_updated_at desc nulls last
   `);
