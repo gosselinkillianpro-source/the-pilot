@@ -66,6 +66,7 @@ export function MetricInfo({ id, children }: { id: string; children: ReactNode }
               aria-modal="true"
               aria-label={`Provenance : ${m.label}`}
               onClick={() => setOpen(false)}
+              onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
               style={{
                 position: 'fixed',
                 inset: 0,
@@ -77,6 +78,8 @@ export function MetricInfo({ id, children }: { id: string; children: ReactNode }
                 padding: 16,
               }}
             >
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: le clic n'active rien, il EMPÊCHE la fermeture (stopPropagation) ; la fermeture clavier passe par Échap sur le dialogue parent. */}
+              {/* biome-ignore lint/a11y/useKeyWithClickEvents: même raison — un stopPropagation n'a pas d'équivalent clavier pertinent. */}
               <div
                 // Empêche la fermeture quand on clique DANS la carte.
                 onClick={(e) => e.stopPropagation()}

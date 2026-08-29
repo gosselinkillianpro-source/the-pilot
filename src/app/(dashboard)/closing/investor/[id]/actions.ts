@@ -284,9 +284,70 @@ export async function logCallAction(input: LogCallInput): Promise<CallActionResu
     revalidatePath('/closing/queue');
     revalidatePath('/closing/today');
     revalidatePath('/closing/suivi');
+    // Les autres closers doivent voir l'appel tout de suite (verrou levé,
+    // carte déplacée) — sans signal, leur écran mentirait jusqu'au prochain refresh.
+    await notifyChange(SYNC_TOPICS.closing);
     return { ok: true };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Échec de l'enregistrement." };
+  }
+}
+
+/* ============================================================
+   Actions de contact hors appel (mail / SMS / WhatsApp envoyé)
+   ============================================================ */
+
+const touchSchema = z.object({
+  investorId: z.string().uuid(),
+  kind: z.enum(['email_sent', 'sms_sent', 'whatsapp_sent']),
+  note: z.string().trim().max(2000).optional(),
+});
+
+export type LogTouchInput = z.infer<typeof touchSchema>;
+
+/**
+ * « Je viens d'envoyer un mail / SMS / WhatsApp » — un clic, une interaction
+ * horodatée. C'est ce qui permet ensuite de voir si l'investisseur BOUGE après
+ * le geste (ouverture, visite, souscription) : sans trace de l'envoi, aucune
+ * suite n'est attribuable. Demande explicite de Killian (29/08/2026).
+ */
+export async function logTouchAction(input: LogTouchInput): Promise<CallActionResult> {
+  let parsed: LogTouchInput;
+  try {
+    parsed = touchSchema.parse(input);
+  } catch {
+    return { ok: false, message: 'Données invalides.' };
+  }
+  const user = await getAuthenticatedUser();
+  try {
+    await requireRole(user, ['admin', 'closer', 'closer_junior']);
+  } catch {
+    return { ok: false, message: 'Action réservée aux closers.' };
+  }
+  try {
+    await ensureUserRecord(user);
+    await db.insert(interactions).values({
+      investorId: parsed.investorId,
+      type: parsed.kind,
+      note: parsed.note ?? null,
+      userId: user.id,
+    });
+    // Propriété collante : contacter une personne libre la rattache au closer.
+    await assignOwnershipIfFree(parsed.investorId, user.id);
+    await logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      action: 'closing.touch_logged',
+      resourceType: 'investor',
+      resourceId: parsed.investorId,
+      metadata: { kind: parsed.kind },
+    });
+    revalidatePath(`/closing/investor/${parsed.investorId}`);
+    await notifyChange(SYNC_TOPICS.closing);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Échec.' };
   }
 }
 

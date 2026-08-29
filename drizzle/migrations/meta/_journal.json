@@ -162,6 +162,13 @@
       "when": 1787904005957,
       "tag": "0022_nostalgic_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788011428633,
+      "tag": "0023_special_pyro",
+      "breakpoints": true
     }
   ]
 }

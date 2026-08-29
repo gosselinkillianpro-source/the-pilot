@@ -81,6 +81,12 @@ services:
   # Le cron NE touche PAS SAH : il appelle l'app web (qui a les IP whitelistées).
   # SYNC_URL à renseigner dans le dashboard Render (scope=light = projets + investisseurs) :
   #   https://<domaine-de-l-app>/api/cron/sah-sync?token=<CRON_SECRET>&scope=light
+  #
+  # Le balayage gamification s'enchaîne dans le MÊME service (même logique que
+  # le cron 2 : un cron Render est un service payant). Il décerne les badges,
+  # alimente le fil des victoires et annonce les closings à l'équipe (Telegram).
+  # GAMIFICATION_URL :
+  #   https://<domaine-de-l-app>/api/cron/gamification?token=<CRON_SECRET>
   - type: cron
     name: the-pilot-sync-sah
     runtime: node
@@ -88,9 +94,11 @@ services:
     plan: starter
     schedule: '*/15 * * * *'
     buildCommand: 'echo no-build'
-    startCommand: node scripts/cron-call.mjs SYNC_URL
+    startCommand: node scripts/cron-call.mjs SYNC_URL GAMIFICATION_URL
     envVars:
       - key: SYNC_URL
+        sync: false
+      - key: GAMIFICATION_URL
         sync: false
 
   # --- Cron 2 : NOUVELLES souscriptions seulement, toutes les heures ---

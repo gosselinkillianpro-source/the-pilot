@@ -79,7 +79,6 @@ export function MobileNav({
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: fermeture clavier gérée par Échap sur le drawer ; l'overlay est un raccourci souris non essentiel */}
       <div
         className="mobile-drawer-overlay"
         data-open={open}

@@ -3,6 +3,7 @@ import {
   Flame,
   KanbanSquare,
   MessageSquare,
+  Moon,
   Phone,
   PhoneCall,
   StickyNote,
@@ -22,6 +23,7 @@ import {
   type QueueRow,
   type QueueSource,
 } from '@/lib/db/queries/call-queue';
+import { getNightLeadsToCall, type NightLead } from '@/lib/db/queries/night-leads';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,9 +115,10 @@ export default async function CallQueuePage({
   const source: QueueSource =
     sp.source === 'all' ? 'all' : sp.source === 'other' ? 'other' : 'breach';
 
-  const [queue, user] = await Promise.all([
+  const [queue, user, nightLeads] = await Promise.all([
     getCallQueue({ excludeWon: true, source }),
     getAuthenticatedUser(),
+    getNightLeadsToCall(),
   ]);
   const groups = groupByBucket(queue);
   // Lien de la liste courante : sert au bouton « Retour » de la fiche (revenir ici).
@@ -208,6 +211,8 @@ export default async function CallQueuePage({
         <Kpi icon={<Phone size={15} />} label="En file" value={nb(total)} accent="var(--text-3)" />
       </div>
 
+      {nightLeads.length > 0 && <NightLeadsPanel leads={nightLeads} myId={user.id} />}
+
       {newLeads > NEW_LEADS_ALERT && (
         <div className="alert alert-warning">
           <span className="alert-icon">
@@ -260,6 +265,103 @@ export default async function CallQueuePage({
         </QueueAccordion>
       )}
     </>
+  );
+}
+
+/**
+ * Les inscrits de la nuit (20 h → 9 h : pas d'alerte Telegram) jamais appelés.
+ * Premier réflexe du matin : cette liste doit se VIDER avant tout le reste —
+ * d'où sa place au-dessus des files, avec les mêmes gestes (prendre, appeler).
+ */
+function NightLeadsPanel({ leads, myId }: { leads: NightLead[]; myId: string }) {
+  return (
+    <div
+      className="view-card"
+      style={{ borderColor: 'color-mix(in srgb, var(--ai) 45%, transparent)' }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <Moon size={15} style={{ color: 'var(--ai)' }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+          Inscrits de la nuit — à rappeler ce matin
+        </span>
+        <span className="badge badge-brand">{leads.length}</span>
+        <span style={{ fontSize: 11.5, color: 'var(--text-4)', marginLeft: 'auto' }}>
+          Arrivés pendant les heures calmes (20 h → 9 h), jamais appelés.
+        </span>
+      </div>
+      {leads.map((lead, idx) => {
+        const claimedByMe = lead.claimedById === myId;
+        const claimedByOther = lead.claimedById != null && !claimedByMe;
+        return (
+          <div
+            key={lead.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              padding: '10px 16px',
+              borderBottom: idx === leads.length - 1 ? 'none' : '1px solid var(--border)',
+              opacity: claimedByOther ? 0.55 : 1,
+              background: claimedByMe ? 'var(--success-bg, #e6f6ec)' : 'transparent',
+            }}
+          >
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <Link
+                href={`/closing/investor/${lead.id}?from=${encodeURIComponent('/closing/queue')}`}
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--text-1)',
+                  textDecoration: 'none',
+                }}
+              >
+                {lead.fullName ?? lead.email}
+              </Link>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-4)',
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span>Inscrit le {fmtDateTime(lead.sahCreatedAt)}</span>
+                {lead.city ? <span>{lead.city}</span> : null}
+                {claimedByOther ? (
+                  <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                    en cours — {lead.claimerName ?? 'un closer'}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            {!claimedByOther && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <ClaimControl investorId={lead.id} claimedByMe={claimedByMe} />
+                <a
+                  href={`tel:${lead.phone}`}
+                  className="btn btn-primary btn-sm"
+                  aria-label="Appeler"
+                >
+                  <Phone size={13} />
+                  {lead.phone}
+                </a>
+                <MarkCalledButton investorId={lead.id} name={lead.fullName ?? lead.email} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

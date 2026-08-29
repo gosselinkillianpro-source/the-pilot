@@ -276,3 +276,25 @@ create policy closer_tasks_affiliate_read on public.closer_tasks for select
 drop policy if exists investor_assets_affiliate_read on public.investor_assets;
 create policy investor_assets_affiliate_read on public.investor_assets for select
   using (public.auth_role() = 'admin_affiliate' and public.is_in_my_affiliate_network(investor_id));
+
+-- ============================================================
+-- GAMIFICATION CLOSING (badges + événements du classement)
+-- Écriture : serveur uniquement (cron/actions via connexion service).
+-- Lecture : toute l'équipe interne — le classement est visible par tous
+-- (décision Killian 29/08/2026 : transparence totale entre closers).
+-- ============================================================
+alter table public.closer_badges enable row level security;
+drop policy if exists closer_badges_admin_all on public.closer_badges;
+create policy closer_badges_admin_all on public.closer_badges for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists closer_badges_team_read on public.closer_badges;
+create policy closer_badges_team_read on public.closer_badges for select
+  using (public.auth_role() in ('closer', 'closer_junior', 'executive'));
+
+alter table public.gamification_events enable row level security;
+drop policy if exists gamification_events_admin_all on public.gamification_events;
+create policy gamification_events_admin_all on public.gamification_events for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists gamification_events_team_read on public.gamification_events;
+create policy gamification_events_team_read on public.gamification_events for select
+  using (public.auth_role() in ('closer', 'closer_junior', 'executive'));

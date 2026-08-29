@@ -615,3 +615,57 @@ export const webinarRegistrations = pgTable(
     index('webinar_registrations_investor_idx').on(t.investorId),
   ],
 );
+
+/* ============================================================
+   GAMIFICATION CLOSING — badges décrochés + événements du fil d'activité.
+
+   Tout le reste (XP, classements, niveaux) est DÉRIVÉ des données réelles
+   (interactions, souscriptions, progressions attribuées) : rien à stocker,
+   donc rien qui puisse dériver. Seul ce qui doit n'arriver qu'UNE fois est
+   persisté ici : un badge décroché, un événement annoncé (Telegram/confettis).
+   ============================================================ */
+
+export const closerBadges = pgTable(
+  'closer_badges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    closerId: uuid('closer_id')
+      .notNull()
+      .references(() => users.id),
+    /** Clé du badge (voir src/lib/closing/gamification/badges.ts). */
+    badge: text('badge').notNull(),
+    /** Semaine ISO du décrochage (ex. « 2026-W35 ») — un même badge se regagne chaque semaine. */
+    periodKey: text('period_key').notNull(),
+    awardedAt: timestamp('awarded_at', { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb('metadata'),
+  },
+  (t) => [
+    // Un badge donné ne se décroche qu'une fois par closer et par période :
+    // c'est ce qui rend le balayage du cron rejouable sans doublon.
+    uniqueIndex('closer_badges_award_key').on(t.closerId, t.badge, t.periodKey),
+    index('closer_badges_closer_idx').on(t.closerId),
+  ],
+);
+
+export const gamificationEvents = pgTable(
+  'gamification_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** sub_closed | badge_awarded — le fil d'activité du classement. */
+    kind: text('kind').notNull(),
+    /** Idempotence : « sub:<id> », « badge:<closerId>:<badge>:<période> ». */
+    refId: text('ref_id').notNull(),
+    closerId: uuid('closer_id').references(() => users.id),
+    investorId: uuid('investor_id').references(() => investors.id),
+    /** Montant collecté (souscriptions), en euros. */
+    amount: numeric('amount', { precision: 12, scale: 2 }),
+    badge: text('badge'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Annonce Telegram envoyée à l'équipe — write-once, jamais deux annonces. */
+    announcedAt: timestamp('announced_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('gamification_events_ref_key').on(t.refId),
+    index('gamification_events_created_idx').on(t.createdAt),
+  ],
+);
