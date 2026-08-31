@@ -144,6 +144,11 @@ async function fetchWebinarTitle(): Promise<string | null> {
   return null;
 }
 
+/** Jour de la session en heure de Paris — le serveur, lui, tourne en UTC. */
+function sessionDay(d: Date | null): string | null {
+  return d ? d.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }) : null;
+}
+
 export async function listBroadcasts(limit = 50): Promise<WgBroadcast[]> {
   const [data, fallbackTitle] = await Promise.all([
     call(`/broadcasts?per_page=${Math.min(limit, MAX_PER_PAGE)}`),
@@ -153,14 +158,19 @@ export async function listBroadcasts(limit = 50): Promise<WgBroadcast[]> {
   return collectionOf(data, 'broadcasts')
     .map(parseBroadcast)
     .filter((b): b is Omit<WgBroadcast, 'title'> => b !== null)
-    .map((b) => ({
-      ...b,
-      title:
-        fallbackTitle ??
-        (b.startsAt
-          ? `Webinaire du ${b.startsAt.toLocaleDateString('fr-FR')}`
-          : `Webinaire ${b.id}`),
-    }));
+    .map((b) => {
+      // Toutes les diffusions partagent le titre du webinaire parent : sans la
+      // date de session, elles porteraient toutes exactement le même nom.
+      const day = sessionDay(b.startsAt);
+      const title = fallbackTitle
+        ? day
+          ? `${fallbackTitle} — ${day}`
+          : fallbackTitle
+        : day
+          ? `Webinaire du ${day}`
+          : `Webinaire ${b.id}`;
+      return { ...b, title };
+    });
 }
 
 /* ============================================================
