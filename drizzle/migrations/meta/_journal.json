@@ -169,6 +169,13 @@
       "when": 1788011428633,
       "tag": "0023_special_pyro",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788334050500,
+      "tag": "0024_short_toad",
+      "breakpoints": true
     }
   ]
 }

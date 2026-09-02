@@ -669,3 +669,29 @@ export const gamificationEvents = pgTable(
     index('gamification_events_created_idx').on(t.createdAt),
   ],
 );
+
+/* ============================================================
+   AD_ATTRIBUTIONS — attribution pub MANUELLE d'une personne.
+   Complète l'attribution automatique (code bonus, RDV Calendly) : quand on SAIT
+   qu'une personne vient des ads BREACH sans qu'aucun signal automatique ne le
+   dise, on la rattache ici à la main. Ses investissements comptent alors dans
+   la rentabilité ads (ligne « RDV / manuel » de la page Ads).
+   Une seule attribution par personne — la retirer = supprimer la ligne.
+   ============================================================ */
+export const adAttributions = pgTable(
+  'ad_attributions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    investorId: uuid('investor_id')
+      .notNull()
+      .references(() => investors.id, { onDelete: 'cascade' }),
+    /** Rattachement lisible : « BREACH » (générique) ou un nom de campagne. */
+    label: text('label').notNull().default('BREACH'),
+    /** Régie si on la connaît (Meta / Google) — null = ads sans régie identifiée. */
+    platform: text('platform'),
+    note: text('note'),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('ad_attributions_investor_key').on(t.investorId)],
+);
