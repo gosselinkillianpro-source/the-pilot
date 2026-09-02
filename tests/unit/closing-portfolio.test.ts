@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  type CreditedSub,
   classifyPortfolio,
   type PortfolioLead,
   type PortfolioPeriod,
@@ -23,7 +24,20 @@ function lead(overrides: Partial<PortfolioLead>): PortfolioLead {
     nextActionAt: null,
     lastCallAt: null,
     totalInvestedEur: 0,
-    subs: [],
+    ...overrides,
+  };
+}
+
+function credit(overrides: Partial<CreditedSub>): CreditedSub {
+  return {
+    investorId: 'inv-1',
+    fullName: 'Jean Dupont',
+    email: 'jean@example.com',
+    phone: null,
+    amountEur: 10_000,
+    signedAt: new Date('2026-08-15T10:00:00Z'),
+    isOwned: true,
+    totalInvestedEur: 10_000,
     ...overrides,
   };
 }
@@ -81,142 +95,109 @@ describe('resolvePortfolioPeriod', () => {
 });
 
 describe('classifyPortfolio', () => {
-  test('range chaque lead selon son jalon le plus avancé', () => {
+  test('palmarès depuis les crédités, to-do depuis les attitrés', () => {
     // Arrange
     const leads = [
-      lead({
-        investorId: 'a-investi',
-        subs: [
-          {
-            amountEur: 10_000,
-            signedAt: new Date('2026-08-15T10:00:00Z'),
-            attributedToOwner: true,
-          },
-        ],
-        totalInvestedEur: 10_000,
-      }),
       lead({ investorId: 'kyc-ok', onboardingComplete: true, registrationComplete: true }),
       lead({ investorId: 'inscrit', registrationComplete: true }),
       lead({ investorId: 'en-cours' }),
     ];
+    const credited = [credit({ investorId: 'a-investi', fullName: 'Paul Vendu' })];
 
     // Act
-    const s = classifyPortfolio(leads, ALL_TIME);
+    const s = classifyPortfolio(leads, credited, ALL_TIME);
 
     // Assert
-    expect(s.invested.map((e) => e.lead.investorId)).toEqual(['a-investi']);
+    expect(s.invested.map((e) => e.investorId)).toEqual(['a-investi']);
     expect(s.kycReady.map((l) => l.investorId)).toEqual(['kyc-ok']);
     expect(s.registered.map((l) => l.investorId)).toEqual(['inscrit']);
     expect(s.inProgress.map((l) => l.investorId)).toEqual(['en-cours']);
     expect(s.investedOutside).toHaveLength(0);
   });
 
-  test('cumule les montants et garde la dernière souscription comme date', () => {
-    const leads = [
-      lead({
-        subs: [
-          { amountEur: 5_000, signedAt: new Date('2026-08-10T10:00:00Z'), attributedToOwner: true },
-          {
-            amountEur: 20_000,
-            signedAt: new Date('2026-08-20T10:00:00Z'),
-            attributedToOwner: true,
-          },
-        ],
-      }),
+  test('un crédité hors portefeuille apparaît quand même — c’est son argent au classement', () => {
+    const s = classifyPortfolio([], [credit({ isOwned: false })], ALL_TIME);
+
+    expect(s.invested).toHaveLength(1);
+    expect(s.invested[0]?.isOwned).toBe(false);
+  });
+
+  test('un investisseur crédité ne réapparaît jamais dans les sections d’attente', () => {
+    // Arrange — le lead est attitré ET crédité : palmarès seulement, pas la to-do.
+    const leads = [lead({ investorId: 'double', onboardingComplete: true })];
+    const credited = [credit({ investorId: 'double' })];
+
+    // Act
+    const s = classifyPortfolio(leads, credited, ALL_TIME);
+
+    // Assert
+    expect(s.invested.map((e) => e.investorId)).toEqual(['double']);
+    expect(s.kycReady).toHaveLength(0);
+  });
+
+  test('cumule les souscriptions d’un même investisseur, dernière date en tête', () => {
+    const credited = [
+      credit({ amountEur: 5_000, signedAt: new Date('2026-08-10T10:00:00Z') }),
+      credit({ amountEur: 20_000, signedAt: new Date('2026-08-20T10:00:00Z') }),
     ];
 
-    const s = classifyPortfolio(leads, ALL_TIME);
+    const s = classifyPortfolio([], credited, ALL_TIME);
 
-    expect(s.invested[0]?.postEntryEur).toBe(25_000);
-    expect(s.invested[0]?.attributedEur).toBe(25_000);
+    expect(s.invested).toHaveLength(1);
+    expect(s.invested[0]?.creditedEur).toBe(25_000);
     expect(s.invested[0]?.periodEur).toBe(25_000);
     expect(s.invested[0]?.lastInvestAt.toISOString()).toBe('2026-08-20T10:00:00.000Z');
   });
 
-  test('sépare le fait (le lead a investi) du crédit (règle des 30 jours)', () => {
-    // Arrange — une souscription créditée au closer, une signée sans appel
-    // dans la fenêtre (par ex. 2 mois après le dernier échange).
-    const leads = [
-      lead({
-        subs: [
-          { amountEur: 8_000, signedAt: new Date('2026-08-05T10:00:00Z'), attributedToOwner: true },
-          {
-            amountEur: 12_000,
-            signedAt: new Date('2026-08-25T10:00:00Z'),
-            attributedToOwner: false,
-          },
-        ],
-      }),
-    ];
-
-    // Act
-    const s = classifyPortfolio(leads, ALL_TIME);
-
-    // Assert — l'argent apparaît (20 000 € investis, c'est un fait) mais seul
-    // le crédité rejoint le « collecté » aligné sur le classement.
-    expect(s.invested[0]?.postEntryEur).toBe(20_000);
-    expect(s.invested[0]?.attributedEur).toBe(8_000);
-    expect(s.invested[0]?.attributedPeriodEur).toBe(8_000);
-  });
-
-  test('une période sort les investisseurs hors bornes vers « hors période »', () => {
-    // Arrange — période : du 1er au 31 août (borne to exclue).
+  test('une période sort les crédités hors bornes vers « hors période »', () => {
+    // Arrange — période : août (borne to exclue).
     const period: PortfolioPeriod = {
       key: 'custom',
       from: new Date('2026-08-01T00:00:00Z'),
       to: new Date('2026-09-01T00:00:00Z'),
       label: 'août',
     };
-    const leads = [
-      lead({
+    const credited = [
+      // Un investisseur avec une souscription dans la période et une avant.
+      credit({
         investorId: 'dans-la-periode',
-        subs: [
-          // avant la période
-          { amountEur: 3_000, signedAt: new Date('2026-07-10T10:00:00Z'), attributedToOwner: true },
-          // dedans
-          { amountEur: 7_000, signedAt: new Date('2026-08-12T10:00:00Z'), attributedToOwner: true },
-        ],
+        amountEur: 3_000,
+        signedAt: new Date('2026-07-10T10:00:00Z'),
       }),
-      lead({
+      credit({
+        investorId: 'dans-la-periode',
+        amountEur: 7_000,
+        signedAt: new Date('2026-08-12T10:00:00Z'),
+      }),
+      // Un investisseur crédité uniquement avant la période.
+      credit({
         investorId: 'hors-periode',
-        subs: [
-          { amountEur: 4_000, signedAt: new Date('2026-07-01T10:00:00Z'), attributedToOwner: true },
-        ],
+        amountEur: 4_000,
+        signedAt: new Date('2026-07-01T10:00:00Z'),
       }),
     ];
 
     // Act
-    const s = classifyPortfolio(leads, period);
+    const s = classifyPortfolio([], credited, period);
 
-    // Assert — seul l'argent DANS la période compte pour periodEur, mais un
-    // investisseur hors période ne redescend jamais en « KYC » ou « En cours ».
-    expect(s.invested.map((e) => e.lead.investorId)).toEqual(['dans-la-periode']);
+    // Assert — seul l'argent DANS la période compte pour periodEur ; un crédité
+    // hors période reste visible, jamais reclassé en attente.
+    expect(s.invested.map((e) => e.investorId)).toEqual(['dans-la-periode']);
     expect(s.invested[0]?.periodEur).toBe(7_000);
-    expect(s.invested[0]?.postEntryEur).toBe(10_000);
-    expect(s.invested[0]?.attributedPeriodEur).toBe(7_000);
-    expect(s.investedOutside.map((e) => e.lead.investorId)).toEqual(['hors-periode']);
-    expect(s.investedOutside[0]?.postEntryEur).toBe(4_000);
+    expect(s.invested[0]?.creditedEur).toBe(10_000);
+    expect(s.investedOutside.map((e) => e.investorId)).toEqual(['hors-periode']);
+    expect(s.investedOutside[0]?.creditedEur).toBe(4_000);
   });
 
-  test('trie les investisseurs du plus récent au plus ancien', () => {
-    const leads = [
-      lead({
-        investorId: 'ancien',
-        subs: [
-          { amountEur: 1_000, signedAt: new Date('2026-08-01T10:00:00Z'), attributedToOwner: true },
-        ],
-      }),
-      lead({
-        investorId: 'recent',
-        subs: [
-          { amountEur: 2_000, signedAt: new Date('2026-08-25T10:00:00Z'), attributedToOwner: true },
-        ],
-      }),
+  test('trie les crédités du plus récent au plus ancien', () => {
+    const credited = [
+      credit({ investorId: 'ancien', signedAt: new Date('2026-08-01T10:00:00Z') }),
+      credit({ investorId: 'recent', signedAt: new Date('2026-08-25T10:00:00Z') }),
     ];
 
-    const s = classifyPortfolio(leads, ALL_TIME);
+    const s = classifyPortfolio([], credited, ALL_TIME);
 
-    expect(s.invested.map((e) => e.lead.investorId)).toEqual(['recent', 'ancien']);
+    expect(s.invested.map((e) => e.investorId)).toEqual(['recent', 'ancien']);
   });
 
   test('les KYC validés se classent par wallet décroissant — l’argent à placer d’abord', () => {
@@ -226,7 +207,7 @@ describe('classifyPortfolio', () => {
       lead({ investorId: 'sans-wallet', onboardingComplete: true, walletBalanceCents: null }),
     ];
 
-    const s = classifyPortfolio(leads, ALL_TIME);
+    const s = classifyPortfolio(leads, [], ALL_TIME);
 
     expect(s.kycReady.map((l) => l.investorId)).toEqual([
       'gros-wallet',
@@ -242,7 +223,7 @@ describe('classifyPortfolio', () => {
       lead({ investorId: 'rappel-proche', nextActionAt: new Date('2026-09-03T10:00:00Z') }),
     ];
 
-    const s = classifyPortfolio(leads, ALL_TIME);
+    const s = classifyPortfolio(leads, [], ALL_TIME);
 
     expect(s.inProgress.map((l) => l.investorId)).toEqual([
       'rappel-proche',

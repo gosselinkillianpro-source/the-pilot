@@ -10,23 +10,36 @@ import type { ClosingStage } from '@/lib/closing/pipeline';
  * travailler. Demande du terrain : depuis le classement agrégé, les closers ne
  * voyaient plus NOMINATIVEMENT qui était passé à l'action.
  *
- * Toute la logique est ici, pure et testée ; la page et la requête SQL ne font
- * que l'alimenter.
+ * Deux sources, deux rôles :
+ *  - « Ont investi » + le « collecté » viennent des souscriptions CRÉDITÉES au
+ *    closer par la règle d'attribution de l'app (dernier appel dans les
+ *    30 jours avant la signature — attribution.ts). C'est la décomposition
+ *    nominale du chiffre du classement, sur TOUTE la base : pas de condition
+ *    d'attitrage ni d'entrée dans le tableau de suivi, ces mécanismes étant
+ *    bien plus récents que l'historique de vente (sinon un closer voyait
+ *    1 600 € là où le classement lui comptait 95 000 €).
+ *  - Les autres sections (KYC, inscription, en cours) décrivent son
+ *    portefeuille ATTITRÉ : sa to-do, pas son palmarès.
+ *
+ * Toute la logique est ici, pure et testée ; la page et les requêtes SQL ne
+ * font que l'alimenter.
  */
 
-export type PortfolioSub = {
+/** Une souscription créditée au closer (règle des 30 jours, « l'appel prime »). */
+export type CreditedSub = {
+  investorId: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
   amountEur: number;
   signedAt: Date;
-  /**
-   * La souscription est-elle CRÉDITÉE à ce closer par la règle d'attribution
-   * de l'app (dernier appel dans les 30 jours avant la signature — même règle
-   * que le classement et /performance) ? Un lead attitré peut souscrire hors
-   * fenêtre, ou après l'appel d'un autre : son argent apparaît alors dans le
-   * portefeuille (c'est un fait) sans gonfler le « collecté grâce à toi ».
-   */
-  attributedToOwner: boolean;
+  /** Le lead est-il aussi attitré au closer (propriété collante) ? */
+  isOwned: boolean;
+  /** Tout l'argent du client, y compris ce qui est crédité à d'autres. */
+  totalInvestedEur: number;
 };
 
+/** Un lead attitré au closer — la matière des sections KYC / inscrit / en cours. */
 export type PortfolioLead = {
   investorId: string;
   fullName: string;
@@ -39,10 +52,7 @@ export type PortfolioLead = {
   walletBalanceCents: number | null;
   nextActionAt: Date | null;
   lastCallAt: Date | null;
-  /** Tout l'argent du client, y compris AVANT le premier appel du closer. */
   totalInvestedEur: number;
-  /** Souscriptions signées après l'entrée dans le portefeuille — attribuables. */
-  subs: PortfolioSub[];
 };
 
 /* ============================================================
@@ -127,32 +137,34 @@ export function resolvePortfolioPeriod(
 }
 
 /* ============================================================
-   SECTIONS — qui est passé à l'action, et où en sont les autres
+   SECTIONS — qui a rapporté quoi, et où en sont les autres
    ============================================================ */
 
 export type InvestedEntry = {
-  lead: PortfolioLead;
-  /** Investi par le lead (post-entrée) dans la période affichée — le fait. */
+  investorId: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  /** Le lead est-il attitré au closer ? Sinon, badge « hors portefeuille ». */
+  isOwned: boolean;
+  /** Crédité au closer dans la période affichée. */
   periodEur: number;
-  /** Investi par le lead (post-entrée), toutes dates — le fait. */
-  postEntryEur: number;
-  /** Crédité au closer (règle des 30 jours) dans la période — aligné classement. */
-  attributedPeriodEur: number;
   /** Crédité au closer, toutes dates. */
-  attributedEur: number;
+  creditedEur: number;
   lastInvestAt: Date;
+  totalInvestedEur: number;
 };
 
 export type PortfolioSections = {
-  /** 🎉 Ont investi (souscription post-entrée dans la période). */
+  /** 🎉 Souscriptions créditées au closer dans la période — aligné classement. */
   invested: InvestedEntry[];
-  /** Ont investi aussi, mais en dehors de la période affichée. */
+  /** Crédités aussi, mais en dehors de la période affichée. */
   investedOutside: InvestedEntry[];
-  /** ✅ Peuvent investir : KYC validé côté SAH, pas encore souscrit. */
+  /** ✅ Attitrés qui PEUVENT investir : KYC validé, rien de crédité encore. */
   kycReady: PortfolioLead[];
-  /** 📝 Inscription SAH finalisée, KYC pas encore complet. */
+  /** 📝 Attitrés, inscription SAH finalisée, KYC pas encore complet. */
   registered: PortfolioLead[];
-  /** 📞 Le reste du portefeuille, avec la prochaine action en tête. */
+  /** 📞 Le reste du portefeuille attitré, prochaine action en tête. */
   inProgress: PortfolioLead[];
 };
 
@@ -160,14 +172,6 @@ function isInPeriod(d: Date, period: PortfolioPeriod): boolean {
   if (period.from && d.getTime() < period.from.getTime()) return false;
   if (period.to && d.getTime() >= period.to.getTime()) return false;
   return true;
-}
-
-function sum(subs: PortfolioSub[]): number {
-  return subs.reduce((total, s) => total + s.amountEur, 0);
-}
-
-function lastSignedAt(subs: PortfolioSub[]): Date {
-  return subs.reduce((max, s) => (s.signedAt > max ? s.signedAt : max), subs[0]?.signedAt as Date);
 }
 
 /** Tri : prochaine action d'abord (échéance proche en tête), sans échéance ensuite. */
@@ -179,37 +183,57 @@ function byNextAction(a: PortfolioLead, b: PortfolioLead): number {
 }
 
 /**
- * Range chaque lead dans sa section, selon le jalon le PLUS AVANCÉ atteint.
+ * Assemble les sections : les souscriptions créditées font le palmarès, les
+ * leads attitrés restants font la to-do.
  *
- * La période ne s'applique qu'aux souscriptions (seul jalon dont on connaît la
- * date exacte) : « KYC finalisé » et « Inscription finalisée » sont des états
- * courants venus de SAH, sans date de bascule chez nous.
+ * La période ne filtre que les souscriptions (seul jalon daté) : « KYC
+ * finalisé » et « Inscription finalisée » sont des états courants venus de
+ * SAH, sans date de bascule chez nous. Un investisseur crédité n'apparaît
+ * JAMAIS en double dans une section d'attente, même hors période.
  */
 export function classifyPortfolio(
   leads: PortfolioLead[],
+  credited: CreditedSub[],
   period: PortfolioPeriod,
 ): PortfolioSections {
+  // 1. Palmarès : groupage des souscriptions créditées par investisseur.
+  const byInvestor = new Map<string, CreditedSub[]>();
+  for (const sub of credited) {
+    const list = byInvestor.get(sub.investorId) ?? [];
+    list.push(sub);
+    byInvestor.set(sub.investorId, list);
+  }
+
   const invested: InvestedEntry[] = [];
   const investedOutside: InvestedEntry[] = [];
+  for (const [investorId, subs] of byInvestor) {
+    const first = subs[0];
+    if (!first) continue;
+    const periodSubs = subs.filter((s) => isInPeriod(s.signedAt, period));
+    const shown = periodSubs.length > 0 ? periodSubs : subs;
+    const entry: InvestedEntry = {
+      investorId,
+      fullName: first.fullName,
+      email: first.email,
+      phone: first.phone,
+      isOwned: first.isOwned,
+      periodEur: periodSubs.reduce((t, s) => t + s.amountEur, 0),
+      creditedEur: subs.reduce((t, s) => t + s.amountEur, 0),
+      lastInvestAt: shown.reduce(
+        (max, s) => (s.signedAt > max ? s.signedAt : max),
+        shown[0]?.signedAt as Date,
+      ),
+      totalInvestedEur: first.totalInvestedEur,
+    };
+    (periodSubs.length > 0 ? invested : investedOutside).push(entry);
+  }
+
+  // 2. To-do : les leads attitrés qui n'ont encore rien rapporté.
   const kycReady: PortfolioLead[] = [];
   const registered: PortfolioLead[] = [];
   const inProgress: PortfolioLead[] = [];
-
   for (const lead of leads) {
-    if (lead.subs.length > 0) {
-      const periodSubs = lead.subs.filter((s) => isInPeriod(s.signedAt, period));
-      const attributed = lead.subs.filter((s) => s.attributedToOwner);
-      const entry: InvestedEntry = {
-        lead,
-        periodEur: sum(periodSubs),
-        postEntryEur: sum(lead.subs),
-        attributedPeriodEur: sum(periodSubs.filter((s) => s.attributedToOwner)),
-        attributedEur: sum(attributed),
-        lastInvestAt: lastSignedAt(periodSubs.length > 0 ? periodSubs : lead.subs),
-      };
-      (periodSubs.length > 0 ? invested : investedOutside).push(entry);
-      continue;
-    }
+    if (byInvestor.has(lead.investorId)) continue;
     if (lead.onboardingComplete) {
       kycReady.push(lead);
       continue;
