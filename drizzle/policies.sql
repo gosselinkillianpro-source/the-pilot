@@ -298,3 +298,16 @@ create policy gamification_events_admin_all on public.gamification_events for al
 drop policy if exists gamification_events_team_read on public.gamification_events;
 create policy gamification_events_team_read on public.gamification_events for select
   using (public.auth_role() in ('closer', 'closer_junior', 'executive'));
+
+-- ============================================================
+-- AD_ATTRIBUTIONS (attribution pub manuelle d'une personne)
+-- Écriture : serveur uniquement (server actions via connexion service).
+-- Lecture : équipe interne (la page Ads est visible par tous les internes).
+-- ============================================================
+alter table public.ad_attributions enable row level security;
+drop policy if exists ad_attributions_admin_all on public.ad_attributions;
+create policy ad_attributions_admin_all on public.ad_attributions for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists ad_attributions_team_read on public.ad_attributions;
+create policy ad_attributions_team_read on public.ad_attributions for select
+  using (public.auth_role() in ('closer', 'closer_junior', 'executive'));

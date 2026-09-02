@@ -105,6 +105,87 @@ export async function getAttributedCounts(range: DateRange): Promise<AttributedC
   };
 }
 
+/**
+ * Un lead vu en RDV Calendly compte comme ads si AUCUN autre canal ne le
+ * revendique. Attention aux fausses évidences : le funnel pub écrit LUI-MÊME
+ * parrain « SEVEN BREACH » (niveau 0) et CGP « BREACH », et SAH marque souvent
+ * Guillaume (le closer vers qui les pubs envoient) comme apporteur — ces
+ * marqueurs-là SONT le canal ads, on ne les exclut pas (décision Killian
+ * 02/09/2026). On exclut : code partenaire saisi, parrainage par un autre
+ * investisseur (niveau ≥ 1), vrai CGP tiers. Conditions sur l'alias `i`
+ * (investors) — partagées avec countRdvAutoTracked.
+ */
+export const RDV_ADS_ELIGIBLE_SQL = `
+  (i.bonus_code is null or trim(i.bonus_code) = '')
+  and coalesce(i.breach_level, 0) < 1
+  and (
+    i.cgp_name is null or trim(i.cgp_name) = ''
+    or i.cgp_name ilike '%breach%'
+    or i.cgp_name ilike '%gosselin%'
+  )
+`;
+
+/**
+ * Bucket « RDV Calendly + manuels » : personnes attribuées aux ads SANS code bonus pub.
+ *
+ * Les pubs BREACH n'orientent que vers la prise de RDV Calendly : quelqu'un qui
+ * prend RDV puis investit sans jamais saisir de code vient bien de la pub. Règle :
+ *   - RDV Calendly (rdv_contacts.source = 'calendly' relié à une fiche) → attribué,
+ *     SAUF si un autre canal le revendique (voir RDV_ADS_ELIGIBLE_SQL) ;
+ *   - attribution MANUELLE (table ad_attributions) → décision humaine explicite,
+ *     elle prime sur ces exclusions.
+ * Dans les deux cas, les porteurs d'un code PUB sont exclus : ils sont déjà
+ * comptés dans les lignes Meta/Google (jamais de double compte).
+ *
+ * Mêmes fenêtres que l'attribution par code : inscrits/complets par date de
+ * création SAH, investisseurs/collecte par date de signature.
+ */
+export async function getRdvManualCounts(range: DateRange): Promise<AcquisitionCounts> {
+  const created = windowFilter('e.sah_created_at', range);
+  const signed = windowFilter('s.signed_at', range);
+  const notAdCode = sql.raw(
+    `(i.bonus_code is null or not (${AD_CODE_PATTERNS.Meta.replace('bonus_code', 'i.bonus_code')} or ${AD_CODE_PATTERNS.Google.replace('bonus_code', 'i.bonus_code')}))`,
+  );
+
+  const res = await db.execute(sql`
+    with eligible as (
+      select i.id, i.sah_created_at, i.registration_complete, i.onboarding_complete
+      from investors i
+      where i.deleted_at is null
+        and ${notAdCode}
+        and (
+          exists (select 1 from ad_attributions a where a.investor_id = i.id)
+          or (
+            exists (
+              select 1 from rdv_contacts rc
+              where rc.investor_id = i.id and rc.source = 'calendly'
+            )
+            and ${sql.raw(RDV_ADS_ELIGIBLE_SQL)}
+          )
+        )
+    )
+    select
+      (select count(*) from eligible e where e.sah_created_at is not null and ${created})::int as inscrits,
+      (select count(*) from eligible e
+        where e.sah_created_at is not null and ${created}
+          and e.registration_complete and e.onboarding_complete)::int as complets,
+      (select count(distinct s.investor_id) from subscriptions s
+        join eligible e on e.id = s.investor_id
+        where s.status <> 'cancelled' and s.signed_at is not null and ${signed})::int as investisseurs,
+      (select coalesce(sum(s.amount), 0) from subscriptions s
+        join eligible e on e.id = s.investor_id
+        where s.status <> 'cancelled' and s.signed_at is not null and ${signed}) as collecte
+  `);
+
+  const row = (res as unknown as Row[])[0] ?? {};
+  return {
+    inscrits: n(row.inscrits),
+    complets: n(row.complets),
+    investisseurs: n(row.investisseurs),
+    collecte: n(row.collecte),
+  };
+}
+
 export type CodeRow = {
   code: string;
   source: CodeSource;

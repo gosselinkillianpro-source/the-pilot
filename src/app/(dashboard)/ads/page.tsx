@@ -17,8 +17,10 @@ import { periodToRange, resolveAdsPeriod } from '@/lib/ads/period';
 import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
 import { getAdsTrends } from '@/lib/ads/trends';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { countRdvAutoTracked, listAdAttributions } from '@/lib/db/queries/ad-attributions';
 import { type CodeRow, type CodeSource, getCodeTracking } from '@/lib/db/queries/ads-acquisition';
 import { AdsReco } from './ads-reco';
+import { ManualTracking } from './manual-tracking';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,6 +167,126 @@ function TrendBlock({
   );
 }
 
+/**
+ * Le chiffre qui compte, en premier : ce que la pub coûte VS ce qu'elle rapporte
+ * (souscriptions signées des personnes attribuées aux ads — codes, RDV, manuels).
+ */
+function SpendVsReturn({
+  spend,
+  collecte,
+  investisseurs,
+  periodLabel,
+}: {
+  spend: number;
+  collecte: number;
+  investisseurs: number;
+  periodLabel: string;
+}) {
+  const roas = spend > 0 ? collecte / spend : null;
+  const roasColor =
+    roas === null ? 'var(--text-4)' : roas >= 1 ? 'var(--success)' : 'var(--danger)';
+  return (
+    <div
+      className="view-card"
+      style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
+    >
+      <div className="view-card-body" style={{ padding: '18px 20px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr',
+            gap: 16,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              Dépense ads
+            </div>
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                color: 'var(--text-1)',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {eur(spend)}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
+              Meta + Google · {periodLabel}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 2,
+              padding: '0 6px',
+            }}
+          >
+            <span style={{ fontSize: 20, fontWeight: 800, color: roasColor, whiteSpace: 'nowrap' }}>
+              {roas === null ? '—' : `×${roas.toFixed(1)}`}
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--text-4)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              retour
+            </span>
+          </div>
+          <div style={{ minWidth: 0, textAlign: 'right' }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              Investissements issus des ads
+            </div>
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                color: collecte > 0 ? 'var(--success)' : 'var(--text-1)',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {eur(collecte)}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
+              {int(investisseurs)} investisseur{investisseurs > 1 ? 's' : ''} · codes + RDV Calendly
+              + manuels
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
   const d = derive(rawOf(c));
   const roas = roi && c.spend > 0 ? roi.invested / c.spend : null;
@@ -299,25 +421,38 @@ function SourceTag({ source }: { source: CodeSource }) {
   );
 }
 
-/** Tableau coût réel par régie (Meta / Google / Total). */
+/** Tableau coût réel par régie (Meta / Google / RDV+manuels / Total). */
 function CostTable({ blended }: { blended: BlendedAcquisition }) {
   const rows = [
     ...blended.platforms.map((p) => ({
       key: p.platform as string,
       label: p.platform as string,
       sub: `code ${p.code}`,
-      spend: p.spend,
+      spend: p.spend as number | null,
       counts: p.counts,
       metrics: p.metrics,
       total: false,
     })),
-    ...(blended.platforms.length > 1 && blended.total
+    ...(blended.extra
+      ? [
+          {
+            key: 'extra',
+            label: 'RDV / manuel',
+            sub: 'Calendly + ajouts',
+            spend: null,
+            counts: blended.extra.counts,
+            metrics: blended.extra.metrics,
+            total: false,
+          },
+        ]
+      : []),
+    ...(blended.total && (blended.platforms.length > 1 || blended.extra)
       ? [
           {
             key: 'total',
             label: 'Total ads',
-            sub: 'Meta + Google',
-            spend: blended.total.spend,
+            sub: 'dépense ÷ tout l’attribué',
+            spend: blended.total.spend as number | null,
             counts: blended.total.counts,
             metrics: blended.total.metrics,
             total: true,
@@ -327,7 +462,7 @@ function CostTable({ blended }: { blended: BlendedAcquisition }) {
   ];
   return (
     <div className="table-scroll">
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
         <thead>
           <tr>
             <Th left>Source</Th>
@@ -337,6 +472,7 @@ function CostTable({ blended }: { blended: BlendedAcquisition }) {
             <Th>Complets</Th>
             <Th>CPI</Th>
             <Th>Investisseurs</Th>
+            <Th>Collecte</Th>
             <Th>Coût / inv.</Th>
             <Th>Ticket moyen</Th>
             <Th>Rentabilité</Th>
@@ -374,6 +510,9 @@ function CostTable({ blended }: { blended: BlendedAcquisition }) {
                 <Td>{int(r.counts.complets)}</Td>
                 <Td>{eur(r.metrics.cpi, 2)}</Td>
                 <Td>{int(r.counts.investisseurs)}</Td>
+                <Td bold color={r.counts.collecte > 0 ? 'var(--success)' : undefined}>
+                  {eur(r.counts.collecte)}
+                </Td>
                 <Td>{eur(r.metrics.costPerInvestor, 0)}</Td>
                 <Td>{eur(r.metrics.avgTicket, 0)}</Td>
                 <Td
@@ -443,18 +582,21 @@ export default async function AdsPage({
   const user = await getAuthenticatedUser();
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
-  const [overview, trends, roi, codeRows] = await Promise.all([
+  const canManage = user.role === 'admin' || user.role === 'executive';
+  const [overview, trends, roi, codeRows, attributions, rdvAutoCount] = await Promise.all([
     getAdsOverview(period),
     getAdsTrends(period),
     getCampaignRoi(),
     getCodeTracking(periodToRange(period)),
+    canManage ? listAdAttributions() : Promise.resolve([]),
+    canManage ? countRdvAutoTracked() : Promise.resolve(0),
   ]);
   const { totals, platforms, campaigns, byPlatform } = overview;
   const spendByPlatform = Object.fromEntries(byPlatform.map((b) => [b.platform, b.raw.spend]));
   const blended = await getBlendedAcquisition(period, spendByPlatform);
   const alerts = buildAdsAlerts(campaigns, totals.cpa);
   const ranking = rankCampaigns(campaigns);
-  const canReco = user.role === 'admin' || user.role === 'executive';
+  const canReco = canManage;
 
   return (
     <>
@@ -476,6 +618,14 @@ export default async function AdsPage({
         </div>
         <AdsPeriodFilter />
       </div>
+
+      {/* LE chiffre : ce que la pub coûte vs ce qu'elle rapporte, côte à côte */}
+      <SpendVsReturn
+        spend={totals.spend}
+        collecte={blended.attributed.collecte}
+        investisseurs={blended.attributed.investisseurs}
+        periodLabel={period.label}
+      />
 
       {/* État des connexions */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -583,9 +733,12 @@ export default async function AdsPage({
           >
             <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
               Dépense de chaque régie ÷ les <strong>vrais inscrits SAH</strong> du code
-              correspondant (SEVEN-BREACH → Meta, BREACH-VIP → Google). On ignore les conversions
-              gonflées du pixel. <strong>Rentabilité</strong> = ticket moyen ÷ coût par investisseur
-              (×&gt;1 = rentable).
+              correspondant (SEVEN-BREACH → Meta, BREACH-VIP → Google). La ligne{' '}
+              <strong>RDV / manuel</strong> ajoute les personnes venues des ads sans code : RDV
+              Calendly (les pubs n'orientent que vers la prise de RDV) et ajouts manuels — sans
+              parrainage, code partenaire ni CGP, jamais comptées deux fois.{' '}
+              <strong>Rentabilité</strong> = ticket moyen ÷ coût par investisseur (×&gt;1 =
+              rentable).
             </div>
             <CostTable blended={blended} />
             <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5 }}>
@@ -616,6 +769,9 @@ export default async function AdsPage({
           </div>
         </div>
       )}
+
+      {/* Tracking manuel : rattacher une personne aux ads à la main (admin / gérant) */}
+      {canManage && <ManualTracking rows={attributions} rdvAutoCount={rdvAutoCount} />}
 
       {/* Évolution + comparaison période précédente */}
       {trends.available && (
