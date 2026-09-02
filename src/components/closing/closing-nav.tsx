@@ -1,6 +1,14 @@
 'use client';
 
-import { CalendarClock, ListChecks, Receipt, Trophy, UserSquare2, Users } from 'lucide-react';
+import {
+  CalendarClock,
+  ListChecks,
+  Receipt,
+  Trophy,
+  UserSquare2,
+  Users,
+  Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -8,6 +16,7 @@ import type { ReactNode } from 'react';
 const TABS: { href: string; label: string; icon: ReactNode }[] = [
   { href: '/closing/queue', label: "File d'appels", icon: <ListChecks size={15} /> },
   { href: '/closing/mes-leads', label: 'Mes leads', icon: <UserSquare2 size={15} /> },
+  { href: '/closing/portefeuille', label: 'Portefeuille', icon: <Wallet size={15} /> },
   { href: '/closing/today', label: "Aujourd'hui", icon: <CalendarClock size={15} /> },
   { href: '/closing/classement', label: 'Classement', icon: <Trophy size={15} /> },
   { href: '/closing/investisseurs', label: 'Investisseurs', icon: <Users size={15} /> },

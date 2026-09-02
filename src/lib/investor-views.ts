@@ -12,7 +12,9 @@ import type { InvestorListFilters } from '@/lib/db/queries/investor-list';
  *
  * Ces trois vues remplacent trois anciennes pages :
  *   /closing/pipeline      → 'tous'
- *   /closing/portefeuille  → 'portefeuille'
+ *   /closing/portefeuille  → 'portefeuille' (la route est depuis redevenue une
+ *                            vraie page « résultats » ; cette vue-ci reste la
+ *                            liste plate des attribués)
  *   /closing/reinvest      → 'reinvest'
  */
 
@@ -49,8 +51,10 @@ export const INVESTOR_VIEWS: InvestorView[] = [
     filters: { sort: 'recent' },
   },
   {
+    // « Mes attribués » et non « Mon portefeuille » : ce nom-là est pris par la
+    // page /closing/portefeuille (vue résultats), homonyme sinon.
     key: 'portefeuille',
-    label: 'Mon portefeuille',
+    label: 'Mes attribués',
     description: 'Les leads qui me sont attribués, dernier appel en premier.',
     filters: { sort: 'last_call' },
     scopedToMe: true,
