@@ -88,7 +88,12 @@ export default async function PortfolioPage({
   const leads = await listPortfolioLeads(viewedId);
   const sections = classifyPortfolio(leads, period);
 
-  const collectedEur = sections.invested.reduce((s, e) => s + e.periodEur, 0);
+  // Le « collecté » suit la règle d'attribution du classement (dernier appel
+  // dans les 30 jours avant la signature) : les deux chiffres doivent coller.
+  const collectedEur =
+    period.key === 'tout'
+      ? [...sections.invested, ...sections.investedOutside].reduce((s, e) => s + e.attributedEur, 0)
+      : sections.invested.reduce((s, e) => s + e.attributedPeriodEur, 0);
   const href = (params: { periode?: string; du?: string; au?: string }) => {
     const p = new URLSearchParams();
     if (canPick && sp.closer) p.set('closer', sp.closer);
@@ -119,7 +124,7 @@ export default async function PortfolioPage({
           </h1>
           <div className="page-desc">
             {isMine
-              ? 'Qui est passé à l’action parmi tes leads — et pour combien. Les montants comptés sont ceux investis après ton premier appel.'
+              ? 'Qui est passé à l’action parmi tes leads — et pour combien. Le « collecté » suit la règle du classement : dernier appel dans les 30 jours avant la souscription.'
               : 'Vue superviseur : les résultats nominatifs de ce closer.'}
           </div>
         </div>
@@ -270,7 +275,16 @@ export default async function PortfolioPage({
           </div>
         </div>
       ) : (
-        <>
+        /* 2 colonnes dès que la place le permet : les 4 sections se voient
+           d'un coup d'œil au lieu de s'empiler sur un kilomètre de scroll. */
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+            gap: 12,
+            alignItems: 'start',
+          }}
+        >
           <Section
             emoji="🎉"
             title="Ont investi"
@@ -286,27 +300,35 @@ export default async function PortfolioPage({
                 <>
                   + {sections.investedOutside.length} hors période :{' '}
                   {sections.investedOutside
-                    .map((e) => `${e.lead.fullName} (${eur(e.attributableEur)})`)
+                    .map((e) => `${e.lead.fullName} (${eur(e.postEntryEur)})`)
                     .join(' · ')}
                 </>
               ) : null
             }
-          >
-            {sections.invested.map((e) => (
-              <LeadRow key={e.lead.investorId} lead={e.lead}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--success)' }}>
-                    {eur(period.key === 'tout' ? e.attributableEur : e.periodEur)}
+            rows={sections.invested.map((e) => {
+              const shownEur = period.key === 'tout' ? e.postEntryEur : e.periodEur;
+              const creditedEur = period.key === 'tout' ? e.attributedEur : e.attributedPeriodEur;
+              return (
+                <LeadRow key={e.lead.investorId} lead={e.lead}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--success)' }}>
+                      {eur(shownEur)}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-4)' }}>
+                      le {fmtDate(e.lastInvestAt)}
+                      {e.lead.totalInvestedEur > e.postEntryEur &&
+                        ` · ${eur(e.lead.totalInvestedEur)} au total client`}
+                    </div>
+                    {creditedEur < shownEur && (
+                      <div style={{ fontSize: 10.5, color: 'var(--warning)' }}>
+                        {eur(shownEur - creditedEur)} non attribués (pas d'appel &lt; 30 j)
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-4)' }}>
-                    le {fmtDate(e.lastInvestAt)}
-                    {e.lead.totalInvestedEur > e.attributableEur &&
-                      ` · ${eur(e.lead.totalInvestedEur)} au total client`}
-                  </div>
-                </div>
-              </LeadRow>
-            ))}
-          </Section>
+                </LeadRow>
+              );
+            })}
+          />
 
           <Section
             emoji="✅"
@@ -314,22 +336,21 @@ export default async function PortfolioPage({
             accent="var(--warning)"
             count={sections.kycReady.length}
             empty="Personne en attente avec un KYC validé."
-          >
-            {sections.kycReady.map((lead) => (
+            rows={sections.kycReady.map((lead) => (
               <LeadRow key={lead.investorId} lead={lead}>
                 <div style={{ textAlign: 'right' }}>
                   {lead.walletBalanceCents != null && lead.walletBalanceCents > 0 ? (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--warning)' }}>
                       {eur(lead.walletBalanceCents / 100)} sur le wallet
                     </div>
                   ) : (
-                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>prêt à investir</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>prêt à investir</div>
                   )}
                   <NextAction lead={lead} />
                 </div>
               </LeadRow>
             ))}
-          </Section>
+          />
 
           <Section
             emoji="📝"
@@ -337,13 +358,12 @@ export default async function PortfolioPage({
             accent="var(--brand)"
             count={sections.registered.length}
             empty="Personne à cette étape : les inscrits complets sont plus haut, en KYC ou investis."
-          >
-            {sections.registered.map((lead) => (
+            rows={sections.registered.map((lead) => (
               <LeadRow key={lead.investorId} lead={lead}>
                 <div style={{ textAlign: 'right' }}>
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: 11.5,
                       color: 'var(--text-2)',
                       display: 'flex',
                       gap: 5,
@@ -352,13 +372,13 @@ export default async function PortfolioPage({
                     }}
                   >
                     <UserPlus size={12} />
-                    inscription complète, KYC en attente
+                    KYC en attente
                   </div>
                   <NextAction lead={lead} />
                 </div>
               </LeadRow>
             ))}
-          </Section>
+          />
 
           <Section
             emoji="📞"
@@ -366,19 +386,18 @@ export default async function PortfolioPage({
             accent="var(--text-3)"
             count={sections.inProgress.length}
             empty="Rien en cours — tout le portefeuille a passé un jalon."
-          >
-            {sections.inProgress.map((lead) => (
+            rows={sections.inProgress.map((lead) => (
               <LeadRow key={lead.investorId} lead={lead}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-2)' }}>
                     {CLOSING_STAGE_LABELS[lead.stage]}
                   </div>
                   <NextAction lead={lead} />
                 </div>
               </LeadRow>
             ))}
-          </Section>
-        </>
+          />
+        </div>
       )}
     </>
   );
@@ -422,6 +441,9 @@ function StatCard({
   );
 }
 
+/** Au-delà, le reste de la liste se replie derrière un « Voir les N autres ». */
+const VISIBLE_ROWS = 6;
+
 function Section({
   emoji,
   title,
@@ -429,7 +451,7 @@ function Section({
   count,
   empty,
   footer,
-  children,
+  rows,
 }: {
   emoji: string;
   title: string;
@@ -438,8 +460,10 @@ function Section({
   empty: string;
   /** Rendu même quand la section est vide — la mention « hors période » en dépend. */
   footer?: ReactNode;
-  children: ReactNode;
+  rows: ReactNode[];
 }) {
+  const visible = rows.slice(0, VISIBLE_ROWS);
+  const hidden = rows.slice(VISIBLE_ROWS);
   return (
     <div className="view-card" style={{ borderLeft: `3px solid ${accent}` }}>
       <div
@@ -447,24 +471,45 @@ function Section({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '10px 14px',
+          padding: '9px 12px',
           borderBottom: count > 0 ? '1px solid var(--border)' : 'none',
         }}
       >
-        <span style={{ fontSize: 15 }}>{emoji}</span>
+        <span style={{ fontSize: 14 }}>{emoji}</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{title}</span>
         <span className="badge badge-neutral">{count}</span>
       </div>
       {count === 0 ? (
-        <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-4)' }}>{empty}</div>
+        <div style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-4)' }}>{empty}</div>
       ) : (
-        children
+        <>
+          {visible}
+          {hidden.length > 0 && (
+            /* <details> natif : repli sans une ligne de JS client. */
+            <details>
+              <summary
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--brand)',
+                  cursor: 'pointer',
+                  listStyle: 'none',
+                  userSelect: 'none',
+                }}
+              >
+                Voir les {hidden.length} autres…
+              </summary>
+              {hidden}
+            </details>
+          )}
+        </>
       )}
       {footer && (
         <div
           style={{
-            padding: '8px 14px',
-            fontSize: 12,
+            padding: '7px 12px',
+            fontSize: 11.5,
             color: 'var(--text-3)',
             borderTop: '1px dashed var(--border)',
           }}
@@ -483,24 +528,24 @@ function LeadRow({ lead, children }: { lead: PortfolioLead; children: ReactNode 
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 12,
-        padding: '9px 14px',
+        gap: 10,
+        padding: '6px 12px',
         borderBottom: '1px solid var(--border)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <div
           aria-hidden
           style={{
-            width: 30,
-            height: 30,
+            width: 24,
+            height: 24,
             borderRadius: '50%',
             background: 'var(--bg-2)',
             border: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 11,
+            fontSize: 9.5,
             fontWeight: 700,
             color: 'var(--text-2)',
             flexShrink: 0,
@@ -512,7 +557,7 @@ function LeadRow({ lead, children }: { lead: PortfolioLead; children: ReactNode 
           <Link
             href={`/closing/investor/${lead.investorId}`}
             style={{
-              fontSize: 13,
+              fontSize: 12.5,
               fontWeight: 600,
               color: 'var(--text-1)',
               textDecoration: 'none',
@@ -524,22 +569,28 @@ function LeadRow({ lead, children }: { lead: PortfolioLead; children: ReactNode 
           >
             {lead.fullName}
           </Link>
+          {/* Une seule ligne de contact : le téléphone (l'outil du closer),
+              l'e-mail seulement à défaut. Le détail complet est sur la fiche. */}
           <div
             style={{
-              fontSize: 11,
+              fontSize: 10.5,
               color: 'var(--text-4)',
               display: 'flex',
-              gap: 6,
+              gap: 4,
               alignItems: 'center',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {lead.phone && (
-              <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                <Phone size={10} />
+            {lead.phone ? (
+              <>
+                <Phone size={10} style={{ flexShrink: 0 }} />
                 {lead.phone}
-              </span>
+              </>
+            ) : (
+              lead.email
             )}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email}</span>
           </div>
         </div>
       </div>

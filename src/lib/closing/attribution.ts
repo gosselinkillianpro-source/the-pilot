@@ -24,10 +24,13 @@ export type AttributionResult = {
 
 const DAY_MS = 86_400_000;
 
+/** Fenêtre d'attribution standard — partagée avec les requêtes SQL (portefeuille). */
+export const ATTRIBUTION_WINDOW_DAYS = 30;
+
 export function attributeAction(
   actionAt: Date,
   contacts: Contact[],
-  windowDays = 30,
+  windowDays = ATTRIBUTION_WINDOW_DAYS,
 ): AttributionResult {
   const actionTime = new Date(actionAt).getTime();
   const windowStart = actionTime - windowDays * DAY_MS;

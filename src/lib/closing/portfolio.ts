@@ -17,6 +17,14 @@ import type { ClosingStage } from '@/lib/closing/pipeline';
 export type PortfolioSub = {
   amountEur: number;
   signedAt: Date;
+  /**
+   * La souscription est-elle CRÉDITÉE à ce closer par la règle d'attribution
+   * de l'app (dernier appel dans les 30 jours avant la signature — même règle
+   * que le classement et /performance) ? Un lead attitré peut souscrire hors
+   * fenêtre, ou après l'appel d'un autre : son argent apparaît alors dans le
+   * portefeuille (c'est un fait) sans gonfler le « collecté grâce à toi ».
+   */
+  attributedToOwner: boolean;
 };
 
 export type PortfolioLead = {
@@ -124,10 +132,14 @@ export function resolvePortfolioPeriod(
 
 export type InvestedEntry = {
   lead: PortfolioLead;
-  /** Souscriptions post-entrée dans la période affichée. */
+  /** Investi par le lead (post-entrée) dans la période affichée — le fait. */
   periodEur: number;
-  /** Toutes les souscriptions post-entrée — ce que le closer a fait rentrer. */
-  attributableEur: number;
+  /** Investi par le lead (post-entrée), toutes dates — le fait. */
+  postEntryEur: number;
+  /** Crédité au closer (règle des 30 jours) dans la période — aligné classement. */
+  attributedPeriodEur: number;
+  /** Crédité au closer, toutes dates. */
+  attributedEur: number;
   lastInvestAt: Date;
 };
 
@@ -186,10 +198,13 @@ export function classifyPortfolio(
   for (const lead of leads) {
     if (lead.subs.length > 0) {
       const periodSubs = lead.subs.filter((s) => isInPeriod(s.signedAt, period));
+      const attributed = lead.subs.filter((s) => s.attributedToOwner);
       const entry: InvestedEntry = {
         lead,
         periodEur: sum(periodSubs),
-        attributableEur: sum(lead.subs),
+        postEntryEur: sum(lead.subs),
+        attributedPeriodEur: sum(periodSubs.filter((s) => s.attributedToOwner)),
+        attributedEur: sum(attributed),
         lastInvestAt: lastSignedAt(periodSubs.length > 0 ? periodSubs : lead.subs),
       };
       (periodSubs.length > 0 ? invested : investedOutside).push(entry);

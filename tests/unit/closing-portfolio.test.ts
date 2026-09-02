@@ -86,7 +86,13 @@ describe('classifyPortfolio', () => {
     const leads = [
       lead({
         investorId: 'a-investi',
-        subs: [{ amountEur: 10_000, signedAt: new Date('2026-08-15T10:00:00Z') }],
+        subs: [
+          {
+            amountEur: 10_000,
+            signedAt: new Date('2026-08-15T10:00:00Z'),
+            attributedToOwner: true,
+          },
+        ],
         totalInvestedEur: 10_000,
       }),
       lead({ investorId: 'kyc-ok', onboardingComplete: true, registrationComplete: true }),
@@ -109,17 +115,48 @@ describe('classifyPortfolio', () => {
     const leads = [
       lead({
         subs: [
-          { amountEur: 5_000, signedAt: new Date('2026-08-10T10:00:00Z') },
-          { amountEur: 20_000, signedAt: new Date('2026-08-20T10:00:00Z') },
+          { amountEur: 5_000, signedAt: new Date('2026-08-10T10:00:00Z'), attributedToOwner: true },
+          {
+            amountEur: 20_000,
+            signedAt: new Date('2026-08-20T10:00:00Z'),
+            attributedToOwner: true,
+          },
         ],
       }),
     ];
 
     const s = classifyPortfolio(leads, ALL_TIME);
 
-    expect(s.invested[0]?.attributableEur).toBe(25_000);
+    expect(s.invested[0]?.postEntryEur).toBe(25_000);
+    expect(s.invested[0]?.attributedEur).toBe(25_000);
     expect(s.invested[0]?.periodEur).toBe(25_000);
     expect(s.invested[0]?.lastInvestAt.toISOString()).toBe('2026-08-20T10:00:00.000Z');
+  });
+
+  test('sépare le fait (le lead a investi) du crédit (règle des 30 jours)', () => {
+    // Arrange — une souscription créditée au closer, une signée sans appel
+    // dans la fenêtre (par ex. 2 mois après le dernier échange).
+    const leads = [
+      lead({
+        subs: [
+          { amountEur: 8_000, signedAt: new Date('2026-08-05T10:00:00Z'), attributedToOwner: true },
+          {
+            amountEur: 12_000,
+            signedAt: new Date('2026-08-25T10:00:00Z'),
+            attributedToOwner: false,
+          },
+        ],
+      }),
+    ];
+
+    // Act
+    const s = classifyPortfolio(leads, ALL_TIME);
+
+    // Assert — l'argent apparaît (20 000 € investis, c'est un fait) mais seul
+    // le crédité rejoint le « collecté » aligné sur le classement.
+    expect(s.invested[0]?.postEntryEur).toBe(20_000);
+    expect(s.invested[0]?.attributedEur).toBe(8_000);
+    expect(s.invested[0]?.attributedPeriodEur).toBe(8_000);
   });
 
   test('une période sort les investisseurs hors bornes vers « hors période »', () => {
@@ -134,13 +171,17 @@ describe('classifyPortfolio', () => {
       lead({
         investorId: 'dans-la-periode',
         subs: [
-          { amountEur: 3_000, signedAt: new Date('2026-07-10T10:00:00Z') }, // avant
-          { amountEur: 7_000, signedAt: new Date('2026-08-12T10:00:00Z') }, // dedans
+          // avant la période
+          { amountEur: 3_000, signedAt: new Date('2026-07-10T10:00:00Z'), attributedToOwner: true },
+          // dedans
+          { amountEur: 7_000, signedAt: new Date('2026-08-12T10:00:00Z'), attributedToOwner: true },
         ],
       }),
       lead({
         investorId: 'hors-periode',
-        subs: [{ amountEur: 4_000, signedAt: new Date('2026-07-01T10:00:00Z') }],
+        subs: [
+          { amountEur: 4_000, signedAt: new Date('2026-07-01T10:00:00Z'), attributedToOwner: true },
+        ],
       }),
     ];
 
@@ -151,20 +192,25 @@ describe('classifyPortfolio', () => {
     // investisseur hors période ne redescend jamais en « KYC » ou « En cours ».
     expect(s.invested.map((e) => e.lead.investorId)).toEqual(['dans-la-periode']);
     expect(s.invested[0]?.periodEur).toBe(7_000);
-    expect(s.invested[0]?.attributableEur).toBe(10_000);
+    expect(s.invested[0]?.postEntryEur).toBe(10_000);
+    expect(s.invested[0]?.attributedPeriodEur).toBe(7_000);
     expect(s.investedOutside.map((e) => e.lead.investorId)).toEqual(['hors-periode']);
-    expect(s.investedOutside[0]?.attributableEur).toBe(4_000);
+    expect(s.investedOutside[0]?.postEntryEur).toBe(4_000);
   });
 
   test('trie les investisseurs du plus récent au plus ancien', () => {
     const leads = [
       lead({
         investorId: 'ancien',
-        subs: [{ amountEur: 1_000, signedAt: new Date('2026-08-01T10:00:00Z') }],
+        subs: [
+          { amountEur: 1_000, signedAt: new Date('2026-08-01T10:00:00Z'), attributedToOwner: true },
+        ],
       }),
       lead({
         investorId: 'recent',
-        subs: [{ amountEur: 2_000, signedAt: new Date('2026-08-25T10:00:00Z') }],
+        subs: [
+          { amountEur: 2_000, signedAt: new Date('2026-08-25T10:00:00Z'), attributedToOwner: true },
+        ],
       }),
     ];
 

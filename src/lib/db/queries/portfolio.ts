@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { ATTRIBUTION_WINDOW_DAYS } from '@/lib/closing/attribution';
 import { isClosingStage } from '@/lib/closing/pipeline';
 import type { PortfolioLead, PortfolioSub } from '@/lib/closing/portfolio';
 import { db } from '@/lib/db';
@@ -25,16 +26,24 @@ function toDate(value: unknown): Date | null {
 }
 
 /** `json_agg` renvoie l'époque en secondes : pas d'ambiguïté de fuseau. */
-function parseSubs(raw: unknown): PortfolioSub[] {
+function parseSubs(raw: unknown, ownerId: string): PortfolioSub[] {
   const items = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!Array.isArray(items)) return [];
   const subs: PortfolioSub[] = [];
   for (const item of items) {
     if (typeof item !== 'object' || item === null) continue;
-    const { amount, signed_epoch } = item as { amount?: unknown; signed_epoch?: unknown };
+    const { amount, signed_epoch, attributed_user_id } = item as {
+      amount?: unknown;
+      signed_epoch?: unknown;
+      attributed_user_id?: unknown;
+    };
     const signedAt = typeof signed_epoch === 'number' ? new Date(signed_epoch * 1000) : null;
     if (!signedAt) continue;
-    subs.push({ amountEur: Number(amount) || 0, signedAt });
+    subs.push({
+      amountEur: Number(amount) || 0,
+      signedAt,
+      attributedToOwner: attributed_user_id === ownerId,
+    });
   }
   return subs;
 }
@@ -55,7 +64,18 @@ export async function listPortfolioLeads(ownerId: string): Promise<PortfolioLead
         where s.investor_id = i.id and s.status <> 'cancelled')::float as total_invested,
       (select coalesce(json_agg(json_build_object(
             'amount', s.amount::float,
-            'signed_epoch', extract(epoch from ${SIGNED_REF})
+            'signed_epoch', extract(epoch from ${SIGNED_REF}),
+            -- Qui est crédité de cette souscription : l'auteur du DERNIER appel
+            -- dans la fenêtre des 30 jours — même règle d'attribution que le
+            -- classement et /performance (attribution.ts, « l'appel prime »).
+            'attributed_user_id', (
+              select ix.user_id::text from interactions ix
+              where ix.investor_id = i.id
+                and ix.type in ('call_outbound', 'call_inbound')
+                and ix.created_at <= ${SIGNED_REF}
+                and ix.created_at >= ${SIGNED_REF} - make_interval(days => ${ATTRIBUTION_WINDOW_DAYS})
+              order by ix.created_at desc limit 1
+            )
           ) order by ${SIGNED_REF}), '[]'::json)
         from subscriptions s
         where s.investor_id = i.id
@@ -100,7 +120,7 @@ export async function listPortfolioLeads(ownerId: string): Promise<PortfolioLead
       nextActionAt: toDate(r.next_action_at),
       lastCallAt: toDate(r.last_call_at),
       totalInvestedEur: Number(r.total_invested) || 0,
-      subs: parseSubs(r.subs),
+      subs: parseSubs(r.subs, ownerId),
     });
   }
   return leads;
