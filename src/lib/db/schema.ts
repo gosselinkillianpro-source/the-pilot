@@ -695,3 +695,23 @@ export const adAttributions = pgTable(
   },
   (t) => [uniqueIndex('ad_attributions_investor_key').on(t.investorId)],
 );
+
+/* ============================================================
+   AD_FIXED_COSTS — coûts fixes marketing (outils, créa, prestataires) saisis
+   à la main, PAR MOIS. Servent au « ROI complet » de la console Ads, calculé
+   À CÔTÉ du ROAS média : interdiction de mélanger dépense média et coûts
+   fixes dans un même ratio.
+   ============================================================ */
+export const adFixedCosts = pgTable(
+  'ad_fixed_costs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Mois calendaire concerné, format 'YYYY-MM'. */
+    month: text('month').notNull(),
+    label: text('label').notNull(),
+    amountEur: numeric('amount_eur', { precision: 12, scale: 2 }).notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('ad_fixed_costs_month_idx').on(t.month)],
+);

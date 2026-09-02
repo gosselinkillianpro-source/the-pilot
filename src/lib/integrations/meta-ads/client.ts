@@ -183,3 +183,76 @@ export async function fetchMetaDailySeries(range: DateRange): Promise<DailyPoint
       results: extractResults(r),
     }));
 }
+
+export type CampaignDailyPoint = DailyPoint & { campaignId: string };
+
+type GraphCampaignDailyRow = GraphDailyRow & { campaign_id?: string };
+
+/**
+ * Séries journalières PAR CAMPAGNE sur une plage, en UN appel (level=campaign,
+ * time_increment=1). Alimente les sparklines de la table campagnes et les
+ * règles de décision/alerte fondées sur la tendance (48 h sans lead, CPL 3 j).
+ */
+export async function fetchMetaCampaignDailySeries(
+  range: DateRange,
+): Promise<Map<string, DailyPoint[]>> {
+  const cfg = getMetaConfig();
+  if (!cfg.configured) throw new Error(`Meta non configuré : ${cfg.reason}`);
+  const token = process.env.META_SYSTEM_USER_TOKEN as string;
+  const account = cfg.accountId.startsWith('act_') ? cfg.accountId : `act_${cfg.accountId}`;
+  const params = new URLSearchParams({
+    fields: 'campaign_id,spend,impressions,clicks,actions',
+    time_range: metaTimeRangeValue(range),
+    level: 'campaign',
+    time_increment: '1',
+    limit: '2000',
+    access_token: token,
+  });
+  const url = `${GRAPH_BASE}/${account}/insights?${params.toString()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  const json = (await res.json()) as { data?: GraphCampaignDailyRow[] } & GraphError;
+  if (!res.ok || json.error) {
+    throw new Error(`Meta API : ${json.error?.message ?? `HTTP ${res.status}`}`);
+  }
+
+  const byCampaign = new Map<string, DailyPoint[]>();
+  for (const row of json.data ?? []) {
+    if (!row.campaign_id || !row.date_start) continue;
+    const list = byCampaign.get(row.campaign_id) ?? [];
+    list.push({
+      date: row.date_start,
+      spend: Number(row.spend ?? 0),
+      clicks: Number(row.clicks ?? 0),
+      results: extractResults(row),
+    });
+    byCampaign.set(row.campaign_id, list);
+  }
+  for (const list of byCampaign.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+  return byCampaign;
+}
+
+export type MonthlySpend = { month: string; spend: number }; // month = 'YYYY-MM'
+
+/** Dépense Meta agrégée PAR MOIS sur une plage (pour la vue cohortes). */
+export async function fetchMetaMonthlySpend(range: DateRange): Promise<MonthlySpend[]> {
+  const cfg = getMetaConfig();
+  if (!cfg.configured) throw new Error(`Meta non configuré : ${cfg.reason}`);
+  const token = process.env.META_SYSTEM_USER_TOKEN as string;
+  const account = cfg.accountId.startsWith('act_') ? cfg.accountId : `act_${cfg.accountId}`;
+  const params = new URLSearchParams({
+    fields: 'spend',
+    time_range: metaTimeRangeValue(range),
+    level: 'account',
+    time_increment: 'monthly',
+    access_token: token,
+  });
+  const url = `${GRAPH_BASE}/${account}/insights?${params.toString()}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  const json = (await res.json()) as { data?: GraphDailyRow[] } & GraphError;
+  if (!res.ok || json.error) {
+    throw new Error(`Meta API : ${json.error?.message ?? `HTTP ${res.status}`}`);
+  }
+  return (json.data ?? [])
+    .filter((r) => r.date_start)
+    .map((r) => ({ month: (r.date_start as string).slice(0, 7), spend: Number(r.spend ?? 0) }));
+}

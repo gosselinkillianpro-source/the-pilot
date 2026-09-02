@@ -176,6 +176,13 @@
       "when": 1788334050500,
       "tag": "0024_short_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788336678562,
+      "tag": "0025_exotic_maddog",
+      "breakpoints": true
     }
   ]
 }
