@@ -1,4 +1,4 @@
-import { KanbanSquare, PhoneOutgoing, Trophy, Users } from 'lucide-react';
+import { KanbanSquare, PhoneOutgoing, Trophy, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { getClosers } from '@/lib/db/queries/closing';
@@ -76,6 +76,10 @@ export default async function MyLeadsPage({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Link href="/closing/portefeuille" className="btn btn-secondary btn-sm">
+            <Wallet size={13} />
+            Portefeuille
+          </Link>
           <Link href="/closing/classement" className="btn btn-secondary btn-sm">
             <Trophy size={13} />
             Classement

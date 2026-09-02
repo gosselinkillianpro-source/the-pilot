@@ -37,7 +37,7 @@ function parisOffsetMinutes(at: Date): number {
 }
 
 /** Date civile (année/mois/jour) d'un instant, vue de Paris. */
-function parisDateOf(at: Date): ParisDate {
+export function parisDateOf(at: Date): ParisDate {
   const parts = new Intl.DateTimeFormat('fr-FR', {
     timeZone: 'Europe/Paris',
     year: 'numeric',
