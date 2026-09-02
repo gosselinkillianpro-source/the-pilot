@@ -19,7 +19,7 @@ import {
   resolvePortfolioPeriod,
 } from '@/lib/closing/portfolio';
 import { getClosers } from '@/lib/db/queries/closing';
-import { listPortfolioLeads } from '@/lib/db/queries/portfolio';
+import { listCreditedSubscriptions, listPortfolioLeads } from '@/lib/db/queries/portfolio';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,15 +85,17 @@ export default async function PortfolioPage({
   const isMine = viewedId === user.id;
 
   const period = resolvePortfolioPeriod(sp);
-  const leads = await listPortfolioLeads(viewedId);
-  const sections = classifyPortfolio(leads, period);
+  const [leads, credited] = await Promise.all([
+    listPortfolioLeads(viewedId),
+    listCreditedSubscriptions(viewedId),
+  ]);
+  const sections = classifyPortfolio(leads, credited, period);
 
-  // Le « collecté » suit la règle d'attribution du classement (dernier appel
-  // dans les 30 jours avant la signature) : les deux chiffres doivent coller.
-  const collectedEur =
-    period.key === 'tout'
-      ? [...sections.invested, ...sections.investedOutside].reduce((s, e) => s + e.attributedEur, 0)
-      : sections.invested.reduce((s, e) => s + e.attributedPeriodEur, 0);
+  // Le « collecté » = souscriptions créditées au closer (règle des 30 jours,
+  // toute la base) : le même chiffre que le classement, décomposé nominativement.
+  const collectedEur = sections.invested.reduce((s, e) => s + e.periodEur, 0);
+  const hasAnything =
+    leads.length > 0 || sections.invested.length > 0 || sections.investedOutside.length > 0;
   const href = (params: { periode?: string; du?: string; au?: string }) => {
     const p = new URLSearchParams();
     if (canPick && sp.closer) p.set('closer', sp.closer);
@@ -124,7 +126,7 @@ export default async function PortfolioPage({
           </h1>
           <div className="page-desc">
             {isMine
-              ? 'Qui est passé à l’action parmi tes leads — et pour combien. Le « collecté » suit la règle du classement : dernier appel dans les 30 jours avant la souscription.'
+              ? 'Qui t’a rapporté quoi, et où en sont tes leads. Même règle que le classement : une souscription est créditée au closer du dernier appel dans les 30 jours avant la signature.'
               : 'Vue superviseur : les résultats nominatifs de ce closer.'}
           </div>
         </div>
@@ -258,7 +260,7 @@ export default async function PortfolioPage({
         <StatCard label="Leads suivis" value={String(leads.length)} icon={<Users size={14} />} />
       </div>
 
-      {leads.length === 0 ? (
+      {!hasAnything ? (
         <div className="view-card">
           <div className="view-card-body" style={{ fontSize: 13, color: 'var(--text-3)' }}>
             {isMine ? (
@@ -292,42 +294,34 @@ export default async function PortfolioPage({
             count={sections.invested.length}
             empty={
               period.key === 'tout'
-                ? 'Personne n’a encore investi dans ce portefeuille — ça va venir.'
-                : 'Aucune souscription sur cette période.'
+                ? 'Aucune souscription créditée pour l’instant — ça va venir.'
+                : 'Aucune souscription créditée sur cette période.'
             }
             footer={
               sections.investedOutside.length > 0 ? (
                 <>
                   + {sections.investedOutside.length} hors période :{' '}
                   {sections.investedOutside
-                    .map((e) => `${e.lead.fullName} (${eur(e.postEntryEur)})`)
+                    .map((e) => `${e.fullName} (${eur(e.creditedEur)})`)
                     .join(' · ')}
                 </>
               ) : null
             }
-            rows={sections.invested.map((e) => {
-              const shownEur = period.key === 'tout' ? e.postEntryEur : e.periodEur;
-              const creditedEur = period.key === 'tout' ? e.attributedEur : e.attributedPeriodEur;
-              return (
-                <LeadRow key={e.lead.investorId} lead={e.lead}>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--success)' }}>
-                      {eur(shownEur)}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-4)' }}>
-                      le {fmtDate(e.lastInvestAt)}
-                      {e.lead.totalInvestedEur > e.postEntryEur &&
-                        ` · ${eur(e.lead.totalInvestedEur)} au total client`}
-                    </div>
-                    {creditedEur < shownEur && (
-                      <div style={{ fontSize: 10.5, color: 'var(--warning)' }}>
-                        {eur(shownEur - creditedEur)} non attribués (pas d'appel &lt; 30 j)
-                      </div>
-                    )}
+            rows={sections.invested.map((e) => (
+              <LeadRow key={e.investorId} lead={e}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--success)' }}>
+                    {eur(period.key === 'tout' ? e.creditedEur : e.periodEur)}
                   </div>
-                </LeadRow>
-              );
-            })}
+                  <div style={{ fontSize: 10.5, color: 'var(--text-4)' }}>
+                    le {fmtDate(e.lastInvestAt)}
+                    {e.totalInvestedEur > e.creditedEur &&
+                      ` · ${eur(e.totalInvestedEur)} au total client`}
+                    {!e.isOwned && ' · hors portefeuille'}
+                  </div>
+                </div>
+              </LeadRow>
+            ))}
           />
 
           <Section
@@ -521,7 +515,13 @@ function Section({
   );
 }
 
-function LeadRow({ lead, children }: { lead: PortfolioLead; children: ReactNode }) {
+function LeadRow({
+  lead,
+  children,
+}: {
+  lead: Pick<PortfolioLead, 'investorId' | 'fullName' | 'email' | 'phone'>;
+  children: ReactNode;
+}) {
   return (
     <div
       style={{
