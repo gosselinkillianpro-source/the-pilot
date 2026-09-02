@@ -119,10 +119,15 @@ function sumRaw(campaigns: AdCampaign[]): RawMetrics {
   );
 }
 
-/** Charge Meta + Google en parallèle sur la période et agrège tout. */
+/**
+ * Charge les campagnes de la période et agrège tout.
+ * ⚠️ Google Ads est EN PAUSE (décision Killian 02/09/2026) : on ne charge que
+ * Meta. `loadGoogle` reste en place pour le jour où Google revient.
+ */
 export async function getAdsOverview(period: AdsPeriod): Promise<AdsOverview> {
-  const [meta, google] = await Promise.all([loadMeta(period), loadGoogle(period)]);
-  const platforms = [meta, google];
+  void loadGoogle; // conservé volontairement (pause Google, pas suppression)
+  const meta = await loadMeta(period);
+  const platforms = [meta];
   const campaigns = platforms.flatMap((p) => p.campaigns).sort((a, b) => b.spend - a.spend);
 
   const totalsRaw = sumRaw(campaigns);

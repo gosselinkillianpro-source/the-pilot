@@ -6,9 +6,9 @@ import { db } from '@/lib/db';
 /**
  * Comptages SAH RÉELS attribués à la pub via le code bonus saisi à l'inscription.
  *
- * Attribution manuelle SAH (codes communiqués dans les pubs) :
- *   - code SEVEN-BREACH(*)  → Meta Ads
- *   - code BREACH-VIP / *VIP* → Google Ads
+ * ⚠️ Google Ads est EN PAUSE (décision Killian 02/09/2026) : tous les codes pub
+ * — SEVEN-BREACH(*) comme BREACH-VIP/*VIP* — sont attribués à Meta. Le jour où
+ * Google revient, re-séparer les motifs ici + classifyCode() + overview.ts.
  * Les codes partenaires/CGP (Seven-club-deal-*, SEVEN-CD-*) ne sont PAS des ads.
  *
  * « complet » = profil renseigné ET KYC validé (registration_complete && onboarding_complete).
@@ -18,14 +18,17 @@ import { db } from '@/lib/db';
  * Lecture seule. Agrégats uniquement. Aucune donnée personnelle exposée.
  */
 
-/** Motifs SQL code bonus → plateforme. Si tu ajoutes des codes pub, étends ici + classifyCode(). */
+/**
+ * Motifs SQL code bonus → plateforme. Tout va à Meta tant que Google est en
+ * pause ; `Google: 'false'` garde la forme (aucune ligne ne matche jamais).
+ */
 export const AD_CODE_PATTERNS = {
-  Meta: "bonus_code ilike 'SEVEN-BREACH%'", // SEVEN-BREACH, SEVEN-BREACH10
-  Google: "bonus_code ilike '%VIP%'", // BREACH-VIP
+  Meta: "(bonus_code ilike 'SEVEN-BREACH%' or bonus_code ilike '%VIP%')",
+  Google: 'false',
 } as const;
 
-/** Libellé lisible du code représentatif, pour l'affichage. */
-export const AD_CODE_LABELS = { Meta: 'SEVEN-BREACH', Google: 'BREACH-VIP' } as const;
+/** Libellé lisible des codes, pour l'affichage. */
+export const AD_CODE_LABELS = { Meta: 'SEVEN-BREACH + VIP', Google: '—' } as const;
 
 export type AdPlatform = 'Meta' | 'Google';
 export type CodeSource = AdPlatform | 'Partenaire';
@@ -34,7 +37,7 @@ export type CodeSource = AdPlatform | 'Partenaire';
 export function classifyCode(code: string): CodeSource {
   const c = code.toUpperCase();
   if (c.startsWith('SEVEN-BREACH')) return 'Meta';
-  if (c.includes('VIP')) return 'Google';
+  if (c.includes('VIP')) return 'Meta'; // ex-Google, rattaché à Meta (pause Google)
   return 'Partenaire';
 }
 
@@ -58,8 +61,8 @@ function windowFilter(col: string, range: DateRange) {
 export async function getAttributedCounts(range: DateRange): Promise<AttributedCounts> {
   const metaInv = sql.raw(AD_CODE_PATTERNS.Meta);
   const googleInv = sql.raw(AD_CODE_PATTERNS.Google);
-  const metaSub = sql.raw(AD_CODE_PATTERNS.Meta.replace('bonus_code', 'i.bonus_code'));
-  const googleSub = sql.raw(AD_CODE_PATTERNS.Google.replace('bonus_code', 'i.bonus_code'));
+  const metaSub = sql.raw(AD_CODE_PATTERNS.Meta.replaceAll('bonus_code', 'i.bonus_code'));
+  const googleSub = sql.raw(AD_CODE_PATTERNS.Google.replaceAll('bonus_code', 'i.bonus_code'));
   const complete = sql`registration_complete and onboarding_complete`;
   const created = windowFilter('sah_created_at', range);
   const signed = windowFilter('s.signed_at', range);
@@ -140,29 +143,31 @@ export const RDV_ADS_ELIGIBLE_SQL = `
  * Mêmes fenêtres que l'attribution par code : inscrits/complets par date de
  * création SAH, investisseurs/collecte par date de signature.
  */
-export async function getRdvManualCounts(range: DateRange): Promise<AcquisitionCounts> {
+/** Condition « ne porte pas un code pub » (alias `i`) — sinon déjà compté par code. */
+const NOT_AD_CODE_SQL = `(i.bonus_code is null or not ${AD_CODE_PATTERNS.Meta.replaceAll('bonus_code', 'i.bonus_code')})`;
+
+/** Condition « a une attribution manuelle » (alias `i`). */
+const HAS_MANUAL_SQL = '(exists (select 1 from ad_attributions a where a.investor_id = i.id))';
+
+/** Condition « attribué via RDV Calendly » (alias `i`) : fiche RDV + aucun autre canal. */
+const RDV_BUCKET_SQL = `(
+  exists (select 1 from rdv_contacts rc where rc.investor_id = i.id and rc.source = 'calendly')
+  and ${RDV_ADS_ELIGIBLE_SQL}
+)`;
+
+/** Funnel inscrits→complets→investisseurs→collecte pour un sous-ensemble d'investisseurs. */
+async function countsForEligible(
+  eligibleWhere: string,
+  range: DateRange,
+): Promise<AcquisitionCounts> {
   const created = windowFilter('e.sah_created_at', range);
   const signed = windowFilter('s.signed_at', range);
-  const notAdCode = sql.raw(
-    `(i.bonus_code is null or not (${AD_CODE_PATTERNS.Meta.replace('bonus_code', 'i.bonus_code')} or ${AD_CODE_PATTERNS.Google.replace('bonus_code', 'i.bonus_code')}))`,
-  );
 
   const res = await db.execute(sql`
     with eligible as (
       select i.id, i.sah_created_at, i.registration_complete, i.onboarding_complete
       from investors i
-      where i.deleted_at is null
-        and ${notAdCode}
-        and (
-          exists (select 1 from ad_attributions a where a.investor_id = i.id)
-          or (
-            exists (
-              select 1 from rdv_contacts rc
-              where rc.investor_id = i.id and rc.source = 'calendly'
-            )
-            and ${sql.raw(RDV_ADS_ELIGIBLE_SQL)}
-          )
-        )
+      where i.deleted_at is null and ${sql.raw(eligibleWhere)}
     )
     select
       (select count(*) from eligible e where e.sah_created_at is not null and ${created})::int as inscrits,
@@ -186,6 +191,142 @@ export async function getRdvManualCounts(range: DateRange): Promise<AcquisitionC
   };
 }
 
+export async function getRdvManualCounts(range: DateRange): Promise<AcquisitionCounts> {
+  return countsForEligible(
+    `${NOT_AD_CODE_SQL} and (${HAS_MANUAL_SQL} or ${RDV_BUCKET_SQL})`,
+    range,
+  );
+}
+
+/**
+ * Ventilation du bucket hors-codes pour l'affichage « attribution honnête » :
+ *   - manual  = attribué CERTAIN (décision humaine explicite, table ad_attributions) ;
+ *   - rdv     = attribué PROBABLE (déduit du RDV Calendly, sans autre canal).
+ * Disjoints entre eux et disjoints des codes : manual + rdv = getRdvManualCounts.
+ */
+export type ExtraSplit = { manual: AcquisitionCounts; rdv: AcquisitionCounts };
+
+export async function getManualVsRdvSplit(range: DateRange): Promise<ExtraSplit> {
+  const [manual, rdv] = await Promise.all([
+    countsForEligible(`${NOT_AD_CODE_SQL} and ${HAS_MANUAL_SQL}`, range),
+    countsForEligible(`${NOT_AD_CODE_SQL} and not ${HAS_MANUAL_SQL} and ${RDV_BUCKET_SQL}`, range),
+  ]);
+  return { manual, rdv };
+}
+
+/**
+ * Totaux SAH toutes origines sur la fenêtre — le dénominateur de l'attribution
+ * honnête : NON attribué = total − attribué, jamais masqué ni réparti.
+ */
+export type SahTotals = { inscrits: number; investisseurs: number; collecte: number };
+
+export async function getSahTotals(range: DateRange): Promise<SahTotals> {
+  const created = windowFilter('i.sah_created_at', range);
+  const signed = windowFilter('s.signed_at', range);
+  const res = await db.execute(sql`
+    select
+      (select count(*) from investors i
+        where i.deleted_at is null and i.sah_created_at is not null and ${created})::int as inscrits,
+      (select count(distinct s.investor_id) from subscriptions s
+        join investors i on i.id = s.investor_id
+        where s.status <> 'cancelled' and s.signed_at is not null
+          and i.deleted_at is null and ${signed})::int as investisseurs,
+      (select coalesce(sum(s.amount), 0) from subscriptions s
+        join investors i on i.id = s.investor_id
+        where s.status <> 'cancelled' and s.signed_at is not null
+          and i.deleted_at is null and ${signed}) as collecte
+  `);
+  const row = (res as unknown as Row[])[0] ?? {};
+  return {
+    inscrits: n(row.inscrits),
+    investisseurs: n(row.investisseurs),
+    collecte: n(row.collecte),
+  };
+}
+
+/**
+ * RDV Calendly de la fenêtre, pour le funnel.
+ *
+ * ⚠️ Limites de tracking assumées (affichées sur la page) :
+ *   - « pris » = fiches rdv_contacts créées dans la fenêtre (une fiche naît à la
+ *     première ouverture de /rdv qui voit le RDV, pas à la prise du RDV) ;
+ *   - « honorés » = fiches de la fenêtre dont l'étape À DATE a dépassé
+ *     « pris en charge » (un RDV honoré fait passer la fiche à « appelé »).
+ *     Il n'existe pas de date d'honoré persistée.
+ */
+export type RdvFunnelCounts = {
+  pris: number;
+  honores: number;
+  /** false = aucun contact Calendly en base, TOUTES périodes : « non tracké », pas zéro. */
+  tracked: boolean;
+};
+
+export async function getRdvFunnelCounts(range: DateRange): Promise<RdvFunnelCounts> {
+  const created = windowFilter('rc.created_at', range);
+  const res = await db.execute(sql`
+    select
+      count(*) filter (where ${created})::int as pris,
+      count(*) filter (
+        where ${created}
+          and rc.pipeline_stage in ('called', 'interested', 'account_ready', 'invested')
+      )::int as honores,
+      (count(*) > 0) as tracked
+    from rdv_contacts rc
+    where rc.source = 'calendly'
+  `);
+  const row = (res as unknown as Row[])[0] ?? {};
+  return { pris: n(row.pris), honores: n(row.honores), tracked: Boolean(row.tracked) };
+}
+
+/**
+ * Cohortes par MOIS DE CRÉATION du lead (sah_created_at), pas par mois
+ * d'encaissement — la vue de vérité pour un cycle de vente long : « les leads
+ * d'avril ont coûté X (dépense pub d'avril), rapporté Y À DATE ».
+ * Périmètre : tous les leads attribués ads (codes ∪ manuel ∪ RDV Calendly).
+ */
+export type CohortRow = {
+  month: string; // 'YYYY-MM'
+  leads: number; // inscrits attribués créés ce mois
+  complets: number; // dont profil + KYC ok à date
+  investisseurs: number; // ont signé au moins une souscription, à date
+  collecte: number; // € signés à date (toutes dates de signature)
+};
+
+export async function getAdsCohortRows(monthsBack = 6): Promise<CohortRow[]> {
+  const adsCode = sql.raw(AD_CODE_PATTERNS.Meta.replaceAll('bonus_code', 'i.bonus_code'));
+  const res = await db.execute(sql`
+    with attributed as (
+      select i.id, to_char(date_trunc('month', i.sah_created_at), 'YYYY-MM') as month,
+             i.registration_complete, i.onboarding_complete
+      from investors i
+      where i.deleted_at is null and i.sah_created_at is not null
+        and i.sah_created_at >= date_trunc('month', now()) - make_interval(months => ${monthsBack - 1})
+        and (
+          ${adsCode}
+          or ${sql.raw(HAS_MANUAL_SQL)}
+          or ${sql.raw(RDV_BUCKET_SQL)}
+        )
+    )
+    select a.month,
+      count(distinct a.id)::int as leads,
+      count(distinct a.id) filter (where a.registration_complete and a.onboarding_complete)::int as complets,
+      count(distinct s.investor_id)::int as investisseurs,
+      coalesce(sum(s.amount), 0) as collecte
+    from attributed a
+    left join subscriptions s
+      on s.investor_id = a.id and s.status <> 'cancelled' and s.signed_at is not null
+    group by a.month
+    order by a.month desc
+  `);
+  return (res as unknown as Row[]).map((r) => ({
+    month: String(r.month),
+    leads: n(r.leads),
+    complets: n(r.complets),
+    investisseurs: n(r.investisseurs),
+    collecte: n(r.collecte),
+  }));
+}
+
 export type CodeRow = {
   code: string;
   source: CodeSource;
@@ -206,7 +347,7 @@ export async function getCodeTracking(range: DateRange, limit = 12): Promise<Cod
   // Filtre « code pub » = un de nos codes ads, dans les deux contextes de colonne.
   const adInv = sql.raw(`(${AD_CODE_PATTERNS.Meta} or ${AD_CODE_PATTERNS.Google})`);
   const adSub = sql.raw(
-    `(${AD_CODE_PATTERNS.Meta.replace('bonus_code', 'i.bonus_code')} or ${AD_CODE_PATTERNS.Google.replace('bonus_code', 'i.bonus_code')})`,
+    `(${AD_CODE_PATTERNS.Meta.replaceAll('bonus_code', 'i.bonus_code')} or ${AD_CODE_PATTERNS.Google.replaceAll('bonus_code', 'i.bonus_code')})`,
   );
 
   const [invR, subR] = await Promise.all([

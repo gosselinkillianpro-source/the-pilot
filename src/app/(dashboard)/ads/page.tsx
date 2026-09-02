@@ -1,98 +1,46 @@
-import {
-  AlertTriangle,
-  Ban,
-  CheckCircle2,
-  PlugZap,
-  TrendingDown,
-  TrendingUp,
-  Trophy,
-} from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, PlugZap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { AdsPeriodFilter } from '@/components/shared/ads-period-filter';
-import { Sparkline } from '@/components/shared/sparkline';
-import { buildAdsAlerts, rankCampaigns } from '@/lib/ads/analytics';
-import { type BlendedAcquisition, getBlendedAcquisition } from '@/lib/ads/blended';
-import { type AdCampaign, derive, getAdsOverview, rawOf } from '@/lib/ads/overview';
-import { periodToRange, resolveAdsPeriod } from '@/lib/ads/period';
-import { type CampaignRoi, getCampaignRoi } from '@/lib/ads/roi';
-import { getAdsTrends } from '@/lib/ads/trends';
+import { type AdsConsoleData, getAdsConsole, type VitalKpi } from '@/lib/ads/console-data';
+import type { FunnelStep } from '@/lib/ads/funnel-math';
+import { resolveAdsPeriod } from '@/lib/ads/period';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { countRdvAutoTracked, listAdAttributions } from '@/lib/db/queries/ad-attributions';
-import { type CodeRow, type CodeSource, getCodeTracking } from '@/lib/db/queries/ads-acquisition';
 import { AdsReco } from './ads-reco';
+import { CampaignTable } from './campaign-table';
+import { FixedCostsEditor } from './fixed-costs';
 import { ManualTracking } from './manual-tracking';
 
 export const dynamic = 'force-dynamic';
 
-function eur(n: number | null, decimals = 0): string {
-  if (n === null) return '—';
-  return `${n.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} €`;
+/**
+ * Console de pilotage Ads — répondre en < 10 s à : est-ce que je gagne de
+ * l'argent, qu'est-ce que je scale, qu'est-ce que je coupe, qu'est-ce qui a
+ * changé. Du plus décisionnel (bandeau, funnel, table) au plus détaillé
+ * (attribution, cohortes, coûts, alertes). Meta uniquement — Google en pause.
+ */
+
+function eur(v: number | null, dec = 0): string {
+  if (v === null) return '—';
+  return `${v.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec })} €`;
 }
-function int(n: number): string {
-  return Math.round(n).toLocaleString('fr-FR');
-}
-function pct(n: number): string {
-  return `${n.toFixed(2)} %`;
+function int(v: number | null): string {
+  if (v === null) return '—';
+  return Math.round(v).toLocaleString('fr-FR');
 }
 
-function StatTile({
-  label,
-  value,
-  hint,
-  valueColor,
-  deltaPct,
-  deltaTone = 'down-good',
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  valueColor?: string;
-  deltaPct?: number | null;
-  deltaTone?: 'up-good' | 'down-good' | 'neutral';
-}) {
+/** Libellé avec définition au survol — chaque chiffre dit comment il est calculé. */
+function Def({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <div
+    <span
+      title={title}
       style={{
-        background: 'var(--surface-2)',
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        padding: '12px 14px',
-        minWidth: 0,
+        cursor: 'help',
+        borderBottom: '1px dotted color-mix(in srgb, var(--text-4) 60%, transparent)',
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--text-3)',
-          textTransform: 'uppercase',
-          letterSpacing: 0.3,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 20,
-          fontWeight: 700,
-          color: valueColor ?? 'var(--text-1)',
-          fontFamily: 'var(--font-mono)',
-          marginTop: 2,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {value}
-      </div>
-      {hint ? (
-        <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 2 }}>{hint}</div>
-      ) : null}
-      {deltaPct !== undefined ? (
-        <div style={{ marginTop: 3 }}>
-          <DeltaBadge pct={deltaPct} tone={deltaTone} />
-        </div>
-      ) : null}
-    </div>
+      {children}
+    </span>
   );
 }
 
@@ -103,476 +51,624 @@ function DeltaBadge({
   pct: number | null;
   tone?: 'up-good' | 'down-good' | 'neutral';
 }) {
-  if (pct === null) return <span style={{ fontSize: 11, color: 'var(--text-4)' }}>—</span>;
+  if (pct === null) {
+    return (
+      <span
+        style={{ fontSize: 11, color: 'var(--text-4)' }}
+        title="Pas de base de comparaison sur la période précédente."
+      >
+        — vs préc.
+      </span>
+    );
+  }
   const up = pct > 0;
   let color = 'var(--text-4)';
   if (pct !== 0 && tone !== 'neutral') {
     const good = tone === 'up-good' ? up : !up;
     color = good ? 'var(--success)' : 'var(--danger)';
   }
-  const Arrow = up ? TrendingUp : TrendingDown;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color }}>
-      {pct !== 0 ? <Arrow size={11} /> : null}
+    <span style={{ fontSize: 11, fontWeight: 600, color, whiteSpace: 'nowrap' }}>
       {up ? '+' : ''}
-      {pct}% <span style={{ color: 'var(--text-4)' }}>vs préc.</span>
+      {pct} % <span style={{ color: 'var(--text-4)', fontWeight: 400 }}>vs préc.</span>
     </span>
   );
 }
 
-function TrendBlock({
+/* ----------------------------- 2. Bandeau vital ----------------------------- */
+
+function VitalTile({
   label,
+  def,
   value,
-  pct,
+  kpi,
   tone,
-  values,
-  color,
 }: {
   label: string;
+  def: string;
   value: string;
-  pct: number | null;
+  kpi: VitalKpi;
   tone: 'up-good' | 'down-good' | 'neutral';
-  values?: number[];
-  color?: string;
 }) {
   return (
-    <div style={{ minWidth: 0 }}>
+    <div
+      style={{
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '12px 16px',
+        minWidth: 0,
+      }}
+    >
       <div
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}
+        style={{
+          fontSize: 11,
+          color: 'var(--text-3)',
+          textTransform: 'uppercase',
+          letterSpacing: 0.4,
+        }}
       >
-        <span
-          style={{
-            fontSize: 11,
-            color: 'var(--text-3)',
-            textTransform: 'uppercase',
-            letterSpacing: 0.3,
-          }}
-        >
-          {label}
-        </span>
-        <DeltaBadge pct={pct} tone={tone} />
+        <Def title={def}>{label}</Def>
       </div>
       <div
         style={{
-          fontSize: 18,
-          fontWeight: 700,
+          fontSize: 26,
+          fontWeight: 800,
           color: 'var(--text-1)',
           fontFamily: 'var(--font-mono)',
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}
       >
         {value}
       </div>
-      {values ? <Sparkline values={values} color={color ?? 'var(--accent)'} /> : null}
+      <DeltaBadge pct={kpi.deltaPct} tone={tone} />
     </div>
   );
 }
 
-/**
- * Le chiffre qui compte, en premier : ce que la pub coûte VS ce qu'elle rapporte
- * (souscriptions signées des personnes attribuées aux ads — codes, RDV, manuels).
- */
-function SpendVsReturn({
-  spend,
-  collecte,
-  investisseurs,
-  periodLabel,
-}: {
-  spend: number;
-  collecte: number;
-  investisseurs: number;
-  periodLabel: string;
-}) {
-  const roas = spend > 0 ? collecte / spend : null;
-  const roasColor =
-    roas === null ? 'var(--text-4)' : roas >= 1 ? 'var(--success)' : 'var(--danger)';
+function VitalBand({ data }: { data: AdsConsoleData }) {
+  const v = data.vital;
+  const roas = v.roas.current;
   return (
     <div
-      className="view-card"
-      style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+        gap: 10,
+      }}
     >
-      <div className="view-card-body" style={{ padding: '18px 20px' }}>
+      <VitalTile
+        label="Dépense média"
+        def="Dépense Meta sur la période sélectionnée (API Meta, niveau compte). Coûts fixes exclus."
+        value={eur(v.spend.current)}
+        kpi={v.spend}
+        tone="neutral"
+      />
+      <VitalTile
+        label="Revenu attribué"
+        def="€ de souscriptions signées DANS la période par des personnes attribuées aux ads (code pub, RDV Calendly, ajout manuel). Fenêtre : date de signature — pas de fenêtre de clic, le cycle de vente est long."
+        value={eur(v.revenue.current)}
+        kpi={v.revenue}
+        tone="up-good"
+      />
+      <div
+        style={{
+          background:
+            roas !== null && roas >= 1
+              ? 'color-mix(in srgb, var(--success) 8%, var(--surface-2))'
+              : roas !== null
+                ? 'color-mix(in srgb, var(--danger) 8%, var(--surface-2))'
+                : 'var(--surface-2)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: '12px 16px',
+          minWidth: 0,
+        }}
+      >
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto 1fr',
-            gap: 16,
-            alignItems: 'center',
+            fontSize: 11,
+            color: 'var(--text-3)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--text-3)',
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-              }}
-            >
-              Dépense ads
-            </div>
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                color: 'var(--text-1)',
-                fontFamily: 'var(--font-mono)',
-                lineHeight: 1.15,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {eur(spend)}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
-              Meta + Google · {periodLabel}
-            </div>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 2,
-              padding: '0 6px',
-            }}
-          >
-            <span style={{ fontSize: 20, fontWeight: 800, color: roasColor, whiteSpace: 'nowrap' }}>
-              {roas === null ? '—' : `×${roas.toFixed(1)}`}
-            </span>
-            <span
-              style={{
-                fontSize: 10,
-                color: 'var(--text-4)',
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-              }}
-            >
-              retour
-            </span>
-          </div>
-          <div style={{ minWidth: 0, textAlign: 'right' }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--text-3)',
-                textTransform: 'uppercase',
-                letterSpacing: 0.4,
-              }}
-            >
-              Investissements issus des ads
-            </div>
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 800,
-                color: collecte > 0 ? 'var(--success)' : 'var(--text-1)',
-                fontFamily: 'var(--font-mono)',
-                lineHeight: 1.15,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {eur(collecte)}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
-              {int(investisseurs)} investisseur{investisseurs > 1 ? 's' : ''} · codes + RDV Calendly
-              + manuels
-            </div>
-          </div>
+          <Def title="Revenu attribué ÷ dépense média. > 1 = la pub rapporte plus qu'elle ne coûte (hors coûts fixes — voir ROI complet plus bas).">
+            ROAS média
+          </Def>
         </div>
+        <div
+          style={{
+            fontSize: 26,
+            fontWeight: 800,
+            fontFamily: 'var(--font-mono)',
+            lineHeight: 1.2,
+            color: roas === null ? 'var(--text-1)' : roas >= 1 ? 'var(--success)' : 'var(--danger)',
+          }}
+        >
+          {roas === null ? '—' : `×${roas.toFixed(2)}`}
+        </div>
+        <DeltaBadge pct={v.roas.deltaPct} tone="up-good" />
       </div>
+      <VitalTile
+        label="Leads"
+        def="Inscrits SAH créés dans la période et attribués aux ads (code pub, RDV Calendly, manuel). Pas les leads pixel."
+        value={int(v.leads.current)}
+        kpi={v.leads}
+        tone="up-good"
+      />
     </div>
   );
 }
 
-function CampaignCard({ c, roi }: { c: AdCampaign; roi?: CampaignRoi }) {
-  const d = derive(rawOf(c));
-  const roas = roi && c.spend > 0 ? roi.invested / c.spend : null;
-  const costPerInvestor = roi && roi.investors > 0 ? c.spend / roi.investors : null;
+/* ----------------------------- 3. Funnel ----------------------------- */
+
+const STEP_DEFS: Record<string, string> = {
+  impressions: 'Impressions Meta sur la période (API, niveau compte).',
+  clicks: 'Clics Meta sur la période.',
+  leads:
+    'Inscrits SAH de la période attribués aux ads (code pub, RDV Calendly, manuel). Taux = leads ÷ clics.',
+  rdvPris:
+    'Fiches RDV Calendly créées dans la période. Limite assumée : une fiche naît à la première ouverture de la page RDV qui voit le rendez-vous.',
+  rdvHonores:
+    "Fiches RDV de la période dont l'étape À DATE a dépassé « pris en charge » (un RDV honoré passe la fiche à « appelé »). Pas de date d'honoré persistée.",
+  closes: 'Investisseurs attribués ads ayant signé une souscription dans la période.',
+  revenue: '€ signés dans la période par les personnes attribuées ads.',
+};
+
+function FunnelStripStep({ step, worst }: { step: FunnelStep; worst: boolean }) {
   return (
-    <div className="view-card">
-      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span className="badge badge-neutral">{c.platform}</span>
+    <div
+      style={{
+        flex: '1 1 110px',
+        minWidth: 104,
+        background: worst
+          ? 'color-mix(in srgb, var(--danger) 7%, var(--surface-2))'
+          : 'var(--surface-2)',
+        border: worst
+          ? '1px solid color-mix(in srgb, var(--danger) 45%, transparent)'
+          : '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '10px 12px',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          color: 'var(--text-3)',
+          textTransform: 'uppercase',
+          letterSpacing: 0.3,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <Def title={STEP_DEFS[step.key] ?? step.label}>{step.label}</Def>
+        {worst ? (
           <span
-            style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)', minWidth: 0, flex: 1 }}
+            title="Étape dont le taux de conversion s'est le plus dégradé vs période précédente."
+            style={{ color: 'var(--danger)', marginLeft: 5, cursor: 'help' }}
           >
-            {c.name}
+            ▼
           </span>
-          <span
-            className={`badge ${c.status === 'active' ? 'badge-success badge-dot' : 'badge-neutral'}`}
-          >
-            {c.status === 'active' ? 'Active' : 'Pause'}
+        ) : null}
+      </div>
+      <div
+        style={{
+          fontSize: 19,
+          fontWeight: 800,
+          fontFamily: 'var(--font-mono)',
+          color: step.value === null ? 'var(--text-4)' : 'var(--text-1)',
+          lineHeight: 1.25,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {step.value === null ? 'non tracké' : step.isEuro ? eur(step.value) : int(step.value)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: 3 }}>
+        {step.conv !== null ? (
+          <span style={{ fontSize: 11, color: worst ? 'var(--danger)' : 'var(--text-3)' }}>
+            {step.conv >= 10 ? step.conv.toFixed(0) : step.conv.toFixed(2)} %
+            {step.convDeltaPct !== null ? (
+              <span
+                style={{
+                  marginLeft: 4,
+                  color:
+                    step.convDeltaPct < 0
+                      ? 'var(--danger)'
+                      : step.convDeltaPct > 0
+                        ? 'var(--success)'
+                        : 'var(--text-4)',
+                }}
+              >
+                ({step.convDeltaPct > 0 ? '+' : ''}
+                {step.convDeltaPct} %)
+              </span>
+            ) : null}
           </span>
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-            gap: 8,
-          }}
-        >
-          <StatTile label="Dépense" value={eur(c.spend)} />
-          <StatTile label="Impressions" value={int(c.impressions)} />
-          <StatTile label="Clics" value={int(c.clicks)} />
-          <StatTile label="CTR" value={pct(d.ctr)} />
-          <StatTile label="CPC" value={eur(d.cpc, 2)} />
-          <StatTile label="CPM" value={eur(d.cpm, 2)} />
-          <StatTile label="Résultats" value={int(c.results)} />
-          <StatTile label="Coût / résultat" value={eur(d.cpa, 2)} />
-          {d.frequency !== null ? (
-            <StatTile label="Fréquence" value={d.frequency.toFixed(2)} />
-          ) : null}
-        </div>
-        {roi ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-              gap: 8,
-              paddingTop: 10,
-              borderTop: '1px dashed var(--border)',
-            }}
-          >
-            <StatTile label="Investisseurs" value={int(roi.investors)} hint="réels (SAH)" />
-            <StatTile label="Capital investi" value={eur(roi.invested)} />
-            <StatTile label="ROAS réel" value={roas === null ? '—' : `×${roas.toFixed(1)}`} />
-            <StatTile label="Coût / investisseur" value={eur(costPerInvestor, 0)} />
-          </div>
+        ) : step.value !== null && step.key !== 'impressions' ? (
+          <span style={{ fontSize: 11, color: 'var(--text-4)' }}>taux n/d</span>
+        ) : null}
+        {step.unitCost !== null ? (
+          <span style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 600 }}>
+            <Def
+              title={`${step.unitCostLabel} = dépense média de la période ÷ ${step.label.toLowerCase()}.`}
+            >
+              {step.unitCostLabel} {eur(step.unitCost, step.unitCost < 100 ? 2 : 0)}
+            </Def>
+          </span>
         ) : null}
       </div>
     </div>
   );
 }
 
-function Th({ children, left }: { children: ReactNode; left?: boolean }) {
+function FunnelStrip({ data }: { data: AdsConsoleData }) {
+  const { steps, worstKey } = data.funnel;
   return (
-    <th
-      style={{
-        textAlign: left ? 'left' : 'right',
-        fontSize: 10.5,
-        fontWeight: 600,
-        color: 'var(--text-3)',
-        textTransform: 'uppercase',
-        letterSpacing: 0.3,
-        padding: '6px 10px',
-        borderBottom: '1px solid var(--border)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </th>
+    <div className="view-card">
+      <div className="view-card-body" style={{ padding: '12px 14px' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'stretch', gap: 6, overflowX: 'auto' }}
+          className="table-scroll"
+        >
+          {steps.map((s, i) => (
+            <div key={s.key} style={{ display: 'contents' }}>
+              {i > 0 ? (
+                <span
+                  style={{
+                    alignSelf: 'center',
+                    color: 'var(--text-4)',
+                    flexShrink: 0,
+                    display: 'flex',
+                  }}
+                >
+                  <ArrowRight size={13} />
+                </span>
+              ) : null}
+              <FunnelStripStep step={s} worst={worstKey === s.key} />
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-4)', marginTop: 8, lineHeight: 1.5 }}>
+          Sous chaque étape : taux vs étape précédente (variation vs période précédente entre
+          parenthèses) et coût unitaire. ▼ = l'étape qui s'est le plus dégradée. Le funnel peut
+          dépasser 100 % : on peut prendre RDV sans être encore inscrit SAH.
+        </div>
+      </div>
+    </div>
   );
 }
 
-function Td({
-  children,
-  left,
-  color,
-  bold,
-}: {
-  children: ReactNode;
-  left?: boolean;
-  color?: string;
-  bold?: boolean;
-}) {
-  return (
-    <td
-      style={{
-        textAlign: left ? 'left' : 'right',
-        fontSize: 13,
-        fontFamily: left ? 'inherit' : 'var(--font-mono)',
-        color: color ?? 'var(--text-1)',
-        fontWeight: bold ? 600 : 400,
-        padding: '9px 10px',
-        borderBottom: '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </td>
-  );
-}
+/* ----------------------------- 5. Attribution honnête ----------------------------- */
 
-const SOURCE_COLOR: Record<CodeSource, string> = {
-  Meta: 'var(--info, #3b82f6)',
-  Google: 'var(--warning)',
-  Partenaire: 'var(--text-4)',
-};
-
-function SourceTag({ source }: { source: CodeSource }) {
+function AttributionBlock({ data }: { data: AdsConsoleData }) {
+  const { levels, totalSah } = data.attribution;
+  const LEVEL_COLOR: Record<string, string> = {
+    certain: 'var(--success)',
+    probable: 'var(--warning)',
+    non_attribue: 'var(--text-4)',
+  };
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        fontSize: 12,
-        color: 'var(--text-2)',
-      }}
-    >
-      <span
-        style={{ width: 7, height: 7, borderRadius: '50%', background: SOURCE_COLOR[source] }}
-      />
-      {source}
-    </span>
-  );
-}
-
-/** Tableau coût réel par régie (Meta / Google / RDV+manuels / Total). */
-function CostTable({ blended }: { blended: BlendedAcquisition }) {
-  const rows = [
-    ...blended.platforms.map((p) => ({
-      key: p.platform as string,
-      label: p.platform as string,
-      sub: `code ${p.code}`,
-      spend: p.spend as number | null,
-      counts: p.counts,
-      metrics: p.metrics,
-      total: false,
-    })),
-    ...(blended.extra
-      ? [
-          {
-            key: 'extra',
-            label: 'RDV / manuel',
-            sub: 'Calendly + ajouts',
-            spend: null,
-            counts: blended.extra.counts,
-            metrics: blended.extra.metrics,
-            total: false,
-          },
-        ]
-      : []),
-    ...(blended.total && (blended.platforms.length > 1 || blended.extra)
-      ? [
-          {
-            key: 'total',
-            label: 'Total ads',
-            sub: 'dépense ÷ tout l’attribué',
-            spend: blended.total.spend as number | null,
-            counts: blended.total.counts,
-            metrics: blended.total.metrics,
-            total: true,
-          },
-        ]
-      : []),
-  ];
-  return (
-    <div className="table-scroll">
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-        <thead>
-          <tr>
-            <Th left>Source</Th>
-            <Th>Dépense</Th>
-            <Th>Inscrits</Th>
-            <Th>CPA</Th>
-            <Th>Complets</Th>
-            <Th>CPI</Th>
-            <Th>Investisseurs</Th>
-            <Th>Collecte</Th>
-            <Th>Coût / inv.</Th>
-            <Th>Ticket moyen</Th>
-            <Th>Rentabilité</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const pr = r.metrics.profitRatio;
-            return (
-              <tr
-                key={r.key}
-                style={
-                  r.total
-                    ? { background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }
-                    : undefined
-                }
-              >
-                <Td left bold>
-                  <span style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{r.label}</span>
-                    <span
+    <div className="view-card">
+      <div className="view-card-header">
+        <div className="view-card-title">Attribution honnête</div>
+        <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
+          total SAH période : {eur(totalSah.collecte)}
+        </span>
+      </div>
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: 'var(--text-2)',
+            lineHeight: 1.55,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 18%, transparent)',
+          }}
+        >
+          <strong>Règle unique</strong> : une personne est attribuée aux ads si elle a saisi un code
+          pub à l'inscription ou été rattachée à la main (<strong>certain</strong>), ou pris un RDV
+          Calendly sans qu'aucun autre canal ne la revendique (<strong>probable</strong>).{' '}
+          <strong>Fenêtre</strong> : souscriptions signées dans la période, sans fenêtre de clic
+          (cycle de vente long). Un euro n'appartient qu'à un seul niveau — le non-attribué n'est
+          jamais masqué ni réparti.
+        </div>
+        <div className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+            <thead>
+              <tr>
+                {['Niveau', 'Inscrits', 'Investisseurs', 'Collecte', '% du total'].map((h, idx) => (
+                  <th
+                    key={h}
+                    style={{
+                      textAlign: idx === 0 ? 'left' : 'right',
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      color: 'var(--text-3)',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.3,
+                      padding: '6px 10px',
+                      borderBottom: '1px solid var(--border)',
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {levels.map((l) => {
+                const share =
+                  totalSah.collecte > 0 ? (l.counts.collecte / totalSah.collecte) * 100 : null;
+                return (
+                  <tr key={l.key}>
+                    <td
                       style={{
-                        fontSize: 11,
-                        color: 'var(--text-4)',
-                        fontFamily: 'var(--font-mono)',
+                        padding: '8px 10px',
+                        borderBottom:
+                          '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
                       }}
                     >
-                      {r.sub}
-                    </span>
-                  </span>
-                </Td>
-                <Td>{eur(r.spend)}</Td>
-                <Td>{int(r.counts.inscrits)}</Td>
-                <Td>{eur(r.metrics.cpa, 2)}</Td>
-                <Td>{int(r.counts.complets)}</Td>
-                <Td>{eur(r.metrics.cpi, 2)}</Td>
-                <Td>{int(r.counts.investisseurs)}</Td>
-                <Td bold color={r.counts.collecte > 0 ? 'var(--success)' : undefined}>
-                  {eur(r.counts.collecte)}
-                </Td>
-                <Td>{eur(r.metrics.costPerInvestor, 0)}</Td>
-                <Td>{eur(r.metrics.avgTicket, 0)}</Td>
-                <Td
-                  bold
-                  color={pr === null ? undefined : pr >= 1 ? 'var(--success)' : 'var(--danger)'}
-                >
-                  {pr === null ? '—' : `×${pr.toFixed(1)}`}
-                </Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'var(--text-1)',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            background: LEVEL_COLOR[l.key],
+                          }}
+                        />
+                        <Def title={l.detail}>{l.label}</Def>
+                      </span>
+                    </td>
+                    {[
+                      { k: 'inscrits', v: int(l.counts.inscrits) },
+                      { k: 'investisseurs', v: int(l.counts.investisseurs) },
+                      { k: 'collecte', v: eur(l.counts.collecte), bold: true },
+                      { k: 'part', v: share === null ? '—' : `${share.toFixed(0)} %` },
+                    ].map((cell) => (
+                      <td
+                        key={`${l.key}-${cell.k}`}
+                        style={{
+                          textAlign: 'right',
+                          fontSize: 13,
+                          fontFamily: 'var(--font-mono)',
+                          fontWeight: cell.bold ? 600 : 400,
+                          color: 'var(--text-1)',
+                          padding: '8px 10px',
+                          borderBottom:
+                            '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
+                        }}
+                      >
+                        {cell.v}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
 
-/** Tableau de suivi par code bonus (toutes sources, sur la période). */
-function CodeTable({ rows }: { rows: CodeRow[] }) {
+/* ----------------------------- 6. Cohortes ----------------------------- */
+
+function CohortBlock({ data }: { data: AdsConsoleData }) {
+  const rows = data.cohorts;
   return (
-    <div className="table-scroll">
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
-        <thead>
-          <tr>
-            <Th left>Code bonus</Th>
-            <Th left>Source</Th>
-            <Th>Inscrits</Th>
-            <Th>Complets</Th>
-            <Th>Investisseurs</Th>
-            <Th>Collecte</Th>
-            <Th>Ticket moyen</Th>
-            <Th>Conv. inv.</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const ticket = r.investisseurs > 0 ? r.collecte / r.investisseurs : null;
-            const conv = r.inscrits > 0 ? (r.investisseurs / r.inscrits) * 100 : null;
-            return (
-              <tr key={r.code}>
-                <Td left bold>
-                  {r.code}
-                </Td>
-                <Td left>
-                  <SourceTag source={r.source} />
-                </Td>
-                <Td>{int(r.inscrits)}</Td>
-                <Td>{int(r.complets)}</Td>
-                <Td>{int(r.investisseurs)}</Td>
-                <Td>{eur(r.collecte)}</Td>
-                <Td>{eur(ticket, 0)}</Td>
-                <Td>{conv === null ? '—' : `${conv.toFixed(0)} %`}</Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="view-card">
+      <div className="view-card-header">
+        <div className="view-card-title">
+          <Def title="Rentabilité par MOIS DE CRÉATION du lead (pas par mois d'encaissement) : les leads attribués ads de chaque mois, leur coût (dépense Meta du mois), et ce qu'ils ont rapporté À DATE — la vue de vérité pour un cycle de vente long.">
+            Cohortes — par mois de génération du lead
+          </Def>
+        </div>
+        <span style={{ fontSize: 12, color: 'var(--text-4)' }}>6 derniers mois · à date</span>
+      </div>
+      <div className="view-card-body">
+        {rows.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+            Aucun lead attribué ads sur les 6 derniers mois.
+          </div>
+        ) : (
+          <div className="table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+              <thead>
+                <tr>
+                  {[
+                    { h: 'Mois', left: true, def: 'Mois de création du compte SAH (cohorte).' },
+                    { h: 'Leads', def: 'Inscrits attribués ads créés ce mois.' },
+                    { h: 'Complets', def: 'Dont profil + KYC terminés, à date.' },
+                    { h: 'Investisseurs', def: 'Dont au moins une souscription signée, à date.' },
+                    { h: 'Dépense du mois', def: 'Dépense média Meta du mois calendaire.' },
+                    {
+                      h: 'Collecte à date',
+                      def: 'Tout ce que ces leads ont signé depuis, quelle que soit la date.',
+                    },
+                    {
+                      h: 'Ratio',
+                      def: 'Collecte à date ÷ dépense du mois. Une cohorte récente est mécaniquement partielle.',
+                    },
+                  ].map((c) => (
+                    <th
+                      key={c.h}
+                      style={{
+                        textAlign: c.left ? 'left' : 'right',
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        color: 'var(--text-3)',
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.3,
+                        padding: '6px 10px',
+                        borderBottom: '1px solid var(--border)',
+                        whiteSpace: 'nowrap',
+                        cursor: 'help',
+                      }}
+                      title={c.def}
+                    >
+                      {c.h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const cells: { k: string; v: string; color?: string; bold?: boolean }[] = [
+                    { k: 'leads', v: int(r.leads) },
+                    { k: 'complets', v: int(r.complets) },
+                    { k: 'investisseurs', v: int(r.investisseurs) },
+                    { k: 'depense', v: r.spend === null ? 'non dispo' : eur(r.spend) },
+                    {
+                      k: 'collecte',
+                      v: eur(r.collecte),
+                      bold: true,
+                      color: r.collecte > 0 ? 'var(--success)' : undefined,
+                    },
+                    {
+                      k: 'ratio',
+                      v: r.ratio === null ? '—' : `×${r.ratio.toFixed(1)}`,
+                      bold: true,
+                      color:
+                        r.ratio === null
+                          ? undefined
+                          : r.ratio >= 1
+                            ? 'var(--success)'
+                            : 'var(--danger)',
+                    },
+                  ];
+                  return (
+                    <tr key={r.month}>
+                      <td
+                        style={{
+                          fontSize: 13,
+                          fontFamily: 'var(--font-mono)',
+                          fontWeight: 600,
+                          color: 'var(--text-1)',
+                          padding: '8px 10px',
+                          borderBottom:
+                            '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
+                        }}
+                      >
+                        {r.month}
+                      </td>
+                      {cells.map((c) => (
+                        <td
+                          key={`${r.month}-${c.k}`}
+                          style={{
+                            textAlign: 'right',
+                            fontSize: 13,
+                            fontFamily: 'var(--font-mono)',
+                            fontWeight: c.bold ? 600 : 400,
+                            color: c.color ?? 'var(--text-1)',
+                            padding: '8px 10px',
+                            borderBottom:
+                              '1px solid color-mix(in srgb, var(--border) 55%, transparent)',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {c.v}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+/* ----------------------------- 8. Alertes ----------------------------- */
+
+function AlertsBlock({ data }: { data: AdsConsoleData }) {
+  const alerts = data.alerts;
+  return (
+    <div className="view-card">
+      <div className="view-card-header">
+        <div className="view-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertTriangle size={15} />
+          <Def title="Détection automatique de ruptures : CPL pixel +30 % (3 derniers jours vs 3 précédents), campagne active qui dépense sans lead depuis 48 h, taux de show en chute de 20 % vs période précédente.">
+            Ruptures de tendance
+          </Def>
+        </div>
+        <span className={`badge ${alerts.length > 0 ? 'badge-warning' : 'badge-neutral'}`}>
+          {alerts.length}
+        </span>
+      </div>
+      <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {alerts.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+            Rien à signaler : pas de rupture détectée sur la période.
+          </div>
+        ) : (
+          alerts.map((a) => {
+            const color = a.level === 'danger' ? 'var(--danger)' : 'var(--warning)';
+            const body = (
+              <>
+                <span style={{ color, display: 'flex', marginTop: 1 }}>
+                  <AlertTriangle size={14} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+                    {a.title}
+                    {a.campaignId ? (
+                      <span style={{ fontSize: 11, color: 'var(--accent)', marginLeft: 6 }}>
+                        → voir la campagne
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{a.detail}</div>
+                </div>
+              </>
+            );
+            const style = {
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start' as const,
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: `color-mix(in srgb, ${color} 8%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${color} 24%, transparent)`,
+              textDecoration: 'none',
+            };
+            return a.campaignId ? (
+              <a key={`${a.title}|${a.detail}`} href={`#camp-${a.campaignId}`} style={style}>
+                {body}
+              </a>
+            ) : (
+              <div key={`${a.title}|${a.detail}`} style={style}>
+                {body}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Page ----------------------------- */
 
 export default async function AdsPage({
   searchParams,
@@ -583,23 +679,16 @@ export default async function AdsPage({
   const sp = await searchParams;
   const period = resolveAdsPeriod(sp);
   const canManage = user.role === 'admin' || user.role === 'executive';
-  const [overview, trends, roi, codeRows, attributions, rdvAutoCount] = await Promise.all([
-    getAdsOverview(period),
-    getAdsTrends(period),
-    getCampaignRoi(),
-    getCodeTracking(periodToRange(period)),
+
+  const [data, attributions, rdvAutoCount] = await Promise.all([
+    getAdsConsole(period),
     canManage ? listAdAttributions() : Promise.resolve([]),
     canManage ? countRdvAutoTracked() : Promise.resolve(0),
   ]);
-  const { totals, platforms, campaigns, byPlatform } = overview;
-  const spendByPlatform = Object.fromEntries(byPlatform.map((b) => [b.platform, b.raw.spend]));
-  const blended = await getBlendedAcquisition(period, spendByPlatform);
-  const alerts = buildAdsAlerts(campaigns, totals.cpa);
-  const ranking = rankCampaigns(campaigns);
-  const canReco = canManage;
 
   return (
     <>
+      {/* 1. Période + état des sources */}
       <div
         style={{
           display: 'flex',
@@ -611,487 +700,135 @@ export default async function AdsPage({
       >
         <div>
           <h1 className="page-title">Ads Control</h1>
-          <div className="page-desc">
-            <strong>Quel canal me coûte le moins par investisseur réel ?</strong> · Meta + Google
-            croisés SAH (lecture seule) · {period.label}
+          <div
+            className="page-desc"
+            style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
+          >
+            <span>
+              Meta · {period.label} <span style={{ color: 'var(--text-4)' }}>vs période préc.</span>
+            </span>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 12,
+                color: data.meta.ok ? 'var(--success)' : 'var(--danger)',
+              }}
+              title={
+                data.meta.ok
+                  ? 'API Meta connectée — chiffres média en direct.'
+                  : `Meta indisponible : ${data.meta.reason ?? 'erreur'} — les blocs média affichent « non tracké ».`
+              }
+            >
+              {data.meta.ok ? <CheckCircle2 size={13} /> : <PlugZap size={13} />}
+              {data.meta.ok ? 'Meta connecté' : 'Meta indisponible'}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>Google : en pause</span>
           </div>
         </div>
         <AdsPeriodFilter />
       </div>
 
-      {/* LE chiffre : ce que la pub coûte vs ce qu'elle rapporte, côte à côte */}
-      <SpendVsReturn
-        spend={totals.spend}
-        collecte={blended.attributed.collecte}
-        investisseurs={blended.attributed.investisseurs}
-        periodLabel={period.label}
-      />
+      {/* 2. Bandeau vital */}
+      <VitalBand data={data} />
 
-      {/* État des connexions */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {platforms.map((p) => {
-          const tone = p.ok ? 'success' : p.configured ? 'danger' : 'neutral';
-          const label = p.ok ? 'Connecté' : p.configured ? 'Erreur' : 'Non connecté';
-          return (
-            <div key={p.platform} className="view-card" style={{ flex: '1 1 240px', minWidth: 0 }}>
-              <div
-                className="view-card-body"
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px' }}
-              >
-                <span
-                  style={{
-                    color:
-                      tone === 'success'
-                        ? 'var(--success)'
-                        : tone === 'danger'
-                          ? 'var(--danger)'
-                          : 'var(--text-4)',
-                    display: 'flex',
-                  }}
-                >
-                  {p.ok ? (
-                    <CheckCircle2 size={18} />
-                  ) : p.configured ? (
-                    <AlertTriangle size={18} />
-                  ) : (
-                    <PlugZap size={18} />
-                  )}
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>
-                    {p.platform} Ads
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                    {label}
-                    {!p.ok && p.reason ? ` · ${p.reason}` : ''}
-                    {p.ok ? ` · ${p.campaigns.length} campagne(s)` : ''}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {/* 3. Funnel */}
+      <FunnelStrip data={data} />
 
-      {!overview.anyConfigured && (
-        <div className="alert alert-info">
-          <span className="alert-icon">
-            <PlugZap size={16} />
+      {/* 4. Table campagnes */}
+      <div className="view-card">
+        <div className="view-card-header">
+          <div className="view-card-title">Campagnes ({data.campaigns.length})</div>
+          <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
+            tri par défaut : dépense décroissante
           </span>
-          <div className="alert-body">
-            <div className="alert-title">Aucune plateforme connectée</div>
-            <div className="alert-description">
-              Renseigne les clés Meta (META_SYSTEM_USER_TOKEN) et/ou Google Ads dans les variables
-              d'environnement Render. Tant qu'aucune clé n'est présente, aucune donnée n'est
-              affichée (plutôt que des chiffres factices).
-            </div>
-          </div>
         </div>
-      )}
-
-      {/* KPIs globaux */}
-      <div
-        className="kpi-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-          gap: 10,
-        }}
-      >
-        <StatTile label="Dépense" value={eur(totals.spend)} hint="Meta + Google" />
-        <StatTile label="Impressions" value={int(totals.impressions)} />
-        <StatTile label="Clics" value={int(totals.clicks)} />
-        <StatTile label="CTR" value={pct(totals.ctr)} />
-        <StatTile label="CPC" value={eur(totals.cpc, 2)} hint="coût / clic" />
-        <StatTile label="CPM" value={eur(totals.cpm, 2)} hint="/ 1000 impr." />
-        <StatTile
-          label="Résultats (pixel)"
-          value={int(totals.results)}
-          hint="conversions déclarées par la régie"
-        />
-        <StatTile
-          label="Coût / résultat (pixel)"
-          value={eur(totals.cpa, 2)}
-          hint="régie — sert à comparer les campagnes, pas à mesurer le coût réel"
-        />
-        <StatTile label="Campagnes actives" value={`${totals.activeCount} / ${campaigns.length}`} />
+        <div className="view-card-body">
+          <CampaignTable rows={data.campaigns} />
+        </div>
       </div>
 
-      {/* Coût réel d'acquisition : dépense pub attribuée par code bonus, croisée SAH */}
-      {blended.available && (
+      {/* 5. Attribution honnête */}
+      <AttributionBlock data={data} />
+
+      {/* 6. Cohortes */}
+      <CohortBlock data={data} />
+
+      {/* 7. Coûts fixes & ROI complet */}
+      <div className="view-card">
+        <div className="view-card-header">
+          <div className="view-card-title">
+            <Def title="Le ROAS média ne contient QUE la dépense pub. Les coûts fixes (outils, créa, prestataires) sont saisis ici, par mois, et servent uniquement au ROI complet — jamais mélangés dans un même ratio.">
+              Coûts fixes & ROI complet
+            </Def>
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
+            {eur(data.costs.totalForPeriod)} de fixes sur la période
+          </span>
+        </div>
         <div
-          className="view-card"
-          style={{ borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)' }}
+          className="view-card-body"
+          style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
         >
-          <div className="view-card-header">
-            <div className="view-card-title">Coût réel d'acquisition · croisé SAH</div>
-            <span className="badge badge-success badge-dot">attribué par code</span>
-          </div>
-          <div
-            className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
-          >
-            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
-              Dépense de chaque régie ÷ les <strong>vrais inscrits SAH</strong> du code
-              correspondant (SEVEN-BREACH → Meta, BREACH-VIP → Google). La ligne{' '}
-              <strong>RDV / manuel</strong> ajoute les personnes venues des ads sans code : RDV
-              Calendly (les pubs n'orientent que vers la prise de RDV) et ajouts manuels — sans
-              parrainage, code partenaire ni CGP, jamais comptées deux fois.{' '}
-              <strong>Rentabilité</strong> = ticket moyen ÷ coût par investisseur (×&gt;1 =
-              rentable).
-            </div>
-            <CostTable blended={blended} />
-            <div style={{ fontSize: 11, color: 'var(--text-4)', lineHeight: 1.5 }}>
-              « Complets » = profil + KYC · investisseurs &amp; collecte = souscriptions signées sur
-              la période · une période récente est partielle (le closing prend plusieurs semaines).
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tracking par code bonus : d'où viennent réellement les inscrits (toutes sources) */}
-      {codeRows.length > 0 && (
-        <div className="view-card">
-          <div className="view-card-header">
-            <div className="view-card-title">Tracking par code bonus</div>
-            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>{period.label}</span>
-          </div>
-          <div
-            className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
-          >
-            <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
-              Tes codes pub uniquement, du clic à la souscription.{' '}
-              <span style={{ color: SOURCE_COLOR.Meta }}>●</span> Meta ·{' '}
-              <span style={{ color: SOURCE_COLOR.Google }}>●</span> Google. Trié par collecte.
-            </div>
-            <CodeTable rows={codeRows} />
-          </div>
-        </div>
-      )}
-
-      {/* Tracking manuel : rattacher une personne aux ads à la main (admin / gérant) */}
-      {canManage && <ManualTracking rows={attributions} rdvAutoCount={rdvAutoCount} />}
-
-      {/* Évolution + comparaison période précédente */}
-      {trends.available && (
-        <div className="view-card">
-          <div className="view-card-header">
-            <div className="view-card-title">Évolution sur la période</div>
-            <span style={{ fontSize: 12, color: 'var(--text-4)' }}>vs période précédente</span>
-          </div>
-          <div className="view-card-body">
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: 18,
+                flex: '1 1 180px',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 14px',
               }}
             >
-              <TrendBlock
-                label="Dépense"
-                value={eur(trends.current.spend)}
-                pct={trends.deltaPct.spend}
-                tone="neutral"
-                values={trends.series.map((p) => p.spend)}
-                color="var(--accent)"
-              />
-              <TrendBlock
-                label="Clics"
-                value={int(trends.current.clicks)}
-                pct={trends.deltaPct.clicks}
-                tone="up-good"
-                values={trends.series.map((p) => p.clicks)}
-                color="var(--info, #3b82f6)"
-              />
-              <TrendBlock
-                label="Résultats"
-                value={int(trends.current.results)}
-                pct={trends.deltaPct.results}
-                tone="up-good"
-                values={trends.series.map((p) => p.results)}
-                color="var(--success)"
-              />
-              <TrendBlock
-                label="Coût / résultat"
-                value={eur(trends.current.cpa, 2)}
-                pct={trends.deltaPct.cpa}
-                tone="down-good"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Analyse IA du Pilote (admin / gérant) */}
-      {canReco && campaigns.length > 0 && <AdsReco />}
-
-      {/* Alertes */}
-      {alerts.length > 0 && (
-        <div className="view-card">
-          <div className="view-card-header">
-            <div
-              className="view-card-title"
-              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-            >
-              <AlertTriangle size={16} /> À surveiller ({alerts.length})
-            </div>
-          </div>
-          <div
-            className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-          >
-            {alerts.map((a) => {
-              const danger = a.level === 'danger';
-              const color = danger ? 'var(--danger)' : 'var(--warning)';
-              return (
-                <div
-                  key={`${a.title}|${a.detail}`}
-                  style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'flex-start',
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    background: `color-mix(in srgb, ${color} 8%, transparent)`,
-                    border: `1px solid color-mix(in srgb, ${color} 24%, transparent)`,
-                  }}
-                >
-                  <span style={{ color, display: 'flex', marginTop: 1 }}>
-                    <AlertTriangle size={14} />
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
-                      {a.title}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{a.detail}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Top / Flop */}
-      {(ranking.best.length > 0 || ranking.wasted.length > 0) && (
-        <div
-          className="split-2col"
-          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}
-        >
-          <div className="view-card">
-            <div className="view-card-header">
-              <div
-                className="view-card-title"
-                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-              >
-                <Trophy size={15} /> Meilleures (coût / résultat)
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
+                <Def title="Revenu attribué ÷ dépense média seule.">ROAS média</Def>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+                {data.costs.roasMedia === null ? '—' : `×${data.costs.roasMedia.toFixed(2)}`}
               </div>
             </div>
             <div
-              className="view-card-body"
-              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+              style={{
+                flex: '1 1 180px',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 14px',
+              }}
             >
-              {ranking.best.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                  Aucune campagne avec résultats.
-                </div>
-              ) : (
-                ranking.best.map((x) => (
-                  <div
-                    key={`${x.c.platform}-${x.c.id}`}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      fontSize: 13,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: 'var(--text-2)',
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {x.c.platform} · {x.c.name}
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--success)',
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {eur(x.cpa, 0)}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="view-card">
-            <div className="view-card-header">
-              <div
-                className="view-card-title"
-                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-              >
-                <TrendingDown size={15} /> À optimiser
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
+                <Def title="Revenu attribué ÷ (dépense média + coûts fixes des mois calendaires couverts par la période — un mois entamé compte en entier).">
+                  ROI complet
+                </Def>
               </div>
-            </div>
-            <div
-              className="view-card-body"
-              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-            >
-              {ranking.worst.map((x) => (
-                <div
-                  key={`${x.c.platform}-${x.c.id}`}
-                  style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}
-                >
-                  <span
-                    style={{
-                      color: 'var(--text-2)',
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {x.c.platform} · {x.c.name}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      color: 'var(--warning)',
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {eur(x.cpa, 0)}
-                  </span>
-                </div>
-              ))}
-              {ranking.wasted.length > 0 && (
-                <>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text-4)',
-                      marginTop: 4,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <Ban size={12} /> Budget sans résultat
-                  </div>
-                  {ranking.wasted.map((c) => (
-                    <div
-                      key={`${c.platform}-${c.id}`}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        fontSize: 13,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: 'var(--text-2)',
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {c.platform} · {c.name}
-                      </span>
-                      <span
-                        style={{
-                          fontFamily: 'var(--font-mono)',
-                          color: 'var(--danger)',
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {eur(c.spend, 0)}
-                      </span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Répartition par plateforme */}
-      {byPlatform.length > 1 && (
-        <div className="view-card">
-          <div className="view-card-header">
-            <div className="view-card-title">Répartition par plateforme</div>
-          </div>
-          <div
-            className="view-card-body"
-            style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-          >
-            {byPlatform.map((b) => (
               <div
-                key={b.platform}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '90px repeat(4, 1fr)',
-                  gap: 12,
-                  alignItems: 'center',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  fontFamily: 'var(--font-mono)',
+                  color:
+                    data.costs.roiComplet === null
+                      ? 'var(--text-1)'
+                      : data.costs.roiComplet >= 1
+                        ? 'var(--success)'
+                        : 'var(--danger)',
                 }}
               >
-                <span className="badge badge-neutral">{b.platform}</span>
-                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Dépense</span>
-                  <br />
-                  {eur(b.raw.spend)}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Clics</span>
-                  <br />
-                  {int(b.raw.clicks)}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Résultats</span>
-                  <br />
-                  {int(b.raw.results)}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                  <span style={{ color: 'var(--text-4)', fontSize: 11 }}>Coût / résultat</span>
-                  <br />
-                  {eur(b.derived.cpa, 2)}
-                </div>
+                {data.costs.roiComplet === null ? '—' : `×${data.costs.roiComplet.toFixed(2)}`}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Campagnes détaillées */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
-          Campagnes ({campaigns.length})
-        </div>
-        {campaigns.length === 0 ? (
-          <div className="view-card">
-            <div className="view-card-body" style={{ fontSize: 13, color: 'var(--text-3)' }}>
-              Aucune campagne à afficher pour cette période.
             </div>
           </div>
-        ) : (
-          campaigns.map((c) => (
-            <CampaignCard key={`${c.platform}-${c.id}`} c={c} roi={roi.byCampaign.get(c.id)} />
-          ))
-        )}
+          <FixedCostsEditor rows={data.costs.list} canEdit={canManage} />
+        </div>
       </div>
+
+      {/* 8. Alertes */}
+      <AlertsBlock data={data} />
+
+      {/* Outils : tracking manuel + analyse IA */}
+      {canManage && <ManualTracking rows={attributions} rdvAutoCount={rdvAutoCount} />}
+      {canManage && data.campaigns.length > 0 && <AdsReco />}
     </>
   );
 }

@@ -311,3 +311,16 @@ create policy ad_attributions_admin_all on public.ad_attributions for all
 drop policy if exists ad_attributions_team_read on public.ad_attributions;
 create policy ad_attributions_team_read on public.ad_attributions for select
   using (public.auth_role() in ('closer', 'closer_junior', 'executive'));
+
+-- ============================================================
+-- AD_FIXED_COSTS (coûts fixes marketing mensuels, saisis à la main)
+-- Écriture : serveur uniquement (server actions via connexion service).
+-- Lecture : équipe interne.
+-- ============================================================
+alter table public.ad_fixed_costs enable row level security;
+drop policy if exists ad_fixed_costs_admin_all on public.ad_fixed_costs;
+create policy ad_fixed_costs_admin_all on public.ad_fixed_costs for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists ad_fixed_costs_team_read on public.ad_fixed_costs;
+create policy ad_fixed_costs_team_read on public.ad_fixed_costs for select
+  using (public.auth_role() in ('closer', 'closer_junior', 'executive'));

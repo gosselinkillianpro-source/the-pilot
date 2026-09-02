@@ -112,8 +112,8 @@ export function ManualTracking({
       <div className="view-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>
           Ajoute ici quelqu'un que tu <strong>sais</strong> venir de la pub mais qu'aucun signal
-          automatique ne capte. Ses investissements comptent alors dans la ligne « RDV Calendly +
-          manuels » du tableau ci-dessus.
+          automatique ne capte. Ses investissements passent alors en « attribué certain » dans
+          l'attribution honnête, et comptent dans le revenu attribué du bandeau vital.
         </div>
 
         <div

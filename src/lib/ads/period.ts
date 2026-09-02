@@ -9,6 +9,7 @@ export const ADS_PERIODS = [
   { key: 'yesterday', label: 'Hier', meta: 'yesterday', google: 'YESTERDAY' },
   { key: 'last_7d', label: '7 jours', meta: 'last_7d', google: 'LAST_7_DAYS' },
   { key: 'last_30d', label: '30 jours', meta: 'last_30d', google: 'LAST_30_DAYS' },
+  { key: 'last_90d', label: '90 jours', meta: 'last_90d', google: 'LAST_90_DAYS' },
   { key: 'this_month', label: 'Ce mois', meta: 'this_month', google: 'THIS_MONTH' },
   { key: 'last_month', label: 'Mois dernier', meta: 'last_month', google: 'LAST_MONTH' },
 ] as const;
@@ -85,6 +86,8 @@ export function periodToRange(period: AdsPeriod, now: Date = new Date()): DateRa
       return { since: isoDay(new Date(now.getTime() - 6 * DAY_MS)), until: isoDay(now) };
     case 'last_30d':
       return { since: isoDay(new Date(now.getTime() - 29 * DAY_MS)), until: isoDay(now) };
+    case 'last_90d':
+      return { since: isoDay(new Date(now.getTime() - 89 * DAY_MS)), until: isoDay(now) };
     case 'last_month': {
       const start = new Date(Date.UTC(y, m - 1, 1));
       const end = new Date(Date.UTC(y, m, 0)); // dernier jour du mois précédent
