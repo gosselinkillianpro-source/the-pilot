@@ -1,5 +1,6 @@
 import 'server-only';
 import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { investorOrigin } from '@/lib/closing/origin';
 import { db } from '@/lib/db';
 import {
   creditedCloserForEvent,
@@ -46,6 +47,9 @@ export type LeaderboardEntry = {
   kycs: number;
   subscriptions: number;
   amountEur: number;
+  /** Dont souscriptions de personnes venues des pubs (code BREACH) — le closer a tout fait. */
+  subscriptionsAds: number;
+  amountAdsEur: number;
   fastCallbacks: number;
   xpPeriod: number;
   /** XP à vie + niveau (jamais remis à zéro). */
@@ -105,7 +109,11 @@ function parisDecimalHour(at: Date): number {
 
 const EARLY_CALL_MAX_HOUR = 9.5;
 
-type MutableStats = XpInputs & { maxSubscriptionEur: number };
+type MutableStats = XpInputs & {
+  maxSubscriptionEur: number;
+  subscriptionsAds: number;
+  amountAdsEur: number;
+};
 
 function emptyStats(): MutableStats {
   return {
@@ -118,8 +126,19 @@ function emptyStats(): MutableStats {
     amountEur: 0,
     fastCallbacks: 0,
     maxSubscriptionEur: 0,
+    subscriptionsAds: 0,
+    amountAdsEur: 0,
   };
 }
+
+type OriginRow = {
+  id: string;
+  bonus_code: string | null;
+  breach_level: number | string | null;
+  parent_sah_id: string | null;
+  cgp_name: string | null;
+  cgp_network: string | null;
+};
 
 export async function getLeaderboard(
   kind: PeriodKind,
@@ -148,39 +167,40 @@ export async function getLeaderboardForPeriod(
     .where(and(inArray(users.role, ['closer', 'closer_junior']), eq(users.active, true)));
   if (closers.length === 0) return { period, entries: [] };
 
-  const [contactRows, subRows, progressRows, firstCallRows, badgeRows, owners] = await Promise.all([
-    // L'activité qui fait les stats : appels + RDV pris.
-    db
-      .select({
-        investorId: interactions.investorId,
-        userId: interactions.userId,
-        type: interactions.type,
-        outcome: interactions.outcome,
-        at: interactions.createdAt,
-      })
-      .from(interactions)
-      .where(inArray(interactions.type, ['call_outbound', 'call_inbound', 'meeting_booked'])),
-    db
-      .select({
-        id: subscriptions.id,
-        investorId: subscriptions.investorId,
-        amount: subscriptions.amount,
-        signedAt: subscriptions.signedAt,
-      })
-      .from(subscriptions)
-      .where(and(sql`${subscriptions.status} <> 'cancelled'`, isNotNull(subscriptions.signedAt))),
-    db
-      .select({
-        investorId: investors.id,
-        kycAt: investors.kycCompletedAt,
-        regAt: investors.registrationCompletedAt,
-      })
-      .from(investors)
-      .where(
-        sql`${investors.deletedAt} is null and (${investors.kycCompletedAt} is not null or ${investors.registrationCompletedAt} is not null)`,
-      ),
-    // 1er appel sortant de chaque inscrit : la matière du bonus éclair.
-    db.execute(sql`
+  const [contactRows, subRows, progressRows, firstCallRows, badgeRows, owners, originRows] =
+    await Promise.all([
+      // L'activité qui fait les stats : appels + RDV pris.
+      db
+        .select({
+          investorId: interactions.investorId,
+          userId: interactions.userId,
+          type: interactions.type,
+          outcome: interactions.outcome,
+          at: interactions.createdAt,
+        })
+        .from(interactions)
+        .where(inArray(interactions.type, ['call_outbound', 'call_inbound', 'meeting_booked'])),
+      db
+        .select({
+          id: subscriptions.id,
+          investorId: subscriptions.investorId,
+          amount: subscriptions.amount,
+          signedAt: subscriptions.signedAt,
+        })
+        .from(subscriptions)
+        .where(and(sql`${subscriptions.status} <> 'cancelled'`, isNotNull(subscriptions.signedAt))),
+      db
+        .select({
+          investorId: investors.id,
+          kycAt: investors.kycCompletedAt,
+          regAt: investors.registrationCompletedAt,
+        })
+        .from(investors)
+        .where(
+          sql`${investors.deletedAt} is null and (${investors.kycCompletedAt} is not null or ${investors.registrationCompletedAt} is not null)`,
+        ),
+      // 1er appel sortant de chaque inscrit : la matière du bonus éclair.
+      db.execute(sql`
       select distinct on (ix.investor_id)
         ix.investor_id, ix.user_id::text as user_id, ix.created_at as at, i.sah_created_at
       from interactions ix
@@ -188,15 +208,32 @@ export async function getLeaderboardForPeriod(
       where ix.type = 'call_outbound' and ix.user_id is not null and i.sah_created_at is not null
       order by ix.investor_id, ix.created_at asc
     `) as unknown as Promise<
-      { investor_id: string; user_id: string; at: string | Date; sah_created_at: string | Date }[]
-    >,
-    db
-      .select({ closerId: closerBadges.closerId, badge: closerBadges.badge, n: count() })
-      .from(closerBadges)
-      .groupBy(closerBadges.closerId, closerBadges.badge),
-    // Propriétaire + ses actions par personne : la matière du crédit.
-    loadOwnerActions(),
-  ]);
+        { investor_id: string; user_id: string; at: string | Date; sah_created_at: string | Date }[]
+      >,
+      db
+        .select({ closerId: closerBadges.closerId, badge: closerBadges.badge, n: count() })
+        .from(closerBadges)
+        .groupBy(closerBadges.closerId, closerBadges.badge),
+      // Propriétaire + ses actions par personne : la matière du crédit.
+      loadOwnerActions(),
+      // Origine de chaque personne (pub, parrainage…) : la part des pubs par closer.
+      db.execute(sql`
+      select id::text as id, bonus_code, breach_level, parent_sah_id, cgp_name, cgp_network
+      from investors where deleted_at is null
+    `) as unknown as Promise<OriginRow[]>,
+    ]);
+  const originById = new Map(
+    originRows.map((r) => [
+      r.id,
+      investorOrigin({
+        bonusCode: r.bonus_code,
+        breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+        parentSahId: r.parent_sah_id,
+        cgpName: r.cgp_name,
+        cgpNetwork: r.cgp_network,
+      }),
+    ]),
+  );
 
   const inPeriod = (at: Date) => at >= period.from && at < period.to;
 
@@ -277,15 +314,24 @@ export async function getLeaderboardForPeriod(
     const life = lifeStats.get(c.closerId);
     if (!life) continue; // propriétaire hors classement (admin)
     const amount = c.amountEur;
+    const fromAds = originById.get(c.investorId) === 'ads';
     life.subscriptions += 1;
     life.amountEur += amount;
     life.maxSubscriptionEur = Math.max(life.maxSubscriptionEur, amount);
+    if (fromAds) {
+      life.subscriptionsAds += 1;
+      life.amountAdsEur += amount;
+    }
     if (inPeriod(c.signedAt)) {
       const stats = periodStats.get(c.closerId);
       if (stats) {
         stats.subscriptions += 1;
         stats.amountEur += amount;
         stats.maxSubscriptionEur = Math.max(stats.maxSubscriptionEur, amount);
+        if (fromAds) {
+          stats.subscriptionsAds += 1;
+          stats.amountAdsEur += amount;
+        }
       }
     }
   }
@@ -337,6 +383,8 @@ export async function getLeaderboardForPeriod(
       kycs: p.kycs,
       subscriptions: p.subscriptions,
       amountEur: Math.round(p.amountEur),
+      subscriptionsAds: p.subscriptionsAds,
+      amountAdsEur: Math.round(p.amountAdsEur),
       fastCallbacks: p.fastCallbacks,
       xpPeriod: computeXp(p),
       xpLife,

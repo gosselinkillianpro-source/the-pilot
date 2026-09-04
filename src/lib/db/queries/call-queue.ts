@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { type InvestorOrigin, investorOrigin } from '@/lib/closing/origin';
 import { compareForQueue, type ScoredInvestor, scoreInvestor } from '@/lib/closing/scoring';
 import { db } from '@/lib/db';
 import { MISSED_ATTEMPTS } from '@/lib/db/queries/closing-pipeline';
@@ -39,9 +40,15 @@ export type QueueRow = {
   /** Code bonus (apporteur). BREACH = vient des pubs de Killian. */
   bonusCode: string | null;
   isBreach: boolean;
-  /** Apporteur (CGP) tel que SAH le renseigne — sert à écarter les clients de partenaires tiers. */
+  /** 0 = BREACH direct, 1 = N-1… ; null = hors réseau BREACH. */
+  breachLevel: number | null;
+  /** sah_id du parrain (la personne qui a invité celle-ci). */
+  parentSahId: string | null;
+  /** Apporteur (CGP) tel que SAH le renseigne. */
   cgpName: string | null;
   cgpNetwork: string | null;
+  /** Pub, parrainage, venu seul, partenaire — voir `origin.ts`. */
+  origin: InvestorOrigin;
   /** Note libre du closer (internal_note), tronquée — aperçu directement sur la ligne de file. */
   internalNote: string | null;
   /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
@@ -82,6 +89,7 @@ type RawRow = {
   nearest_repayment: string | Date | null;
   first_sub_at: string | Date | null;
   bonus_code: string | null;
+  parent_sah_id: string | null;
   cgp_name: string | null;
   cgp_network: string | null;
   claimed_by_id: string | null;
@@ -213,6 +221,7 @@ export async function getCallQueue(opts?: {
       i.sah_created_at,
       i.breach_level,
       i.bonus_code,
+      i.parent_sah_id,
       i.cgp_name,
       i.cgp_network,
       i.wallet_balance_cents,
@@ -332,8 +341,17 @@ export async function getCallQueue(opts?: {
       walletBalanceCents,
       bonusCode: r.bonus_code,
       isBreach: r.breach_level != null || isBreachCode(r.bonus_code),
+      breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+      parentSahId: r.parent_sah_id,
       cgpName: r.cgp_name,
       cgpNetwork: r.cgp_network,
+      origin: investorOrigin({
+        bonusCode: r.bonus_code,
+        breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+        parentSahId: r.parent_sah_id,
+        cgpName: r.cgp_name,
+        cgpNetwork: r.cgp_network,
+      }),
       internalNote: r.internal_note?.trim() ? r.internal_note.trim() : null,
       claimedById: claimActive ? r.claimed_by_id : null,
       claimedAt: claimActive && r.claimed_at ? new Date(r.claimed_at) : null,
