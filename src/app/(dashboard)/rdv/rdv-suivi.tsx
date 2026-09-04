@@ -82,9 +82,15 @@ export function SuiviTable({ rows }: { rows: RdvReel[] }) {
               return (
                 <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <Td>
-                    {r.investorId ? (
+                    {/* Inscrit → fiche investisseur ; hors base → fiche PROSPECT
+                        (appels, notes, téléphone). Toujours cliquable. */}
+                    {r.investorId || r.contactId ? (
                       <Link
-                        href={`/closing/investor/${r.investorId}`}
+                        href={
+                          r.investorId
+                            ? `/closing/investor/${r.investorId}`
+                            : `/rdv/contact/${r.contactId}`
+                        }
                         style={{
                           fontSize: 14,
                           fontWeight: 700,
@@ -155,6 +161,20 @@ export function SuiviTable({ rows }: { rows: RdvReel[] }) {
                         {open ? 'Fermer' : 'Saisir'}
                         {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                       </button>
+                    ) : r.contactId ? (
+                      <Link
+                        href={`/rdv/contact/${r.contactId}`}
+                        className="badge badge-neutral"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <NotebookPen size={12} />
+                        Fiche prospect
+                      </Link>
                     ) : (
                       <span style={{ fontSize: 11, color: 'var(--text-4)' }}>hors base</span>
                     )}

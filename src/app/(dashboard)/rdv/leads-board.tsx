@@ -51,35 +51,26 @@ export function LeadsBoard({ cards, myId }: { cards: PipelineCard[]; myId: strin
 function CardBody({ card, mine }: { card: BoardCard; mine: boolean }) {
   return (
     <>
-      {card.investorId ? (
-        <Link
-          href={`/closing/investor/${card.investorId}`}
-          style={{
-            display: 'block',
-            fontSize: 12.5,
-            fontWeight: 650,
-            color: 'var(--text-1)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {card.fullName}
-        </Link>
-      ) : (
-        <div
-          style={{
-            fontSize: 12.5,
-            fontWeight: 650,
-            color: 'var(--text-1)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {card.fullName}
-        </div>
-      )}
+      {/* Inscrit → fiche investisseur ; hors base → fiche PROSPECT. Une carte
+          de lead RDV mène toujours quelque part. */}
+      <Link
+        href={
+          card.investorId
+            ? `/closing/investor/${card.investorId}`
+            : `/rdv/contact/${card.contactId}`
+        }
+        style={{
+          display: 'block',
+          fontSize: 12.5,
+          fontWeight: 650,
+          color: 'var(--text-1)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {card.fullName}
+      </Link>
 
       {card.phone && (
         <a

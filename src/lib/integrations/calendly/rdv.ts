@@ -37,6 +37,14 @@ export interface RdvReel {
   lead: string;
   email: string | null;
   investorId: string | null;
+  /** Téléphone connu de Calendly (rappel SMS / formulaire), si fourni. */
+  phone: string | null;
+  /**
+   * Fiche prospect `rdv_contacts` correspondante — enrichie par la PAGE après
+   * l'upsert des contacts (rdv.ts ne lit que Calendly). Permet d'ouvrir la
+   * fiche d'un lead même hors base SAH.
+   */
+  contactId: string | null;
   source: string;
   date: Date;
   statut: RdvStatut;
@@ -395,6 +403,9 @@ export async function getRdvBoard(accessToken?: string): Promise<RdvBoardResult>
       lead: inv?.name || email || 'Invité inconnu',
       email,
       investorId: m?.id ?? null,
+      phone: inv?.phone ?? null,
+      contactId: null, // rempli par la page après upsertRdvContacts
+
       source: m?.source ?? (email ? 'Hors base' : '—'),
       date: new Date(ev.startTime),
       statut: deriveStatut(ev, inv, now),

@@ -41,6 +41,8 @@ export interface CalendlyInvitee {
   status: string;
   noShow: boolean; // marqué absent (no-show) côté Calendly
   rescheduled: boolean; // RDV reprogrammé par l'invité
+  /** Téléphone : rappel SMS Calendly, ou réponse « téléphone » du formulaire. */
+  phone: string | null;
 }
 
 /* --- Helpers de lecture sûre (réponses externes → unknown) --- */
@@ -155,7 +157,26 @@ export async function getEventInvitees(
     // `no_show` est un objet (uri…) quand l'invité est marqué absent, sinon null.
     noShow: i.no_show != null,
     rescheduled: i.rescheduled === true,
+    phone: extractInviteePhone(i),
   }));
+}
+
+/**
+ * Téléphone de l'invité, si Calendly le connaît : le numéro de rappel SMS
+ * (`text_reminder_number`), sinon une réponse du formulaire dont la question
+ * parle de téléphone. Best-effort — null si rien d'exploitable.
+ */
+function extractInviteePhone(invitee: Record<string, unknown>): string | null {
+  const direct = str(invitee.text_reminder_number).trim();
+  if (direct) return direct;
+  const qa = Array.isArray(invitee.questions_and_answers) ? invitee.questions_and_answers : [];
+  for (const entry of qa) {
+    if (!isRecord(entry)) continue;
+    const question = str(entry.question);
+    const answer = str(entry.answer).trim();
+    if (answer && /t[ée]l[ée]phone|portable|phone|num[ée]ro/i.test(question)) return answer;
+  }
+  return null;
 }
 
 export function isCalendlyConfigured(): boolean {
