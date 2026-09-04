@@ -7,6 +7,14 @@ import {
   metaInsightsRange,
   metaTimeRangeValue,
 } from '@/lib/ads/period';
+import { cached } from '@/lib/cache/ttl';
+
+/**
+ * Durée de vie du cache des réponses Meta. Les chiffres média bougent à
+ * l'échelle de l'heure : 5 minutes en mémoire rendent la console Ads
+ * instantanée sans fausser une décision.
+ */
+const META_CACHE_MS = 5 * 60_000;
 
 /**
  * Client Meta Marketing API (Graph API) — LECTURE SEULE des campagnes pub SAH.
@@ -87,7 +95,13 @@ function extractResults(insight: GraphInsight | undefined): number {
 /**
  * Récupère les campagnes du compte avec leurs insights sur une période.
  */
-export async function fetchMetaCampaigns(period: AdsPeriod): Promise<MetaCampaign[]> {
+export function fetchMetaCampaigns(period: AdsPeriod): Promise<MetaCampaign[]> {
+  return cached(`meta:campaigns:${JSON.stringify(period)}`, META_CACHE_MS, () =>
+    fetchMetaCampaignsUncached(period),
+  );
+}
+
+async function fetchMetaCampaignsUncached(period: AdsPeriod): Promise<MetaCampaign[]> {
   const cfg = getMetaConfig();
   if (!cfg.configured) {
     throw new Error(`Meta non configuré : ${cfg.reason}`);
@@ -137,7 +151,18 @@ export async function fetchMetaCampaigns(period: AdsPeriod): Promise<MetaCampaig
 
 type GraphDailyRow = GraphInsight & { date_start?: string };
 
-async function fetchMetaInsights(range: DateRange, daily: boolean): Promise<GraphDailyRow[]> {
+function fetchMetaInsights(range: DateRange, daily: boolean): Promise<GraphDailyRow[]> {
+  return cached(
+    `meta:insights:${range.since}:${range.until}:${daily ? 'daily' : 'total'}`,
+    META_CACHE_MS,
+    () => fetchMetaInsightsUncached(range, daily),
+  );
+}
+
+async function fetchMetaInsightsUncached(
+  range: DateRange,
+  daily: boolean,
+): Promise<GraphDailyRow[]> {
   const token = process.env.META_SYSTEM_USER_TOKEN as string;
   const cfg = getMetaConfig();
   if (!cfg.configured) throw new Error(`Meta non configuré : ${cfg.reason}`);
@@ -193,7 +218,13 @@ type GraphCampaignDailyRow = GraphDailyRow & { campaign_id?: string };
  * time_increment=1). Alimente les sparklines de la table campagnes et les
  * règles de décision/alerte fondées sur la tendance (48 h sans lead, CPL 3 j).
  */
-export async function fetchMetaCampaignDailySeries(
+export function fetchMetaCampaignDailySeries(range: DateRange): Promise<Map<string, DailyPoint[]>> {
+  return cached(`meta:campaign-daily:${range.since}:${range.until}`, META_CACHE_MS, () =>
+    fetchMetaCampaignDailySeriesUncached(range),
+  );
+}
+
+async function fetchMetaCampaignDailySeriesUncached(
   range: DateRange,
 ): Promise<Map<string, DailyPoint[]>> {
   const cfg = getMetaConfig();
@@ -234,7 +265,13 @@ export async function fetchMetaCampaignDailySeries(
 export type MonthlySpend = { month: string; spend: number }; // month = 'YYYY-MM'
 
 /** Dépense Meta agrégée PAR MOIS sur une plage (pour la vue cohortes). */
-export async function fetchMetaMonthlySpend(range: DateRange): Promise<MonthlySpend[]> {
+export function fetchMetaMonthlySpend(range: DateRange): Promise<MonthlySpend[]> {
+  return cached(`meta:monthly:${range.since}:${range.until}`, META_CACHE_MS, () =>
+    fetchMetaMonthlySpendUncached(range),
+  );
+}
+
+async function fetchMetaMonthlySpendUncached(range: DateRange): Promise<MonthlySpend[]> {
   const cfg = getMetaConfig();
   if (!cfg.configured) throw new Error(`Meta non configuré : ${cfg.reason}`);
   const token = process.env.META_SYSTEM_USER_TOKEN as string;

@@ -6,6 +6,7 @@
  * Côté investisseur on garde uniquement des données business + 2 booléens de statut SAH.
  */
 
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -162,92 +163,103 @@ export const users = pgTable('users', {
 /* ============================================================
    INVESTORS — miroir read-only depuis SAH
    ============================================================ */
-export const investors = pgTable('investors', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sahId: text('sah_id').notNull().unique(),
-  email: text('email').notNull(),
-  fullName: text('full_name'),
-  firstName: text('first_name'),
-  lastName: text('last_name'),
-  phone: text('phone'),
-  civility: text('civility'), // Monsieur / Madame
-  dateOfBirth: text('date_of_birth'), // date ISO ; usage marketing (anniversaire), pas de KYC sensible
-  nationality: text('nationality'),
-  countryResidence: text('country_residence'),
-  addressStreet: text('address_street'), // street_address_and_number
-  addressComplement: text('address_complement'), // additional_address
-  addressCity: text('address_city'),
-  addressPostalCode: text('address_postal_code'),
-  taxResidencyCountry: text('tax_residency_country'),
-  // Apporteur d'affaires (CGP) — best effort, voir sync
-  bonusCode: text('bonus_code'),
-  cgpName: text('cgp_name'),
-  cgpNetwork: text('cgp_network'),
-  // Lemonway / portefeuille (jamais d'IBAN/BIC : KYC bancaire interdit chez nous)
-  walletBalanceCents: integer('wallet_balance_cents'),
-  // Date détectée (par THE PILOT) où le wallet est devenu alimenté (≥ seuil) sans être
-  // investi ; remise à null quand il se vide. Alimente le scoring « argent à placer ».
-  walletFundedAt: timestamp('wallet_funded_at', { withTimezone: true }),
-  walletStatus: text('wallet_status'),
-  lwOnboardingStatus: text('lw_onboarding_status'),
-  lwOnboardingId: text('lw_onboarding_id'),
-  lemonwayAccountId: text('lemonway_account_id'),
-  kycValidatedAt: timestamp('kyc_validated_at', { withTimezone: true }),
-  // Dates côté SAH (création / dernière modif du compte)
-  sahCreatedAt: timestamp('sah_created_at', { withTimezone: true }),
-  sahUpdatedAt: timestamp('sah_updated_at', { withTimezone: true }),
-  profileSegment: profileSegmentEnum('profile_segment'),
-  totalInvested: numeric('total_invested', { precision: 12, scale: 2 }).default('0'),
-  projectsCount: integer('projects_count').default(0),
-  firstSubscriptionAt: timestamp('first_subscription_at', { withTimezone: true }),
-  lastSubscriptionAt: timestamp('last_subscription_at', { withTimezone: true }),
-  // Statut SAH : 2 booléens, pas de KYC détaillé
-  registrationComplete: boolean('registration_complete').notNull().default(false),
-  onboardingComplete: boolean('onboarding_complete').notNull().default(false),
-  // Dates de PROGRESSION détectées par THE PILOT au moment où le booléen bascule false→true
-  // (SAH ne fournit pas ces dates). Write-once, jamais écrasées par le sync. Servent à
-  // attribuer la finalisation au closer qui a appelé avant (fenêtre 30 j).
-  kycCompletedAt: timestamp('kyc_completed_at', { withTimezone: true }),
-  registrationCompletedAt: timestamp('registration_completed_at', { withTimezone: true }),
-  acquisitionSource: acquisitionSourceEnum('acquisition_source'),
-  acquisitionCampaignId: text('acquisition_campaign_id'),
-  // Parrainage BREACH multi-niveaux — reconstruit depuis SAH (users.invited_by_id).
-  parentSahId: text('parent_sah_id'), // sah_id du parrain (la personne qui a invité celle-ci)
-  parrainName: text('parrain_name'), // nom du parrain direct (affichage fiche)
-  breachLevel: integer('breach_level'), // 0 = BREACH direct, 1 = N-1, 2 = N-2… ; null = hors réseau BREACH
-  score: integer('score'),
-  scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
-  scoreReasoning: text('score_reasoning'),
-  assignedCloserId: uuid('assigned_closer_id').references(() => users.id),
-  // Verrou de travail : un closer "prend" un lead pour éviter le double-appel.
-  // Auto-libéré après un délai (cf. CLAIM_TTL_MIN) ou après l'enregistrement de l'appel.
-  claimedById: uuid('claimed_by_id').references(() => users.id),
-  claimedAt: timestamp('claimed_at', { withTimezone: true }),
-  pipelineStage: pipelineStageEnum('pipeline_stage').notNull().default('new'),
-  pipelineStageUpdatedAt: timestamp('pipeline_stage_updated_at', { withTimezone: true }),
-  /**
-   * File d'appels d'où venait la personne quand elle est entrée dans le suivi
-   * (« Nouveaux inscrits », « Argent à placer »…). Figée à l'entrée : le score
-   * se recalcule en permanence, donc la file COURANTE d'une fiche suivie depuis
-   * trois semaines ne dit plus rien de la raison pour laquelle on l'a appelée.
-   */
-  pipelineSource: text('pipeline_source'),
-  /** Entrée dans le tableau de suivi — mesure la durée réelle du parcours. */
-  pipelineEnteredAt: timestamp('pipeline_entered_at', { withTimezone: true }),
-  /**
-   * Alerte « nouveau lead » envoyée aux closers. Write-once : c'est ce qui
-   * garantit qu'une inscription ne déclenche qu'UNE notification, même si le
-   * détecteur repasse toutes les 2 minutes sur la même personne.
-   */
-  newLeadAlertedAt: timestamp('new_lead_alerted_at', { withTimezone: true }),
-  communicationConsent: boolean('communication_consent').notNull().default(false),
-  lastEmailOpenedAt: timestamp('last_email_opened_at', { withTimezone: true }),
-  lastPageVisitAt: timestamp('last_page_visit_at', { withTimezone: true }),
-  internalNote: text('internal_note'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-});
+export const investors = pgTable(
+  'investors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sahId: text('sah_id').notNull().unique(),
+    email: text('email').notNull(),
+    fullName: text('full_name'),
+    firstName: text('first_name'),
+    lastName: text('last_name'),
+    phone: text('phone'),
+    civility: text('civility'), // Monsieur / Madame
+    dateOfBirth: text('date_of_birth'), // date ISO ; usage marketing (anniversaire), pas de KYC sensible
+    nationality: text('nationality'),
+    countryResidence: text('country_residence'),
+    addressStreet: text('address_street'), // street_address_and_number
+    addressComplement: text('address_complement'), // additional_address
+    addressCity: text('address_city'),
+    addressPostalCode: text('address_postal_code'),
+    taxResidencyCountry: text('tax_residency_country'),
+    // Apporteur d'affaires (CGP) — best effort, voir sync
+    bonusCode: text('bonus_code'),
+    cgpName: text('cgp_name'),
+    cgpNetwork: text('cgp_network'),
+    // Lemonway / portefeuille (jamais d'IBAN/BIC : KYC bancaire interdit chez nous)
+    walletBalanceCents: integer('wallet_balance_cents'),
+    // Date détectée (par THE PILOT) où le wallet est devenu alimenté (≥ seuil) sans être
+    // investi ; remise à null quand il se vide. Alimente le scoring « argent à placer ».
+    walletFundedAt: timestamp('wallet_funded_at', { withTimezone: true }),
+    walletStatus: text('wallet_status'),
+    lwOnboardingStatus: text('lw_onboarding_status'),
+    lwOnboardingId: text('lw_onboarding_id'),
+    lemonwayAccountId: text('lemonway_account_id'),
+    kycValidatedAt: timestamp('kyc_validated_at', { withTimezone: true }),
+    // Dates côté SAH (création / dernière modif du compte)
+    sahCreatedAt: timestamp('sah_created_at', { withTimezone: true }),
+    sahUpdatedAt: timestamp('sah_updated_at', { withTimezone: true }),
+    profileSegment: profileSegmentEnum('profile_segment'),
+    totalInvested: numeric('total_invested', { precision: 12, scale: 2 }).default('0'),
+    projectsCount: integer('projects_count').default(0),
+    firstSubscriptionAt: timestamp('first_subscription_at', { withTimezone: true }),
+    lastSubscriptionAt: timestamp('last_subscription_at', { withTimezone: true }),
+    // Statut SAH : 2 booléens, pas de KYC détaillé
+    registrationComplete: boolean('registration_complete').notNull().default(false),
+    onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+    // Dates de PROGRESSION détectées par THE PILOT au moment où le booléen bascule false→true
+    // (SAH ne fournit pas ces dates). Write-once, jamais écrasées par le sync. Servent à
+    // attribuer la finalisation au closer qui a appelé avant (fenêtre 30 j).
+    kycCompletedAt: timestamp('kyc_completed_at', { withTimezone: true }),
+    registrationCompletedAt: timestamp('registration_completed_at', { withTimezone: true }),
+    acquisitionSource: acquisitionSourceEnum('acquisition_source'),
+    acquisitionCampaignId: text('acquisition_campaign_id'),
+    // Parrainage BREACH multi-niveaux — reconstruit depuis SAH (users.invited_by_id).
+    parentSahId: text('parent_sah_id'), // sah_id du parrain (la personne qui a invité celle-ci)
+    parrainName: text('parrain_name'), // nom du parrain direct (affichage fiche)
+    breachLevel: integer('breach_level'), // 0 = BREACH direct, 1 = N-1, 2 = N-2… ; null = hors réseau BREACH
+    score: integer('score'),
+    scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
+    scoreReasoning: text('score_reasoning'),
+    assignedCloserId: uuid('assigned_closer_id').references(() => users.id),
+    // Verrou de travail : un closer "prend" un lead pour éviter le double-appel.
+    // Auto-libéré après un délai (cf. CLAIM_TTL_MIN) ou après l'enregistrement de l'appel.
+    claimedById: uuid('claimed_by_id').references(() => users.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    pipelineStage: pipelineStageEnum('pipeline_stage').notNull().default('new'),
+    pipelineStageUpdatedAt: timestamp('pipeline_stage_updated_at', { withTimezone: true }),
+    /**
+     * File d'appels d'où venait la personne quand elle est entrée dans le suivi
+     * (« Nouveaux inscrits », « Argent à placer »…). Figée à l'entrée : le score
+     * se recalcule en permanence, donc la file COURANTE d'une fiche suivie depuis
+     * trois semaines ne dit plus rien de la raison pour laquelle on l'a appelée.
+     */
+    pipelineSource: text('pipeline_source'),
+    /** Entrée dans le tableau de suivi — mesure la durée réelle du parcours. */
+    pipelineEnteredAt: timestamp('pipeline_entered_at', { withTimezone: true }),
+    /**
+     * Alerte « nouveau lead » envoyée aux closers. Write-once : c'est ce qui
+     * garantit qu'une inscription ne déclenche qu'UNE notification, même si le
+     * détecteur repasse toutes les 2 minutes sur la même personne.
+     */
+    newLeadAlertedAt: timestamp('new_lead_alerted_at', { withTimezone: true }),
+    communicationConsent: boolean('communication_consent').notNull().default(false),
+    lastEmailOpenedAt: timestamp('last_email_opened_at', { withTimezone: true }),
+    lastPageVisitAt: timestamp('last_page_visit_at', { withTimezone: true }),
+    internalNote: text('internal_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    // Index des chemins chauds : rapprochement par e-mail (RDV, webinaires),
+    // fenêtres d'inscription (ads, cohortes), files par closer.
+    index('investors_email_lower_idx').on(sql`lower(${t.email})`),
+    index('investors_sah_created_idx').on(t.sahCreatedAt),
+    index('investors_assigned_closer_idx').on(t.assignedCloserId),
+    index('investors_pipeline_stage_idx').on(t.pipelineStage),
+  ],
+);
 
 /* ============================================================
    AFFILIATE_NETWORK — appartenance réseau (multi-niveaux) pour l'ISOLATION des
@@ -300,67 +312,91 @@ export const projects = pgTable('projects', {
 /* ============================================================
    SUBSCRIPTIONS — souscriptions investisseur → projet
    ============================================================ */
-export const subscriptions = pgTable('subscriptions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sahId: text('sah_id').notNull().unique(),
-  investorId: uuid('investor_id')
-    .notNull()
-    .references(() => investors.id),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id),
-  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
-  sharesCount: integer('shares_count'),
-  signedAt: timestamp('signed_at', { withTimezone: true }),
-  paidAt: timestamp('paid_at', { withTimezone: true }),
-  canceledAt: timestamp('canceled_at', { withTimezone: true }),
-  status: subscriptionStatusEnum('status').notNull().default('signed'),
-  expectedRepaymentAt: timestamp('expected_repayment_at', { withTimezone: true }),
-  repaidAt: timestamp('repaid_at', { withTimezone: true }),
-  repaidPrincipal: numeric('repaid_principal', { precision: 10, scale: 2 }),
-  repaidYield: numeric('repaid_yield', { precision: 10, scale: 2 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sahId: text('sah_id').notNull().unique(),
+    investorId: uuid('investor_id')
+      .notNull()
+      .references(() => investors.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+    sharesCount: integer('shares_count'),
+    signedAt: timestamp('signed_at', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    status: subscriptionStatusEnum('status').notNull().default('signed'),
+    expectedRepaymentAt: timestamp('expected_repayment_at', { withTimezone: true }),
+    repaidAt: timestamp('repaid_at', { withTimezone: true }),
+    repaidPrincipal: numeric('repaid_principal', { precision: 10, scale: 2 }),
+    repaidYield: numeric('repaid_yield', { precision: 10, scale: 2 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Jointe partout sur investor_id (fiches, attribution, classement) et
+    // filtrée par date de signature (fenêtres ads / portefeuille).
+    index('subscriptions_investor_idx').on(t.investorId),
+    index('subscriptions_signed_at_idx').on(t.signedAt),
+  ],
+);
 
 /* ============================================================
    INTERACTIONS — chaque événement tracké (cœur de l'attribution)
    ============================================================ */
-export const interactions = pgTable('interactions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  /**
-   * Nullable depuis l'ouverture des RDV aux prospects : quelqu'un peut prendre
-   * rendez-vous sans avoir de compte SAH. Exactement UN de `investorId` /
-   * `rdvContactId` est renseigné (contrainte en base).
-   */
-  investorId: uuid('investor_id').references(() => investors.id),
-  rdvContactId: uuid('rdv_contact_id'),
-  type: interactionTypeEnum('type').notNull(),
-  outcome: callOutcomeEnum('outcome'), // résultat d'appel (null pour les autres types)
-  note: text('note'), // notes libres du closer (résumé d'appel)
-  metadata: jsonb('metadata'),
-  valueNumeric: numeric('value_numeric', { precision: 10, scale: 2 }),
-  projectRef: uuid('project_ref').references(() => projects.id),
-  userId: uuid('user_id').references(() => users.id), // qui a déclenché (null si auto)
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const interactions = pgTable(
+  'interactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * Nullable depuis l'ouverture des RDV aux prospects : quelqu'un peut prendre
+     * rendez-vous sans avoir de compte SAH. Exactement UN de `investorId` /
+     * `rdvContactId` est renseigné (contrainte en base).
+     */
+    investorId: uuid('investor_id').references(() => investors.id),
+    rdvContactId: uuid('rdv_contact_id'),
+    type: interactionTypeEnum('type').notNull(),
+    outcome: callOutcomeEnum('outcome'), // résultat d'appel (null pour les autres types)
+    note: text('note'), // notes libres du closer (résumé d'appel)
+    metadata: jsonb('metadata'),
+    valueNumeric: numeric('value_numeric', { precision: 10, scale: 2 }),
+    projectRef: uuid('project_ref').references(() => projects.id),
+    userId: uuid('user_id').references(() => users.id), // qui a déclenché (null si auto)
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Timeline d'une fiche : « les N dernières actions de cette personne ».
+    index('interactions_investor_created_idx').on(t.investorId, t.createdAt),
+  ],
+);
 
 /* ============================================================
    CLOSER TASKS — rappels & tâches du closer (callbacks programmés)
    ============================================================ */
-export const closerTasks = pgTable('closer_tasks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  /** Nullable : une action peut porter sur un prospect RDV pas encore dans SAH. */
-  investorId: uuid('investor_id').references(() => investors.id),
-  rdvContactId: uuid('rdv_contact_id'),
-  closerId: uuid('closer_id').references(() => users.id), // à qui c'est assigné
-  type: text('type').notNull().default('callback'), // callback | todo
-  dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
-  note: text('note'),
-  status: closerTaskStatusEnum('status').notNull().default('pending'),
-  createdBy: uuid('created_by').references(() => users.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  completedAt: timestamp('completed_at', { withTimezone: true }),
-});
+export const closerTasks = pgTable(
+  'closer_tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Nullable : une action peut porter sur un prospect RDV pas encore dans SAH. */
+    investorId: uuid('investor_id').references(() => investors.id),
+    rdvContactId: uuid('rdv_contact_id'),
+    closerId: uuid('closer_id').references(() => users.id), // à qui c'est assigné
+    type: text('type').notNull().default('callback'), // callback | todo
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    note: text('note'),
+    status: closerTaskStatusEnum('status').notNull().default('pending'),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    // Rappels d'un closer (cockpit « Aujourd'hui », page RDV) et d'une fiche.
+    index('closer_tasks_closer_status_idx').on(t.closerId, t.status, t.dueAt),
+    index('closer_tasks_investor_idx').on(t.investorId),
+  ],
+);
 
 /* ============================================================
    INVESTOR ASSETS — emails & scripts générés par l'IA, sauvegardés par personne.
@@ -388,19 +424,24 @@ export const investorAssets = pgTable('investor_assets', {
 /* ============================================================
    AUDIT LOG — append-only, toute action sensible
    ============================================================ */
-export const auditLog = pgTable('audit_log', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id),
-  userEmail: text('user_email'),
-  userRole: text('user_role'),
-  action: text('action').notNull(),
-  resourceType: text('resource_type').notNull(),
-  resourceId: text('resource_id'),
-  metadata: jsonb('metadata'),
-  ipAddress: inet('ip_address'),
-  userAgent: text('user_agent'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id),
+    userEmail: text('user_email'),
+    userRole: text('user_role'),
+    action: text('action').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    metadata: jsonb('metadata'),
+    ipAddress: inet('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Le journal ne se lit que du plus récent au plus ancien.
+  (t) => [index('audit_log_created_idx').on(t.createdAt)],
+);
 
 /* ============================================================
    LLM CALLS — log de chaque appel IA (coût, audit, debug)

@@ -2,6 +2,7 @@ import 'server-only';
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import type { AuthenticatedUser } from '@/lib/auth';
+import { bucketTime, cached } from '@/lib/cache/ttl';
 import { CLOSING_STAGE_LABELS, isClosingStage } from '@/lib/closing/pipeline';
 import { db } from '@/lib/db';
 import { ensureUserRecord } from '@/lib/db/queries/users';
@@ -102,21 +103,30 @@ async function listEvents(
   if (opts.minStart) params.set('min_start_time', opts.minStart);
   if (opts.maxStart) params.set('max_start_time', opts.maxStart);
 
-  const res = await fetch(`${CALENDLY_API}/scheduled_events?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    throw new CalendlyError(`Calendly a répondu ${res.status} ${res.statusText}`, res.status);
-  }
-  const data: unknown = await res.json();
-  const collection = isRecord(data) && Array.isArray(data.collection) ? data.collection : [];
-  return collection.filter(isRecord).map((e) => ({
-    uri: str(e.uri),
-    name: str(e.name),
-    status: str(e.status),
-    startTime: str(e.start_time),
-  }));
+  // La liste des RDV d'un agenda change rarement dans la minute : 2 min de
+  // mémoire, clé = agenda + fenêtre (arrondie en amont) — LiveSync peut
+  // rafraîchir la page sans refrapper Calendly à chaque fois.
+  return cached(
+    `calendly:events:${userUri}:${params.toString()}`,
+    CALENDLY_EVENTS_CACHE_MS,
+    async () => {
+      const res = await fetch(`${CALENDLY_API}/scheduled_events?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        throw new CalendlyError(`Calendly a répondu ${res.status} ${res.statusText}`, res.status);
+      }
+      const data: unknown = await res.json();
+      const collection = isRecord(data) && Array.isArray(data.collection) ? data.collection : [];
+      return collection.filter(isRecord).map((e) => ({
+        uri: str(e.uri),
+        name: str(e.name),
+        status: str(e.status),
+        startTime: str(e.start_time),
+      }));
+    },
+  );
 }
 
 /** Détermine le statut métier d'un RDV à partir de l'event + son invité principal. */
@@ -336,6 +346,10 @@ async function getActivity(ids: string[]): Promise<Map<string, InvestorActivity>
 const UPCOMING_CAP = 15;
 const PAST_CAP = 25;
 const PAST_WINDOW_DAYS = 45;
+/** Arrondi des bornes de fenêtre Calendly, pour des clés de cache stables. */
+const WINDOW_BUCKET_MS = 5 * 60_000;
+/** Durée de vie du cache de la liste des RDV. */
+const CALENDLY_EVENTS_CACHE_MS = 2 * 60_000;
 
 export async function getRdvBoard(accessToken?: string): Promise<RdvBoardResult> {
   // Sans jeton fourni ET sans token global de transition : rien à afficher.
@@ -350,8 +364,12 @@ export async function getRdvBoard(accessToken?: string): Promise<RdvBoardResult>
   const bearer = accessToken ?? process.env.CALENDLY_TOKEN ?? '';
 
   const now = Date.now();
-  const nowIso = new Date(now).toISOString();
-  const pastFromIso = new Date(now - PAST_WINDOW_DAYS * 86_400_000).toISOString();
+  // Bornes de la fenêtre API arrondies à 5 min : sinon `now` change à chaque
+  // seconde et le cache des RDV ne sert jamais. Les statuts (à venir / passé)
+  // restent calculés sur le vrai `now`.
+  const windowEdge = bucketTime(now, WINDOW_BUCKET_MS);
+  const nowIso = new Date(windowEdge).toISOString();
+  const pastFromIso = new Date(windowEdge - PAST_WINDOW_DAYS * 86_400_000).toISOString();
 
   let upcoming: RawEvent[] = [];
   let past: RawEvent[] = [];

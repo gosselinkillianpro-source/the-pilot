@@ -8,6 +8,9 @@
  * Docs : https://developer.calendly.com/api-docs
  */
 
+import { createHash } from 'node:crypto';
+import { cached } from '@/lib/cache/ttl';
+
 const CALENDLY_API = 'https://api.calendly.com';
 
 export class CalendlyError extends Error {
@@ -102,8 +105,23 @@ async function call(path: string, accessToken?: string): Promise<unknown> {
   return res.json();
 }
 
-/** Identité du compte Calendly rattaché au jeton fourni. */
-export async function getCurrentUser(accessToken?: string): Promise<CalendlyUser> {
+/** Durée de vie du cache Calendly (invités, identité du compte). */
+const CALENDLY_CACHE_MS = 5 * 60_000;
+
+/** Empreinte courte et non réversible d'un jeton — pour une clé de cache, jamais le jeton lui-même. */
+function tokenFingerprint(accessToken?: string): string {
+  const token = accessToken ?? process.env.CALENDLY_TOKEN ?? '';
+  return createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
+
+/** Identité du compte Calendly rattaché au jeton fourni (cachée : elle ne change pas). */
+export function getCurrentUser(accessToken?: string): Promise<CalendlyUser> {
+  return cached(`calendly:me:${tokenFingerprint(accessToken)}`, CALENDLY_CACHE_MS, () =>
+    getCurrentUserUncached(accessToken),
+  );
+}
+
+async function getCurrentUserUncached(accessToken?: string): Promise<CalendlyUser> {
   const data = await call('/users/me', accessToken);
   const r = isRecord(data) && isRecord(data.resource) ? data.resource : {};
   return {
@@ -141,13 +159,24 @@ export async function getUpcomingEvents(
 }
 
 /** Invités d'un RDV (prospect : nom + email). */
-export async function getEventInvitees(
+export function getEventInvitees(
   eventUri: string,
   accessToken?: string,
 ): Promise<CalendlyInvitee[]> {
   // eventUri = https://api.calendly.com/scheduled_events/{uuid}
   const uuid = eventUri.split('/').pop() ?? '';
-  if (!uuid) return [];
+  if (!uuid) return Promise.resolve([]);
+  // Les invités d'un RDV ne changent qu'à une reprogrammation : 5 min de
+  // mémoire évitent ~40 appels Calendly à chaque affichage de l'agenda.
+  return cached(`calendly:invitees:${uuid}`, CALENDLY_CACHE_MS, () =>
+    getEventInviteesUncached(uuid, accessToken),
+  );
+}
+
+async function getEventInviteesUncached(
+  uuid: string,
+  accessToken?: string,
+): Promise<CalendlyInvitee[]> {
   const data = await call(`/scheduled_events/${uuid}/invitees?count=10`, accessToken);
   const collection = isRecord(data) && Array.isArray(data.collection) ? data.collection : [];
   return collection.filter(isRecord).map((i) => ({
