@@ -7,9 +7,3 @@ allowBuilds:
   protobufjs: true
   sharp: true
   unrs-resolver: true
-
-# Applications du monorepo. La racine reste THE PILOT (Seven At Home) ;
-# apps/lead est THE PILOT LEAD (Breach / MonExpertPatrimoine), logiciel
-# indépendant : propre process, propre URL, propres secrets, propre base.
-packages:
-  - 'apps/*'
