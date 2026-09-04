@@ -69,7 +69,7 @@ function toDate(value: unknown): Date | null {
  * garde-fou, un client de longue date finirait « injoignable » à cause de trois
  * appels manqués étalés sur un an.
  */
-const MISSED_ATTEMPTS = sql`
+export const MISSED_ATTEMPTS = sql`
   (select count(*)::int from interactions ix
     where ix.investor_id = i.id
       and ix.type in ('call_outbound', 'call_inbound')

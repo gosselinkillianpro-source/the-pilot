@@ -119,8 +119,9 @@ export default async function PerformancePage({
             >
               ⚠️ Échantillon faible ({nb(callsCount)} appel{callsCount > 1 ? 's' : ''} sur la
               période) : ce ROI n'est pas encore représentatif. Il se fiabilise à mesure que les
-              closers enregistrent leurs appels (l'attribution ne compte que les appels passés dans
-              l'outil, suivis d'une souscription sous 30 jours).
+              closers enregistrent leurs appels (une souscription n'est créditée qu'au closer de
+              la personne, après une action tracée dans l'outil : 90 jours pour la première,
+              30 jours pour les suivantes).
             </div>
           )}
         </div>

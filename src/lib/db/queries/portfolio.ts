@@ -1,19 +1,19 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { ATTRIBUTION_WINDOW_DAYS } from '@/lib/closing/attribution';
 import { isClosingStage } from '@/lib/closing/pipeline';
 import type { CreditedSub, PortfolioLead } from '@/lib/closing/portfolio';
 import { db } from '@/lib/db';
+import { creditSubscriptionRows, loadOwnerActions } from '@/lib/db/queries/credit-data';
 
 /**
  * Requêtes du portefeuille closer.
  *
- * `listCreditedSubscriptions` : les souscriptions CRÉDITÉES au closer par la
- * règle d'attribution de l'app — l'auteur du dernier appel dans les 30 jours
- * avant la signature (attribution.ts, « l'appel prime »). Sur TOUTE la base,
- * comme le classement : pas de condition d'attitrage ni d'entrée dans le
- * tableau de suivi, ces mécanismes étant bien plus récents que l'historique
- * de vente.
+ * `listOwnerSubscriptions` : TOUTES les souscriptions des personnes dont ce
+ * closer est propriétaire, passées au moteur de crédit (`credit.ts`, règle du
+ * 4 sept. 2026) — chacune dit si elle lui est créditée et pourquoi. La vue
+ * « Mes résultats » montre les deux : un chiffre sans explication ne vaut rien.
+ *
+ * `listCreditedSubscriptions` : seulement les créditées (le palmarès).
  *
  * `listPortfolioLeads` : ses leads attitrés — la to-do des sections KYC /
  * inscription / en cours.
@@ -26,55 +26,89 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** L'auteur du dernier appel dans la fenêtre des 30 jours avant la signature. */
-const CREDITED_CALLER = sql`(
-  select ix.user_id from interactions ix
-  where ix.investor_id = s.investor_id
-    and ix.type in ('call_outbound', 'call_inbound')
-    and ix.created_at <= s.signed_at
-    and ix.created_at >= s.signed_at - make_interval(days => ${ATTRIBUTION_WINDOW_DAYS})
-  order by ix.created_at desc limit 1
-)`;
+export type OwnerSubscription = CreditedSub & {
+  subId: string;
+  credited: boolean;
+  projectName: string | null;
+};
 
-export async function listCreditedSubscriptions(ownerId: string): Promise<CreditedSub[]> {
+export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubscription[]> {
   // `signed_at` non nul, comme le classement : une souscription jamais signée
   // n'est créditée à personne.
   const rows = await db.execute(sql`
     select
+      s.id::text as sub_id,
       s.investor_id::text as investor_id,
       coalesce(nullif(trim(i.full_name), ''), i.email) as full_name,
       i.email,
       i.phone,
+      p.name as project_name,
       s.amount::float as amount,
       s.signed_at,
-      (i.assigned_closer_id = ${ownerId}) as is_owned,
       (select coalesce(sum(s2.amount), 0) from subscriptions s2
         where s2.investor_id = i.id and s2.status <> 'cancelled')::float as total_invested
     from subscriptions s
     join investors i on i.id = s.investor_id
+    left join projects p on p.id = s.project_id
     where s.status <> 'cancelled'
       and s.signed_at is not null
       and i.deleted_at is null
-      and ${CREDITED_CALLER} = ${ownerId}
+      and i.assigned_closer_id = ${ownerId}
     order by s.signed_at desc
   `);
 
-  const subs: CreditedSub[] = [];
-  for (const r of rows as unknown as Record<string, unknown>[]) {
+  type Raw = {
+    sub_id: string;
+    investor_id: string;
+    full_name: string;
+    email: string;
+    phone: string | null;
+    project_name: string | null;
+    amount: number | string;
+    signed_at: string | Date;
+    total_invested: number | string;
+  };
+  const raws = (rows as unknown as Raw[]).flatMap((r) => {
     const signedAt = toDate(r.signed_at);
-    if (!signedAt) continue;
-    subs.push({
-      investorId: String(r.investor_id),
+    return signedAt ? [{ ...r, signedAt }] : [];
+  });
+
+  const investorIds = [...new Set(raws.map((r) => r.investor_id))];
+  const owners = await loadOwnerActions(investorIds);
+  const credits = creditSubscriptionRows(
+    raws.map((r) => ({
+      id: r.sub_id,
+      investorId: r.investor_id,
+      signedAt: r.signedAt,
+      amountEur: Number(r.amount) || 0,
+    })),
+    owners,
+  );
+
+  return raws.map((r) => {
+    const credit = credits.get(r.sub_id);
+    return {
+      subId: r.sub_id,
+      investorId: r.investor_id,
       fullName: String(r.full_name),
       email: String(r.email),
       phone: r.phone ? String(r.phone) : null,
+      projectName: r.project_name,
       amountEur: Number(r.amount) || 0,
-      signedAt,
-      isOwned: r.is_owned === true,
+      signedAt: r.signedAt,
+      isOwned: true,
       totalInvestedEur: Number(r.total_invested) || 0,
-    });
-  }
-  return subs;
+      credited: credit?.credited ?? false,
+      kind: credit?.kind ?? null,
+      explanation: credit?.explanation ?? 'Personne sans closer attitré.',
+    };
+  });
+}
+
+/** Les souscriptions créditées au closer — le chiffre du classement, nominativement. */
+export async function listCreditedSubscriptions(ownerId: string): Promise<CreditedSub[]> {
+  const all = await listOwnerSubscriptions(ownerId);
+  return all.filter((s) => s.credited);
 }
 
 export async function listPortfolioLeads(ownerId: string): Promise<PortfolioLead[]> {

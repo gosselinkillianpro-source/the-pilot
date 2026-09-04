@@ -12,12 +12,11 @@ import type { ClosingStage } from '@/lib/closing/pipeline';
  *
  * Deux sources, deux rôles :
  *  - « Ont investi » + le « collecté » viennent des souscriptions CRÉDITÉES au
- *    closer par la règle d'attribution de l'app (dernier appel dans les
- *    30 jours avant la signature — attribution.ts). C'est la décomposition
- *    nominale du chiffre du classement, sur TOUTE la base : pas de condition
- *    d'attitrage ni d'entrée dans le tableau de suivi, ces mécanismes étant
- *    bien plus récents que l'historique de vente (sinon un closer voyait
- *    1 600 € là où le classement lui comptait 95 000 €).
+ *    closer par la règle du 4 septembre 2026 (`credit.ts`) : il est le
+ *    propriétaire de la personne, la première souscription lui revient s'il a
+ *    eu une action dans les 90 jours avant, les suivantes s'il a eu une action
+ *    dans les 30 jours avant. C'est la décomposition nominale du chiffre du
+ *    classement.
  *  - Les autres sections (KYC, inscription, en cours) décrivent son
  *    portefeuille ATTITRÉ : sa to-do, pas son palmarès.
  *
@@ -25,7 +24,7 @@ import type { ClosingStage } from '@/lib/closing/pipeline';
  * font que l'alimenter.
  */
 
-/** Une souscription créditée au closer (règle des 30 jours, « l'appel prime »). */
+/** Une souscription créditée au closer (règle du 4 sept. 2026, `credit.ts`). */
 export type CreditedSub = {
   investorId: string;
   fullName: string;
@@ -37,6 +36,10 @@ export type CreditedSub = {
   isOwned: boolean;
   /** Tout l'argent du client, y compris ce qui est crédité à d'autres. */
   totalInvestedEur: number;
+  /** Première souscription après le contact, ou réinvestissement. */
+  kind?: 'first' | 'follow_up' | null;
+  /** Pourquoi elle est créditée (ou pas) — montré tel quel au closer. */
+  explanation?: string;
 };
 
 /** Un lead attitré au closer — la matière des sections KYC / inscrit / en cours. */

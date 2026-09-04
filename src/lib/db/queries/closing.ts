@@ -1,8 +1,11 @@
 import 'server-only';
 import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
-import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
-import { appendEmailContacts } from '@/lib/db/queries/attribution-contacts';
+import {
+  creditedCloserForEvent,
+  creditSubscriptionRows,
+  loadOwnerActions,
+} from '@/lib/db/queries/credit-data';
 import { closerTasks, interactions, investors, subscriptions, users } from '@/lib/db/schema';
 import { type Delta, delta, type ResolvedPeriod } from '@/lib/period';
 
@@ -309,13 +312,9 @@ export type PerformanceReport = {
   deltas: { calls: Delta; collecte: Delta };
 };
 
-const EMAIL_KIND: Record<string, ContactKind> = {
-  email_clicked: 'click',
-  email_opened: 'open',
-};
-
 /**
- * Performance par closer + attribution des souscriptions (appel prime / last-touch / 30j).
+ * Performance par closer + souscriptions créditées (règle du 4 sept. 2026 :
+ * au propriétaire, 1re souscription sous 90 j, suivantes sous 30 j).
  * Se remplit au fur et à mesure que les closers enregistrent des appels.
  */
 export async function getCloserPerformance(period: ResolvedPeriod): Promise<PerformanceReport> {
@@ -349,72 +348,61 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
     .groupBy(investors.assignedCloserId);
   const assignByUser = new Map(assignAgg.map((r) => [r.closerId, Number(r.n)]));
 
-  // Données d'attribution : souscriptions + contacts (appels + events email)
-  const subs = await db
-    .select({
-      investorId: subscriptions.investorId,
-      amount: subscriptions.amount,
-      signedAt: subscriptions.signedAt,
-    })
-    .from(subscriptions)
-    .where(
-      sql`${subscriptions.status} <> 'cancelled' and ${subscriptions.signedAt} >= ${period.fromISO}::timestamptz and ${subscriptions.signedAt} < ${period.toISO}::timestamptz`,
-    );
-
-  const contactsRows = await db
-    .select({
-      investorId: interactions.investorId,
-      type: interactions.type,
-      userId: interactions.userId,
-      at: interactions.createdAt,
-    })
-    .from(interactions)
-    .where(
-      inArray(interactions.type, [
-        'call_outbound',
-        'call_inbound',
-        'email_clicked',
-        'email_opened',
-      ]),
-    );
-
-  const contactsByInvestor = new Map<string, Contact[]>();
-  for (const c of contactsRows) {
-    // Une interaction sur un prospect RDV (pas encore dans SAH) n'a pas
-    // d'investisseur : elle ne compte pas dans l'attribution de performance.
-    if (!c.investorId) continue;
-    const kind: ContactKind = c.type.startsWith('call') ? 'call' : (EMAIL_KIND[c.type] ?? 'open');
-    const list = contactsByInvestor.get(c.investorId) ?? [];
-    list.push({ kind, at: c.at, userId: c.userId });
-    contactsByInvestor.set(c.investorId, list);
-  }
-  // Les ouvertures/clics email (webhook Brevo) — le vrai last-touch.
-  await appendEmailContacts(contactsByInvestor);
+  // Souscriptions créditées par la règle du 4 sept. 2026 (`credit.ts`). Toutes
+  // les souscriptions passent au moteur — la « première » après le contact
+  // dépend de l'historique complet de la personne — puis on garde la période.
+  const [allSubs, owners] = await Promise.all([
+    db
+      .select({
+        id: subscriptions.id,
+        investorId: subscriptions.investorId,
+        amount: subscriptions.amount,
+        signedAt: subscriptions.signedAt,
+      })
+      .from(subscriptions)
+      .where(sql`${subscriptions.status} <> 'cancelled' and ${subscriptions.signedAt} is not null`),
+    loadOwnerActions(),
+  ]);
+  const credits = creditSubscriptionRows(
+    allSubs.flatMap((s) =>
+      s.signedAt
+        ? [
+            {
+              id: s.id,
+              investorId: s.investorId,
+              signedAt: new Date(s.signedAt),
+              amountEur: Number(s.amount) || 0,
+            },
+          ]
+        : [],
+    ),
+    owners,
+  );
 
   const attributedByUser = new Map<string, { subs: number; amount: number }>();
   let unattrCount = 0;
   let unattrAmount = 0;
   let totalAmount = 0;
+  let periodSubCount = 0;
 
-  for (const s of subs) {
-    if (!s.signedAt) continue;
-    const amount = Number(s.amount) || 0;
-    totalAmount += amount;
-    const res = attributeAction(s.signedAt, contactsByInvestor.get(s.investorId) ?? []);
-    if (res.attributed && res.via === 'call' && res.userId) {
-      const cur = attributedByUser.get(res.userId) ?? { subs: 0, amount: 0 };
+  for (const c of credits.values()) {
+    if (c.signedAt < from || c.signedAt >= to) continue;
+    periodSubCount += 1;
+    totalAmount += c.amountEur;
+    if (c.credited && c.closerId) {
+      const cur = attributedByUser.get(c.closerId) ?? { subs: 0, amount: 0 };
       cur.subs += 1;
-      cur.amount += amount;
-      attributedByUser.set(res.userId, cur);
+      cur.amount += c.amountEur;
+      attributedByUser.set(c.closerId, cur);
     } else {
       unattrCount += 1;
-      unattrAmount += amount;
+      unattrAmount += c.amountEur;
     }
   }
 
-  // Attribution des PROGRESSIONS d'inscription de la période (profil complété, KYC débloqué)
-  // au closer qui a appelé avant (même règle : appel prime, fenêtre 30 j). Les dates viennent
-  // de la détection de bascule au sync (kyc_completed_at / registration_completed_at).
+  // Progressions d'inscription de la période (profil complété, KYC débloqué),
+  // créditées au propriétaire s'il a eu une action dans les 90 jours avant. Les
+  // dates viennent de la détection de bascule au sync.
   const progressRows = await db
     .select({
       investorId: investors.id,
@@ -431,16 +419,13 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
   const kycByUser = new Map<string, number>();
   const regByUser = new Map<string, number>();
   for (const p of progressRows) {
-    const contacts = contactsByInvestor.get(p.investorId) ?? [];
     if (p.kycAt) {
-      const res = attributeAction(p.kycAt, contacts);
-      if (res.attributed && res.via === 'call' && res.userId)
-        kycByUser.set(res.userId, (kycByUser.get(res.userId) ?? 0) + 1);
+      const id = creditedCloserForEvent(p.investorId, new Date(p.kycAt), owners);
+      if (id) kycByUser.set(id, (kycByUser.get(id) ?? 0) + 1);
     }
     if (p.regAt) {
-      const res = attributeAction(p.regAt, contacts);
-      if (res.attributed && res.via === 'call' && res.userId)
-        regByUser.set(res.userId, (regByUser.get(res.userId) ?? 0) + 1);
+      const id = creditedCloserForEvent(p.investorId, new Date(p.regAt), owners);
+      if (id) regByUser.set(id, (regByUser.get(id) ?? 0) + 1);
     }
   }
 
@@ -481,7 +466,7 @@ export async function getCloserPerformance(period: ResolvedPeriod): Promise<Perf
   return {
     closers: closerPerf,
     unattributed: { count: unattrCount, amount: unattrAmount },
-    totalSubs: subs.length,
+    totalSubs: periodSubCount,
     totalAmount,
     periodLabel: period.label,
     deltas: {

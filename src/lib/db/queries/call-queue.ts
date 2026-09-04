@@ -2,10 +2,24 @@ import 'server-only';
 import { sql } from 'drizzle-orm';
 import { compareForQueue, type ScoredInvestor, scoreInvestor } from '@/lib/closing/scoring';
 import { db } from '@/lib/db';
+import { MISSED_ATTEMPTS } from '@/lib/db/queries/closing-pipeline';
 
-/** Au-delà de ce délai (minutes), un verrou « en cours » est considéré expiré.
- *  4 h : un lead « pris » reste réservé au closer le temps de sa session d'appels. */
-export const CLAIM_TTL_MIN = 240;
+/**
+ * Au-delà de ce délai (minutes), un verrou « Je prends » est considéré expiré.
+ * 30 min (décision Killian, 4 sept. 2026) : « Je prends » réserve la personne
+ * le temps de l'appeler ; sans résultat enregistré, elle revient au pool.
+ */
+export const CLAIM_TTL_MIN = 30;
+
+export type QueueFollowUp = {
+  /** Appels joints (`reached` / `in_progress`), tout l'historique. */
+  reachedCount: number;
+  /** Appels sans réponse depuis le dernier contact abouti. */
+  missedAttempts: number;
+  callCount: number;
+  /** Prochaine action en attente (la plus proche). */
+  nextTask: { id: string; type: string; dueAt: Date; note: string | null } | null;
+};
 
 export type QueueRow = {
   id: string;
@@ -25,10 +39,14 @@ export type QueueRow = {
   /** Code bonus (apporteur). BREACH = vient des pubs de Killian. */
   bonusCode: string | null;
   isBreach: boolean;
+  /** Apporteur (CGP) tel que SAH le renseigne — sert à écarter les clients de partenaires tiers. */
+  cgpName: string | null;
+  cgpNetwork: string | null;
   /** Note libre du closer (internal_note), tronquée — aperçu directement sur la ligne de file. */
   internalNote: string | null;
   /** Verrou de travail actif (dans le TTL) : qui l'a pris, null si libre. */
   claimedById: string | null;
+  claimedAt: Date | null;
   claimerName: string | null;
   /** Closer attitré (propriété collante) : son correspondant permanent. */
   assignedCloserName: string | null;
@@ -39,6 +57,8 @@ export type QueueRow = {
     note: string | null;
     at: Date | null;
   } | null;
+  /** Renseigné seulement avec l'option `withFollowUp`. */
+  followUp: QueueFollowUp | null;
   scored: ScoredInvestor;
 };
 
@@ -62,6 +82,8 @@ type RawRow = {
   nearest_repayment: string | Date | null;
   first_sub_at: string | Date | null;
   bonus_code: string | null;
+  cgp_name: string | null;
+  cgp_network: string | null;
   claimed_by_id: string | null;
   claimed_at: string | Date | null;
   claimer_name: string | null;
@@ -71,6 +93,13 @@ type RawRow = {
   last_outcome: string | null;
   last_note: string | null;
   last_at: string | Date | null;
+  reached_count?: string | number | null;
+  missed_attempts?: string | number | null;
+  call_count?: string | number | null;
+  next_task_id?: string | null;
+  next_task_type?: string | null;
+  next_task_due_at?: string | Date | null;
+  next_task_note?: string | null;
 };
 
 /** Un code bonus "BREACH" (SEVEN-BREACH, BREACH-VIP…) = lead venant des pubs de Killian. */
@@ -98,6 +127,10 @@ export async function getCallQueue(opts?: {
    * la liste sera vide (on ne montre jamais plus que son réseau).
    */
   ownerSahId?: string;
+  /** Garder les personnes appelées dans les 3 derniers jours (carnet du closer). */
+  includeRecentlyCalled?: boolean;
+  /** Ajouter le suivi par personne (joints, tentatives, prochaine action). */
+  withFollowUp?: boolean;
 }): Promise<QueueRow[]> {
   const now = new Date();
   const closerFilter = opts?.assignedCloserId
@@ -116,10 +149,11 @@ export async function getCallQueue(opts?: {
       : sql``;
   const oneFilter = opts?.investorId ? sql`and i.id = ${opts.investorId}` : sql``;
   // Sort de la file les personnes appelées récemment (≤3 j) → "Appelé" les retire.
-  // Non appliqué à la fiche individuelle (on veut toujours son score).
-  const recentCallFilter = opts?.investorId
-    ? sql``
-    : sql`and not exists (
+  // Non appliqué à la fiche individuelle ni au carnet (on veut toujours son score).
+  const recentCallFilter =
+    opts?.investorId || opts?.includeRecentlyCalled
+      ? sql``
+      : sql`and not exists (
         select 1 from interactions ix
         where ix.investor_id = i.id
           and ix.type in ('call_outbound', 'call_inbound')
@@ -136,6 +170,35 @@ export async function getCallQueue(opts?: {
     ? sql`and i.pipeline_stage not in ('closed_won', 'closed_lost')`
     : sql``;
 
+  // Suivi par personne : optionnel, parce que trois sous-requêtes de plus sur
+  // toute la base pèsent — le pool n'en a pas besoin, le carnet oui.
+  const withFollowUp = opts?.withFollowUp === true;
+  const followUpCols = withFollowUp
+    ? sql`,
+      (select count(*)::int from interactions ix
+        where ix.investor_id = i.id
+          and ix.type in ('call_outbound', 'call_inbound')
+          and ix.outcome in ('reached', 'in_progress')) as reached_count,
+      (select count(*)::int from interactions ix
+        where ix.investor_id = i.id
+          and ix.type in ('call_outbound', 'call_inbound')) as call_count,
+      ${MISSED_ATTEMPTS} as missed_attempts,
+      nt.id::text as next_task_id,
+      nt.type as next_task_type,
+      nt.due_at as next_task_due_at,
+      nt.note as next_task_note`
+    : sql``;
+  const followUpJoin = withFollowUp
+    ? sql`left join lateral (
+        select ct.id, ct.type, ct.due_at, ct.note
+        from closer_tasks ct
+        where ct.investor_id = i.id and ct.status = 'pending'
+        order by ct.due_at asc
+        limit 1
+      ) nt on true`
+    : sql``;
+  const followUpGroup = withFollowUp ? sql`, nt.id, nt.type, nt.due_at, nt.note` : sql``;
+
   const result = await db.execute(sql`
     select
       i.id::text as id,
@@ -150,6 +213,8 @@ export async function getCallQueue(opts?: {
       i.sah_created_at,
       i.breach_level,
       i.bonus_code,
+      i.cgp_name,
+      i.cgp_network,
       i.wallet_balance_cents,
       i.wallet_funded_at,
       left(i.internal_note, 200) as internal_note,
@@ -176,6 +241,7 @@ export async function getCallQueue(opts?: {
       li.outcome as last_outcome,
       left(li.note, 80) as last_note,
       li.created_at as last_at
+      ${followUpCols}
     from investors i
     left join subscriptions s on s.investor_id = i.id
     left join projects p on p.id = s.project_id
@@ -188,6 +254,7 @@ export async function getCallQueue(opts?: {
       order by x.created_at desc
       limit 1
     ) li on true
+    ${followUpJoin}
     where i.deleted_at is null
     ${closerFilter}
     ${networkFilter}
@@ -196,6 +263,7 @@ export async function getCallQueue(opts?: {
     ${sourceFilter}
     ${recentCallFilter}
     group by i.id, cu.full_name, au.full_name, li.type, li.outcome, li.note, li.created_at
+    ${followUpGroup}
   `);
 
   const rows = result as unknown as RawRow[];
@@ -233,6 +301,22 @@ export async function getCallQueue(opts?: {
       walletDaysSitting,
       now,
     });
+    const followUp: QueueFollowUp | null = withFollowUp
+      ? {
+          reachedCount: Number(r.reached_count) || 0,
+          missedAttempts: Number(r.missed_attempts) || 0,
+          callCount: Number(r.call_count) || 0,
+          nextTask:
+            r.next_task_id && r.next_task_due_at
+              ? {
+                  id: r.next_task_id,
+                  type: r.next_task_type ?? 'callback',
+                  dueAt: new Date(r.next_task_due_at),
+                  note: r.next_task_note ?? null,
+                }
+              : null,
+        }
+      : null;
     return {
       id: r.id,
       fullName: r.full_name,
@@ -248,8 +332,11 @@ export async function getCallQueue(opts?: {
       walletBalanceCents,
       bonusCode: r.bonus_code,
       isBreach: r.breach_level != null || isBreachCode(r.bonus_code),
+      cgpName: r.cgp_name,
+      cgpNetwork: r.cgp_network,
       internalNote: r.internal_note?.trim() ? r.internal_note.trim() : null,
       claimedById: claimActive ? r.claimed_by_id : null,
+      claimedAt: claimActive && r.claimed_at ? new Date(r.claimed_at) : null,
       claimerName: claimActive ? r.claimer_name : null,
       assignedCloserName: r.assigned_closer_name,
       lastActivity: r.last_type
@@ -260,6 +347,7 @@ export async function getCallQueue(opts?: {
             at: r.last_at ? new Date(r.last_at) : null,
           }
         : null,
+      followUp,
       scored,
     };
   });

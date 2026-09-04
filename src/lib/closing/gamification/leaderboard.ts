@@ -1,8 +1,11 @@
 import 'server-only';
 import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
-import { appendEmailContacts } from '@/lib/db/queries/attribution-contacts';
+import {
+  creditedCloserForEvent,
+  creditSubscriptionRows,
+  loadOwnerActions,
+} from '@/lib/db/queries/credit-data';
 import {
   closerBadges,
   gamificationEvents,
@@ -17,9 +20,10 @@ import { computeXp, FAST_CALLBACK_MAX_MINUTES, type Level, levelFor, type XpInpu
 
 /**
  * Classement des closers — tout est DÉRIVÉ des données réelles à la demande :
- * appels (`interactions`), souscriptions attribuées (moteur d'attribution
- * existant : appel prime, fenêtre 30 j), progressions d'inscription détectées
- * au sync. Rien de stocké, donc rien qui puisse se désynchroniser du réel.
+ * appels (`interactions`), souscriptions créditées (règle du 4 sept. 2026 :
+ * au propriétaire, première souscription sous 90 j puis action sous 30 j —
+ * `lib/closing/credit.ts`), progressions d'inscription détectées au sync.
+ * Rien de stocké, donc rien qui puisse se désynchroniser du réel.
  *
  * Volume : 4 closers et quelques milliers d'interactions — le calcul en
  * mémoire est très en dessous du seuil où il faudrait pré-agréger.
@@ -99,11 +103,6 @@ function parisDecimalHour(at: Date): number {
   return get('hour') + get('minute') / 60;
 }
 
-const EMAIL_KIND: Record<string, ContactKind> = {
-  email_clicked: 'click',
-  email_opened: 'open',
-};
-
 const EARLY_CALL_MAX_HOUR = 9.5;
 
 type MutableStats = XpInputs & { maxSubscriptionEur: number };
@@ -149,8 +148,8 @@ export async function getLeaderboardForPeriod(
     .where(and(inArray(users.role, ['closer', 'closer_junior']), eq(users.active, true)));
   if (closers.length === 0) return { period, entries: [] };
 
-  const [contactRows, subRows, progressRows, firstCallRows, badgeRows] = await Promise.all([
-    // Tous les contacts utiles : appels + RDV pris (stats) + emails (attribution last-touch).
+  const [contactRows, subRows, progressRows, firstCallRows, badgeRows, owners] = await Promise.all([
+    // L'activité qui fait les stats : appels + RDV pris.
     db
       .select({
         investorId: interactions.investorId,
@@ -160,17 +159,10 @@ export async function getLeaderboardForPeriod(
         at: interactions.createdAt,
       })
       .from(interactions)
-      .where(
-        inArray(interactions.type, [
-          'call_outbound',
-          'call_inbound',
-          'meeting_booked',
-          'email_opened',
-          'email_clicked',
-        ]),
-      ),
+      .where(inArray(interactions.type, ['call_outbound', 'call_inbound', 'meeting_booked'])),
     db
       .select({
+        id: subscriptions.id,
         investorId: subscriptions.investorId,
         amount: subscriptions.amount,
         signedAt: subscriptions.signedAt,
@@ -202,6 +194,8 @@ export async function getLeaderboardForPeriod(
       .select({ closerId: closerBadges.closerId, badge: closerBadges.badge, n: count() })
       .from(closerBadges)
       .groupBy(closerBadges.closerId, closerBadges.badge),
+    // Propriétaire + ses actions par personne : la matière du crédit.
+    loadOwnerActions(),
   ]);
 
   const inPeriod = (at: Date) => at >= period.from && at < period.to;
@@ -217,20 +211,9 @@ export async function getLeaderboardForPeriod(
     earlyCall.set(c.id, false);
   }
 
-  // Contacts par investisseur pour l'attribution (mêmes règles que /performance).
-  const contactsByInvestor = new Map<string, Contact[]>();
-
   for (const row of contactRows) {
     const at = new Date(row.at);
     const isCall = row.type === 'call_outbound' || row.type === 'call_inbound';
-
-    const emailKind = EMAIL_KIND[row.type];
-    if (row.investorId && (isCall || emailKind)) {
-      const kind: ContactKind = isCall ? 'call' : (emailKind ?? 'open');
-      const list = contactsByInvestor.get(row.investorId) ?? [];
-      list.push({ kind, at, userId: row.userId });
-      contactsByInvestor.set(row.investorId, list);
-    }
 
     if (!row.userId) continue;
     const life = lifeStats.get(row.userId);
@@ -271,23 +254,34 @@ export async function getLeaderboardForPeriod(
     }
   }
 
-  // Ouvertures/clics email (webhook Brevo) : le last-touch honnête — un appel
-  // dans la fenêtre prime toujours, donc ça ne retire jamais rien à un closer.
-  await appendEmailContacts(contactsByInvestor);
-
-  // Souscriptions attribuées (appel prime, 30 j) — les € qui classent.
-  for (const s of subRows) {
-    if (!s.signedAt) continue;
-    const res = attributeAction(s.signedAt, contactsByInvestor.get(s.investorId) ?? []);
-    if (!res.attributed || res.via !== 'call' || !res.userId) continue;
-    const life = lifeStats.get(res.userId);
-    if (!life) continue;
-    const amount = Number(s.amount) || 0;
+  // Souscriptions créditées (propriétaire ; 1re sous 90 j, suivantes sous 30 j)
+  // — les € qui classent. Toutes les souscriptions passent au moteur : la
+  // notion de « première » dépend de l'historique complet de la personne.
+  const credits = creditSubscriptionRows(
+    subRows.flatMap((s) =>
+      s.signedAt
+        ? [
+            {
+              id: s.id,
+              investorId: s.investorId,
+              signedAt: new Date(s.signedAt),
+              amountEur: Number(s.amount) || 0,
+            },
+          ]
+        : [],
+    ),
+    owners,
+  );
+  for (const c of credits.values()) {
+    if (!c.credited || !c.closerId) continue;
+    const life = lifeStats.get(c.closerId);
+    if (!life) continue; // propriétaire hors classement (admin)
+    const amount = c.amountEur;
     life.subscriptions += 1;
     life.amountEur += amount;
     life.maxSubscriptionEur = Math.max(life.maxSubscriptionEur, amount);
-    if (inPeriod(new Date(s.signedAt))) {
-      const stats = periodStats.get(res.userId);
+    if (inPeriod(c.signedAt)) {
+      const stats = periodStats.get(c.closerId);
       if (stats) {
         stats.subscriptions += 1;
         stats.amountEur += amount;
@@ -296,21 +290,21 @@ export async function getLeaderboardForPeriod(
     }
   }
 
-  // Progressions d'inscription attribuées (profil complété, KYC finalisé).
+  // Progressions d'inscription créditées (profil complété, KYC finalisé) :
+  // au propriétaire, s'il a eu une action dans les 90 jours avant.
   for (const p of progressRows) {
-    const contacts = contactsByInvestor.get(p.investorId) ?? [];
     for (const [at, field] of [
       [p.regAt, 'registrations'],
       [p.kycAt, 'kycs'],
     ] as const) {
       if (!at) continue;
-      const res = attributeAction(at, contacts);
-      if (!res.attributed || res.via !== 'call' || !res.userId) continue;
-      const life = lifeStats.get(res.userId);
+      const closerId = creditedCloserForEvent(p.investorId, new Date(at), owners);
+      if (!closerId) continue;
+      const life = lifeStats.get(closerId);
       if (!life) continue;
       life[field] += 1;
       if (inPeriod(new Date(at))) {
-        const stats = periodStats.get(res.userId);
+        const stats = periodStats.get(closerId);
         if (stats) stats[field] += 1;
       }
     }

@@ -91,8 +91,9 @@ export default async function PortfolioPage({
   ]);
   const sections = classifyPortfolio(leads, credited, period);
 
-  // Le « collecté » = souscriptions créditées au closer (règle des 30 jours,
-  // toute la base) : le même chiffre que le classement, décomposé nominativement.
+  // Le « collecté » = souscriptions créditées au closer (règle du 4 sept. 2026 :
+  // propriétaire, 1re souscription sous 90 j puis 30 j) : le même chiffre que
+  // le classement, décomposé nominativement.
   const collectedEur = sections.invested.reduce((s, e) => s + e.periodEur, 0);
   const hasAnything =
     leads.length > 0 || sections.invested.length > 0 || sections.investedOutside.length > 0;
@@ -126,7 +127,7 @@ export default async function PortfolioPage({
           </h1>
           <div className="page-desc">
             {isMine
-              ? 'Qui t’a rapporté quoi, et où en sont tes leads. Même règle que le classement : une souscription est créditée au closer du dernier appel dans les 30 jours avant la signature.'
+              ? 'Qui t’a rapporté quoi, et où en sont tes leads. Même règle que le classement : la première souscription d’un client est créditée à son closer (action dans les 90 jours avant), les suivantes seulement avec une action dans les 30 jours avant la signature.'
               : 'Vue superviseur : les résultats nominatifs de ce closer.'}
           </div>
         </div>
