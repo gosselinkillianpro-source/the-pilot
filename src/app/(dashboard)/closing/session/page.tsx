@@ -1,20 +1,15 @@
 import { notFound } from 'next/navigation';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { getCallQueue } from '@/lib/db/queries/call-queue';
+import { getInvestorScored, type QueueRow } from '@/lib/db/queries/call-queue';
+import { getSessionLeads } from '@/lib/db/queries/closer-day';
 import { SessionClient, type SessionLead } from './session-client';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CallSessionPage() {
-  const user = await getAuthenticatedUser();
-  if (!['admin', 'closer', 'closer_junior'].includes(user.role)) notFound();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const queue = await getCallQueue({ excludeWon: true });
-  // À 4 closers en simultané, une session ne doit JAMAIS proposer un lead
-  // qu'un collègue a « pris » : c'est le double-appel assuré. Le verrou expiré
-  // est déjà remis à null par getCallQueue (TTL), donc le filtre est sûr.
-  const available = queue.filter((r) => r.claimedById == null || r.claimedById === user.id);
-  const leads: SessionLead[] = available.slice(0, 60).map((r) => ({
+function toSessionLead(r: QueueRow): SessionLead {
+  return {
     id: r.id,
     fullName: r.fullName,
     email: r.email,
@@ -29,7 +24,36 @@ export default async function CallSessionPage() {
     queueLabel: r.scored.queueLabel,
     callGoal: r.scored.callGoal,
     factors: r.scored.factors,
-  }));
+  };
+}
 
-  return <SessionClient leads={leads} />;
+/**
+ * Le mode appel : une personne à la fois.
+ *
+ * Sans paramètre, l'ordre est celui du poste du jour (réservés, actions dues,
+ * pool avec les pubs d'abord, base sans action). Avec `?lead=<id>`, une seule
+ * personne : c'est le bouton « Résultat » d'Aujourd'hui ou de Mes clients.
+ */
+export default async function CallSessionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lead?: string; from?: string }>;
+}) {
+  const [sp, user] = await Promise.all([searchParams, getAuthenticatedUser()]);
+  if (!['admin', 'closer', 'closer_junior'].includes(user.role)) notFound();
+
+  const exitHref = sp.from?.startsWith('/closing/') ? sp.from : '/closing/aujourdhui';
+
+  let rows: QueueRow[];
+  if (sp.lead && UUID_RE.test(sp.lead)) {
+    const one = await getInvestorScored(sp.lead);
+    rows = one ? [one] : [];
+  } else {
+    rows = await getSessionLeads(user.id);
+  }
+  // Une session ne doit JAMAIS proposer une personne réservée par un collègue :
+  // c'est le double-appel assuré. Le verrou expiré est déjà remis à null.
+  const available = rows.filter((r) => r.claimedById == null || r.claimedById === user.id);
+
+  return <SessionClient leads={available.map(toSessionLead)} exitHref={exitHref} />;
 }

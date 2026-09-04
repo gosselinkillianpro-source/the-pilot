@@ -85,7 +85,7 @@ function money(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} €`;
 }
 
-export function SessionClient({ leads }: { leads: SessionLead[] }) {
+export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitHref: string }) {
   const { toast, runWithActivity } = useToast();
   // La liste est FIGÉE au lancement : le temps réel (LiveSync) re-rend la page
   // pendant la session, et une liste qui se réordonne sous les pieds du closer
@@ -239,11 +239,11 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
             {done} appel(s) enregistré(s) sur {sessionLeads.length} lead(s).
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Link href="/closing/queue" className="btn btn-secondary">
-              Retour à la file
+            <Link href={exitHref} className="btn btn-primary">
+              Retour
             </Link>
-            <Link href="/closing/suivi" className="btn btn-primary">
-              Voir le suivi
+            <Link href="/closing/clients" className="btn btn-secondary">
+              Mes clients
             </Link>
           </div>
         </div>
@@ -268,7 +268,7 @@ export function SessionClient({ leads }: { leads: SessionLead[] }) {
           {sessionLeads.length}
           {done > 0 ? ` · ${done} enregistré(s)` : ''}
         </div>
-        <Link href="/closing/queue" className="btn btn-ghost btn-sm">
+        <Link href={exitHref} className="btn btn-ghost btn-sm">
           <X size={13} />
           Quitter
         </Link>

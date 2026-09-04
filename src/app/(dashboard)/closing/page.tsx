@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-// Le menu "Closing" ouvre directement la file d'appels (qui appeler, dans l'ordre).
+// Le menu « Closing » ouvre le poste du jour : où j'en suis, ce que je fais, le pool.
 export default function ClosingIndexPage() {
-  redirect('/closing/queue');
+  redirect('/closing/aujourdhui');
 }

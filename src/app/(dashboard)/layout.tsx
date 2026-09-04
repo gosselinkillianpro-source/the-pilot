@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -13,7 +13,21 @@ import { isAuthDisabled } from '@/lib/auth/dev-bypass';
 import { cached } from '@/lib/cache/ttl';
 import { db } from '@/lib/db';
 import { touchLastSeen } from '@/lib/db/queries/users';
-import { investors } from '@/lib/db/schema';
+import { calendlyConnections, investors } from '@/lib/db/schema';
+
+/** Un closer ne voit « Rendez-vous » que s'il a relié son propre agenda Calendly. */
+async function hasCalendlyConnection(userId: string): Promise<boolean> {
+  try {
+    const rows = await db
+      .select({ userId: calendlyConnections.userId })
+      .from(calendlyConnections)
+      .where(and(eq(calendlyConnections.userId, userId), isNull(calendlyConnections.revokedAt)))
+      .limit(1);
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 function deriveDisplay(email: string): { name: string; initials: string } {
   const local = email.split('@')[0] ?? 'utilisateur';
@@ -63,6 +77,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   await touchLastSeen(user.id); // « vu à l'instant » (présence du menu Équipe) — throttlé + best-effort
   const { name, initials } = deriveDisplay(user.email);
   const lastSync = await getLastSyncAt();
+  const isCloser = user.role === 'closer' || user.role === 'closer_junior';
+  const hasCalendly = isCloser ? await hasCalendlyConnection(user.id) : false;
   const freshness = formatAgo(lastSync);
   const freshOk = lastSync ? Date.now() - lastSync.getTime() < 2 * 3600 * 1000 : false;
   return (
@@ -80,7 +96,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             />
           </Link>
 
-          <NavContent role={user.role} />
+          <NavContent role={user.role} hasCalendly={hasCalendly} />
 
           <UserMenu name={name} role={user.role} initials={initials} />
         </aside>
@@ -103,7 +119,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
           )}
           <div className="view-topbar">
-            <MobileNav role={user.role} name={name} initials={initials} />
+            <MobileNav role={user.role} name={name} initials={initials} hasCalendly={hasCalendly} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
               {freshness && (
                 <div
