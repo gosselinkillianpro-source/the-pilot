@@ -2,28 +2,30 @@
 
 import {
   CalendarClock,
+  KanbanSquare,
   ListChecks,
   Receipt,
   Trophy,
   UserSquare2,
   Users,
-  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import type { ClosingTab, ClosingTabIcon } from './closing-tabs';
 
-const TABS: { href: string; label: string; icon: ReactNode }[] = [
-  { href: '/closing/queue', label: "File d'appels", icon: <ListChecks size={15} /> },
-  { href: '/closing/mes-leads', label: 'Mes leads', icon: <UserSquare2 size={15} /> },
-  { href: '/closing/portefeuille', label: 'Portefeuille', icon: <Wallet size={15} /> },
-  { href: '/closing/today', label: "Aujourd'hui", icon: <CalendarClock size={15} /> },
-  { href: '/closing/classement', label: 'Classement', icon: <Trophy size={15} /> },
-  { href: '/closing/investisseurs', label: 'Investisseurs', icon: <Users size={15} /> },
-  { href: '/closing/souscriptions', label: 'Souscriptions', icon: <Receipt size={15} /> },
-];
+const ICONS: Record<ClosingTabIcon, ReactNode> = {
+  today: <CalendarClock size={15} />,
+  clients: <UserSquare2 size={15} />,
+  results: <Trophy size={15} />,
+  queue: <ListChecks size={15} />,
+  board: <KanbanSquare size={15} />,
+  investors: <Users size={15} />,
+  subscriptions: <Receipt size={15} />,
+  ranking: <Trophy size={15} />,
+};
 
-export function ClosingNav() {
+export function ClosingNav({ tabs }: { tabs: ClosingTab[] }) {
   const pathname = usePathname();
   return (
     <nav
@@ -36,7 +38,7 @@ export function ClosingNav() {
         scrollbarWidth: 'none',
       }}
     >
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const active = pathname === t.href || pathname.startsWith(`${t.href}/`);
         return (
           <Link
@@ -57,7 +59,7 @@ export function ClosingNav() {
               whiteSpace: 'nowrap',
             }}
           >
-            {t.icon}
+            {ICONS[t.icon]}
             {t.label}
           </Link>
         );

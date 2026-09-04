@@ -157,11 +157,17 @@ export default async function InvestorPage({ params, searchParams }: Props) {
   // Retour contextuel : on revient à la liste d'où l'on vient (file d'appels, suivi…).
   // Validation anti-redirection : uniquement une route interne /closing/.
   const backHref = from?.startsWith('/closing/') ? from : '/closing/pipeline';
-  const backLabel = backHref.startsWith('/closing/queue')
-    ? "Retour à la file d'appels"
-    : backHref.startsWith('/closing/suivi')
-      ? 'Retour au suivi'
-      : 'Retour aux investisseurs';
+  const backLabel = backHref.startsWith('/closing/aujourdhui')
+    ? "Retour à Aujourd'hui"
+    : backHref.startsWith('/closing/clients')
+      ? 'Retour à Mes clients'
+      : backHref.startsWith('/closing/resultats')
+        ? 'Retour à Mes résultats'
+        : backHref.startsWith('/closing/queue')
+          ? "Retour à la file d'appels"
+          : backHref.startsWith('/closing/suivi')
+            ? 'Retour au suivi'
+            : 'Retour aux investisseurs';
   const investor = await getInvestorById(id);
   if (!investor) notFound();
 

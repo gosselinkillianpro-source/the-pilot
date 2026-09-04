@@ -16,10 +16,12 @@ export function MobileNav({
   role,
   name,
   initials,
+  hasCalendly = false,
 }: {
   role: string;
   name: string;
   initials: string;
+  hasCalendly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -96,7 +98,7 @@ export function MobileNav({
         tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
-        <NavContent role={role} />
+        <NavContent role={role} hasCalendly={hasCalendly} />
         <div style={{ marginTop: 'auto', paddingTop: 12 }}>
           <UserMenu name={name} role={role} initials={initials} />
         </div>
