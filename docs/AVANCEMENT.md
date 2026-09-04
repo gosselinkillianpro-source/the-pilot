@@ -4,11 +4,9 @@
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
 > Dernière mise à jour : 2026-06-19.
 
-> ## 🟠 THE PILOT LEAD — seconde app du monorepo (2026-09-04)
+> ## ⚪ THE PILOT LEAD — retiré du dépôt (2026-09-04)
 >
-> **`apps/lead`** = The Pilot Lead, l'usine à rendez-vous de Breach (MonExpertPatrimoine → acheteurs ORIAS). Logiciel **indépendant** : propre service Render (`the-pilot-lead` + cron `the-pilot-lead-tick`), propre projet Supabase (schéma `lead`, rôle `app_lead` sans bypass RLS), propre connexion, aucune donnée Seven At Home. Spec : `apps/lead/THE-PILOT-LEAD-SPEC.md`. Mise en service : `apps/lead/docs/MISE-EN-SERVICE.md`.
-> Livré : socle, modules A (réception + adaptateur du diagnostic MEP), B (Telegram, SMS hors service, escalades, chrono), C (fiche d'appel, critères, dispositions, relances), D minimal (RDV posé, confirmations, rappels), routage complet, admin acheteurs/sources/utilisateurs, portail acheteur minimal. Reste : validation acheteur (F), tableau du lundi matérialisé + packs/factures (H), CAPI hors ligne + export (G), Calendly OAuth (D v1), « voir en tant que ».
-> DoD : `pnpm --filter the-pilot-lead lint|typecheck|test:run|build`. Le tsconfig racine exclut `apps/`.
+> Le logiciel de Breach (usine à rendez-vous MonExpertPatrimoine) a été développé un temps dans `apps/lead` (PR #29 et #30), puis **retiré le jour même** : Killian veut deux logiciels complètement séparés, il sera construit dans son propre dépôt. Le code et les secrets provisionnés sont archivés hors dépôt (`~/Documents/the-pilot-lead-archive`). Ce dépôt reste THE PILOT (Seven At Home) seul.
 
 > ## 🟢 SESSION 2026-06-15 → 19 — tout sur `main` + déployé Render
 >

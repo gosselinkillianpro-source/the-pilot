@@ -10,6 +10,7 @@ import { ToastProvider } from '@/components/shared/toast';
 import { UserMenu } from '@/components/shared/user-menu';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { isAuthDisabled } from '@/lib/auth/dev-bypass';
+import { cached } from '@/lib/cache/ttl';
 import { db } from '@/lib/db';
 import { touchLastSeen } from '@/lib/db/queries/users';
 import { investors } from '@/lib/db/schema';
@@ -22,17 +23,23 @@ function deriveDisplay(email: string): { name: string; initials: string } {
   return { name: name || local, initials };
 }
 
-/** Date de dernière écriture de la sync SAH (proxy : max(updated_at) des investisseurs). */
-async function getLastSyncAt(): Promise<Date | null> {
-  try {
-    const rows = await db
-      .select({ last: sql<string | null>`max(${investors.updatedAt})` })
-      .from(investors);
-    const v = rows[0]?.last;
-    return v ? new Date(v) : null;
-  } catch {
-    return null;
-  }
+/**
+ * Date de dernière écriture de la sync SAH (proxy : max(updated_at) des
+ * investisseurs). Lue à CHAQUE page du dashboard — 30 s de mémoire suffisent
+ * (la sync est horaire) et économisent un aller-retour base par navigation.
+ */
+function getLastSyncAt(): Promise<Date | null> {
+  return cached('layout:last-sync', 30_000, async () => {
+    try {
+      const rows = await db
+        .select({ last: sql<string | null>`max(${investors.updatedAt})` })
+        .from(investors);
+      const v = rows[0]?.last;
+      return v ? new Date(v) : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 function formatAgo(d: Date | null): string | null {
