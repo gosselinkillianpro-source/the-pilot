@@ -3,6 +3,7 @@
 import { LogOut, Repeat2 } from 'lucide-react';
 import { useFormStatus } from 'react-dom';
 import { signOut, switchAccount } from '@/app/(auth)/actions';
+import { ThemeToggle } from '@/components/shared/theme-toggle';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
@@ -72,6 +73,7 @@ export function UserMenu({
         <div className="view-sidebar-user-role">{ROLE_LABELS[role] ?? role}</div>
       </div>
       <div style={{ display: 'flex', gap: 6 }}>
+        <ThemeToggle />
         {role === 'admin' ? (
           <form action={switchAccount}>
             <SwitchButton />
