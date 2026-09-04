@@ -246,6 +246,17 @@ export default async function LeaderboardPage({
                       <td style={{ padding: '10px 8px' }}>{e.subscriptions}</td>
                       <td style={{ padding: '10px 8px', fontWeight: 700, color: 'var(--success)' }}>
                         {eur(e.amountEur)}
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: 11,
+                            fontWeight: 500,
+                            color: 'var(--text-4)',
+                          }}
+                          title="Souscriptions de personnes venues des pubs (code BREACH) : le closer a tout fait"
+                        >
+                          dont pubs {eur(e.amountAdsEur)}
+                        </span>
                       </td>
                       <td style={{ padding: '10px 8px' }}>
                         <BadgeChips badges={e.badges} />

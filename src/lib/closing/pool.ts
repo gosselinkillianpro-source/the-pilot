@@ -12,12 +12,15 @@
  *                  investi, relation) — proposé seulement quand il n'y a rien
  *                  de plus urgent.
  *
- * Exclus du pool : les personnes déjà suivies par un closer, et les inscrits
- * amenés par un CGP partenaire tiers (ce n'est pas à Seven de les appeler
- * par-dessus leur conseiller).
+ * Exclus du pool : les personnes déjà suivies par un closer, et les clients
+ * de partenaires (code ou CGP tiers : ce n'est pas à Seven de les appeler
+ * par-dessus leur conseiller). L'origine (pub, parrainage, venu seul,
+ * partenaire) vient de `origin.ts`, la même lecture que la page Ads.
  *
  * Module pur : il ne fait que ranger des lignes déjà scorées.
  */
+
+import type { InvestorOrigin } from './origin';
 
 export type PoolTier = 'breach_new' | 'other_new' | 'hot' | 'base';
 
@@ -49,29 +52,18 @@ export const POOL_TIERS: PoolTierMeta[] = [
 /** Files du scoring qui valent « moment chaud » (buckets 2, 3, 4). */
 const HOT_BUCKETS = new Set([2, 3, 4]);
 
-/**
- * Un CGP « maison » (BREACH, Guillaume Gosselin) marque un lead pub ; un autre
- * nom désigne un partenaire tiers dont on ne démarche pas les clients.
- * Même convention que l'attribution pub (`ads-acquisition.ts`).
- */
-export function isThirdPartyCgp(cgpName: string | null, cgpNetwork: string | null): boolean {
-  const values = [cgpName, cgpNetwork].filter((v): v is string => !!v && v.trim() !== '');
-  if (values.length === 0) return false;
-  return !values.some((v) => /breach|gosselin/i.test(v));
-}
+export { isThirdPartyCgp } from './origin';
 
 export type PoolCandidate = {
   assignedCloserId: string | null;
-  isBreach: boolean;
-  cgpName: string | null;
-  cgpNetwork: string | null;
+  origin: InvestorOrigin;
   scored: { isNewLead: boolean; queueBucket: number };
 };
 
 export type Pool<T extends PoolCandidate> = Record<PoolTier, T[]>;
 
 export function poolTierOf(row: PoolCandidate): PoolTier {
-  if (row.scored.isNewLead) return row.isBreach ? 'breach_new' : 'other_new';
+  if (row.scored.isNewLead) return row.origin === 'ads' ? 'breach_new' : 'other_new';
   if (HOT_BUCKETS.has(row.scored.queueBucket)) return 'hot';
   return 'base';
 }
@@ -84,7 +76,7 @@ export function buildPool<T extends PoolCandidate>(rows: T[]): Pool<T> {
   const pool: Pool<T> = { breach_new: [], other_new: [], hot: [], base: [] };
   for (const row of rows) {
     if (row.assignedCloserId) continue;
-    if (isThirdPartyCgp(row.cgpName, row.cgpNetwork)) continue;
+    if (row.origin === 'partner') continue;
     pool[poolTierOf(row)].push(row);
   }
   return pool;
@@ -120,8 +112,8 @@ const GROUP_LABELS: Record<string, { label: string; hint: string }> = {
     hint: 'À rappeler sous 5 minutes : finaliser l’inscription ou le KYC, cerner le projet, proposer un RDV.',
   },
   other_new: {
-    label: 'Nouveaux inscrits · parrainage, organique',
-    hint: 'À rappeler sous 48 h : même objectif que les pubs.',
+    label: 'Nouveaux inscrits · parrainage, invitation',
+    hint: 'À rappeler sous 48 h : même objectif que les pubs, mais ils arrivent souvent avec une idée.',
   },
   bucket_2: {
     label: 'Viennent d’investir · à remercier',

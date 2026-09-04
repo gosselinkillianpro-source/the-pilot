@@ -16,6 +16,7 @@ function toSessionLead(r: QueueRow): SessionLead {
     phone: r.phone,
     city: r.city,
     isBreach: r.isBreach,
+    origin: r.origin,
     totalInvested: r.totalInvested,
     priority: r.scored.priority,
     temperature: r.scored.temperature,

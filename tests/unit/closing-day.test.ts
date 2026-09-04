@@ -33,9 +33,7 @@ function row(id: string, tier: 'breach' | 'other' | 'hot' | 'base' = 'other') {
   const c: PoolCandidate & { id: string } = {
     id,
     assignedCloserId: null,
-    isBreach: tier === 'breach',
-    cgpName: null,
-    cgpNetwork: null,
+    origin: tier === 'breach' ? 'ads' : 'other',
     scored: {
       isNewLead: tier === 'breach' || tier === 'other',
       queueBucket: tier === 'hot' ? 3 : tier === 'base' ? 6 : 1,

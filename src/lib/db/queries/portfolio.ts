@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { type InvestorOrigin, investorOrigin } from '@/lib/closing/origin';
 import { isClosingStage } from '@/lib/closing/pipeline';
 import type { CreditedSub, PortfolioLead } from '@/lib/closing/portfolio';
 import { db } from '@/lib/db';
@@ -30,6 +31,8 @@ export type OwnerSubscription = CreditedSub & {
   subId: string;
   credited: boolean;
   projectName: string | null;
+  /** Pub, parrainage, venu seul, partenaire — le mérite du closer n'est pas le même. */
+  origin: InvestorOrigin;
 };
 
 export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubscription[]> {
@@ -42,6 +45,11 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
       coalesce(nullif(trim(i.full_name), ''), i.email) as full_name,
       i.email,
       i.phone,
+      i.bonus_code,
+      i.breach_level,
+      i.parent_sah_id,
+      i.cgp_name,
+      i.cgp_network,
       p.name as project_name,
       s.amount::float as amount,
       s.signed_at,
@@ -63,6 +71,11 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
     full_name: string;
     email: string;
     phone: string | null;
+    bonus_code: string | null;
+    breach_level: number | string | null;
+    parent_sah_id: string | null;
+    cgp_name: string | null;
+    cgp_network: string | null;
     project_name: string | null;
     amount: number | string;
     signed_at: string | Date;
@@ -101,6 +114,13 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
       credited: credit?.credited ?? false,
       kind: credit?.kind ?? null,
       explanation: credit?.explanation ?? 'Personne sans closer attitré.',
+      origin: investorOrigin({
+        bonusCode: r.bonus_code,
+        breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+        parentSahId: r.parent_sah_id,
+        cgpName: r.cgp_name,
+        cgpNetwork: r.cgp_network,
+      }),
     };
   });
 }

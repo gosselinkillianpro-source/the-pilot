@@ -19,6 +19,7 @@ import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { DAILY_CALL_GOAL, goalProgressPct } from '@/lib/closing/day';
 import { activityLabel, eur, fmtAgo, fmtDateTime, fmtTime, taskLabel } from '@/lib/closing/format';
+import { originMeta } from '@/lib/closing/origin';
 import { groupPool, type PoolGroup } from '@/lib/closing/pool';
 import { relationshipStateMeta } from '@/lib/closing/relationship-state';
 import type { QueueRow } from '@/lib/db/queries/call-queue';
@@ -566,11 +567,14 @@ function PersonRow({
               {meta.label}
             </span>
           ) : null}
-          {row.isBreach ? (
-            <span className="badge badge-ai" style={{ fontSize: 10 }}>
-              pub
-            </span>
-          ) : null}
+          {(() => {
+            const o = originMeta(row.origin);
+            return (
+              <span className={`badge ${o.badge}`} style={{ fontSize: 10 }} title={o.hint}>
+                {o.label}
+              </span>
+            );
+          })()}
           {row.city ? (
             <span style={{ fontSize: 11, color: 'var(--text-4)' }}>{row.city}</span>
           ) : null}

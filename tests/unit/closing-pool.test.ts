@@ -10,9 +10,7 @@ import {
 function row(overrides: Partial<PoolCandidate> & { id: string }): PoolCandidate & { id: string } {
   return {
     assignedCloserId: null,
-    isBreach: false,
-    cgpName: null,
-    cgpNetwork: null,
+    origin: 'other',
     scored: { isNewLead: false, queueBucket: 7 },
     ...overrides,
   };
@@ -35,7 +33,7 @@ describe('buildPool — l’ordre du 4 septembre', () => {
       row({ id: 'base', scored: { isNewLead: false, queueBucket: 5 } }),
       row({ id: 'hot', scored: { isNewLead: false, queueBucket: 4 } }),
       row({ id: 'new-other', scored: { isNewLead: true, queueBucket: 1 } }),
-      row({ id: 'new-breach', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'new-breach', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }),
     ]);
     expect(pool.breach_new.map((r) => r.id)).toEqual(['new-breach']);
     expect(pool.other_new.map((r) => r.id)).toEqual(['new-other']);
@@ -44,15 +42,15 @@ describe('buildPool — l’ordre du 4 septembre', () => {
     expect(urgentCount(pool)).toBe(3);
   });
 
-  test('les personnes suivies et les clients de CGP tiers ne sont pas dans le pool', () => {
+  test('les personnes suivies et les clients de partenaires ne sont pas dans le pool', () => {
     const pool = buildPool([
       row({
         id: 'owned',
         assignedCloserId: 'yannick',
         scored: { isNewLead: true, queueBucket: 1 },
       }),
-      row({ id: 'cgp', cgpName: 'Cabinet Martin', scored: { isNewLead: true, queueBucket: 1 } }),
-      row({ id: 'free', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'cgp', origin: 'partner', scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'free', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }),
     ]);
     expect(pool.breach_new.map((r) => r.id)).toEqual(['free']);
     expect(pool.other_new).toEqual([]);
@@ -60,8 +58,8 @@ describe('buildPool — l’ordre du 4 septembre', () => {
 
   test('conserve l’ordre d’entrée à l’intérieur d’un niveau', () => {
     const pool = buildPool([
-      row({ id: 'a', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }),
-      row({ id: 'b', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'a', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'b', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }),
     ]);
     expect(pool.breach_new.map((r) => r.id)).toEqual(['a', 'b']);
   });
@@ -74,7 +72,7 @@ describe('groupPool — chaque groupe dit pourquoi on appelle', () => {
       { ...row({ id: 'remb', scored: { isNewLead: false, queueBucket: 4 } }) },
       { ...row({ id: 'merci', scored: { isNewLead: false, queueBucket: 2 } }) },
       { ...row({ id: 'wallet', scored: { isNewLead: false, queueBucket: 3 } }) },
-      { ...row({ id: 'pub', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }) },
+      { ...row({ id: 'pub', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }) },
       { ...row({ id: 'autre', scored: { isNewLead: true, queueBucket: 1 } }) },
       { ...row({ id: 'relation', scored: { isNewLead: false, queueBucket: 9 } }) },
     ];

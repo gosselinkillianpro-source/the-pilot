@@ -4,6 +4,7 @@ import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { activityLabel, eur, fmtAgo, fmtDateTime, taskLabel } from '@/lib/closing/format';
 import { parisDateOf, parisMidnightUTC } from '@/lib/closing/gamification/periods';
+import { type InvestorOrigin, ORIGINS, originMeta } from '@/lib/closing/origin';
 import {
   ALL_MISSIONS,
   type MissionKey,
@@ -19,9 +20,10 @@ import { resolveViewedCloser } from '@/lib/db/queries/viewed-closer';
  * « Mes clients » — le carnet du closer (refonte du 4 sept. 2026).
  *
  * Une seule liste : chaque personne dont il est propriétaire, avec un état
- * DÉDUIT des faits (personne ne range une carte), sa mission du moment, sa
- * prochaine action et son dernier contact. Les filtres remplacent les
- * colonnes des anciens kanbans ; « sans prochaine action » doit rester à zéro.
+ * DÉDUIT des faits (personne ne range une carte), son origine (pub,
+ * parrainage, venu seul, partenaire), sa mission du moment, sa prochaine
+ * action et son dernier contact. Les filtres remplacent les colonnes des
+ * anciens kanbans ; « sans prochaine action » doit rester à zéro.
  */
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +31,7 @@ export const dynamic = 'force-dynamic';
 const BASE = '/closing/clients';
 const NO_ACTION = 'sans-action';
 
-type Params = { closer?: string; etat?: string; mission?: string; q?: string };
+type Params = { closer?: string; etat?: string; mission?: string; origine?: string; q?: string };
 
 function matches(c: ClientRow, q: string): boolean {
   const hay = [c.fullName ?? '', c.email, c.phone ?? '', c.city ?? ''].join(' ').toLowerCase();
@@ -55,6 +57,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const etat = RELATIONSHIP_STATES.find((s) => s.key === sp.etat)?.key ?? null;
   const noAction = sp.etat === NO_ACTION;
   const mission = ALL_MISSIONS.find((m) => m.key === sp.mission)?.key ?? null;
+  const origine = ORIGINS.find((o) => o.key === sp.origine)?.key ?? null;
   const q = (sp.q ?? '').trim().toLowerCase();
 
   const filtered = clients.filter(
@@ -62,11 +65,13 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       (!etat || c.state === etat) &&
       (!noAction || !c.followUp?.nextTask) &&
       (!mission || c.mission.key === mission) &&
+      (!origine || c.origin === origine) &&
       (!q || matches(c, q)),
   );
 
   const countState = (k: RelationshipState) => clients.filter((c) => c.state === k).length;
   const countMission = (k: MissionKey) => clients.filter((c) => c.mission.key === k).length;
+  const countOrigin = (k: InvestorOrigin) => clients.filter((c) => c.origin === k).length;
   const withoutAction = clients.filter(
     (c) => !c.followUp?.nextTask && c.state !== 'client' && c.state !== 'lost',
   ).length;
@@ -76,6 +81,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       closer: sp.closer,
       etat: sp.etat,
       mission: sp.mission,
+      origine: sp.origine,
       q: sp.q,
       ...over,
     };
@@ -104,8 +110,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           </h1>
           <div className="page-desc">
             {clients.length} personne{clients.length > 1 ? 's' : ''} suivie
-            {clients.length > 1 ? 's' : ''} · {eur(collectedMonthEur)} collectés ce mois ·{' '}
-            {countState('ready')} prêt{countState('ready') > 1 ? 's' : ''} à investir
+            {clients.length > 1 ? 's' : ''} · {countOrigin('ads')} venue
+            {countOrigin('ads') > 1 ? 's' : ''} des pubs · {eur(collectedMonthEur)} collectés ce
+            mois · {countState('ready')} prêt{countState('ready') > 1 ? 's' : ''} à investir
             {withoutAction > 0 ? ` · ${withoutAction} sans prochaine action` : ''}
           </div>
         </div>
@@ -113,6 +120,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           {sp.closer ? <input type="hidden" name="closer" value={sp.closer} /> : null}
           {sp.etat ? <input type="hidden" name="etat" value={sp.etat} /> : null}
           {sp.mission ? <input type="hidden" name="mission" value={sp.mission} /> : null}
+          {sp.origine ? <input type="hidden" name="origine" value={sp.origine} /> : null}
           <input
             type="search"
             name="q"
@@ -132,7 +140,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       <CloserPicker
         viewed={viewed}
         basePath={BASE}
-        params={{ etat: sp.etat, mission: sp.mission }}
+        params={{ etat: sp.etat, mission: sp.mission, origine: sp.origine }}
       />
 
       {/* Filtres par état */}
@@ -154,6 +162,24 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         >
           Sans prochaine action <Count n={withoutAction} />
         </Chip>
+      </div>
+
+      {/* Filtres par origine : pubs contre tout le reste */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <FilterLabel>Origine</FilterLabel>
+        <Chip href={href({ origine: undefined })} active={!origine}>
+          Toutes
+        </Chip>
+        {ORIGINS.map((o) => (
+          <Chip
+            key={o.key}
+            href={href({ origine: o.key })}
+            active={origine === o.key}
+            title={o.hint}
+          >
+            {o.label} <Count n={countOrigin(o.key)} />
+          </Chip>
+        ))}
       </div>
 
       {/* Filtres par mission */}
@@ -187,6 +213,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                 <thead>
                   <tr style={{ background: 'var(--surface-2)' }}>
                     <Th>Personne</Th>
+                    <Th>Origine</Th>
                     <Th>État</Th>
                     <Th>Mission</Th>
                     <Th>Prochaine action</Th>
@@ -221,6 +248,7 @@ function ClientLine({
   canAct: boolean;
 }) {
   const meta = relationshipStateMeta(c.state);
+  const origin = originMeta(c.origin);
   const next = c.followUp?.nextTask ?? null;
   const late = next != null && next.dueAt.getTime() < now.getTime();
   const last = c.lastActivity;
@@ -234,9 +262,12 @@ function ClientLine({
           {c.fullName ?? c.email}
         </Link>
         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-          {[c.city, c.isBreach ? 'pub' : c.bonusCode ? `code ${c.bonusCode}` : null]
-            .filter(Boolean)
-            .join(' · ')}
+          {[c.city, c.bonusCode ? `code ${c.bonusCode}` : null].filter(Boolean).join(' · ')}
+        </span>
+      </Td>
+      <Td>
+        <span className={`badge ${origin.badge}`} style={{ fontSize: 10 }} title={origin.hint}>
+          {origin.label}
         </span>
       </Td>
       <Td>

@@ -5,6 +5,7 @@ import { CREDIT_ACTION_TYPES } from '@/lib/closing/credit';
 import { type SplitTasks, sessionOrder, splitTasks } from '@/lib/closing/day';
 import { getLeaderboard, type LeaderboardEntry } from '@/lib/closing/gamification/leaderboard';
 import { parisDateOf, parisMidnightUTC } from '@/lib/closing/gamification/periods';
+import { investorOrigin, originGroup } from '@/lib/closing/origin';
 import { isClosingStage } from '@/lib/closing/pipeline';
 import { buildPool, type Pool } from '@/lib/closing/pool';
 import {
@@ -189,8 +190,22 @@ export async function getSessionLeads(
 export type PeriodExtras = {
   /** Personnes devenues ses clients sur la période (première action de sa part). */
   clientsTaken: number;
+  /** Dont venues des pubs / dont venues autrement (parrainage, invitation, partenaire). */
+  clientsTakenAds: number;
+  clientsTakenOther: number;
   /** Délai moyen (minutes) entre l'inscription et son premier appel, nouveaux inscrits de la période. */
   avgFirstCallMinutes: number | null;
+};
+
+type ExtrasRow = {
+  first_at: string | Date;
+  first_call_at: string | Date | null;
+  sah_created_at: string | Date | null;
+  bonus_code: string | null;
+  breach_level: number | string | null;
+  parent_sah_id: string | null;
+  cgp_name: string | null;
+  cgp_network: string | null;
 };
 
 export async function getPeriodExtras(
@@ -198,37 +213,59 @@ export async function getPeriodExtras(
   from: Date | null,
   to: Date | null,
 ): Promise<PeriodExtras> {
-  const fromIso = (from ?? new Date(0)).toISOString();
-  const toIso = (to ?? new Date(Date.now() + 366 * 86_400_000)).toISOString();
+  const fromMs = (from ?? new Date(0)).getTime();
+  const toMs = (to ?? new Date(Date.now() + 366 * 86_400_000)).getTime();
   const typeList = sql.join(
     CREDIT_ACTION_TYPES.map((t) => sql`${t}`),
     sql`, `,
   );
   const rows = (await db.execute(sql`
-    with first_action as (
-      select i.id, i.sah_created_at, min(ix.created_at) as first_at,
-             min(ix.created_at) filter (where ix.type in ('call_outbound', 'call_inbound')) as first_call_at
-      from investors i
-      join interactions ix
-        on ix.investor_id = i.id and ix.user_id = ${closerId} and ix.type in (${typeList})
-      where i.deleted_at is null and i.assigned_closer_id = ${closerId}
-      group by i.id, i.sah_created_at
-    )
     select
-      count(*) filter (
-        where first_at >= ${fromIso}::timestamptz and first_at < ${toIso}::timestamptz
-      )::int as taken,
-      avg(extract(epoch from (first_call_at - sah_created_at)) / 60) filter (
-        where sah_created_at >= ${fromIso}::timestamptz
-          and sah_created_at < ${toIso}::timestamptz
-          and first_call_at is not null
-          and first_call_at >= sah_created_at
-      ) as avg_minutes
-    from first_action
-  `)) as unknown as { taken: number; avg_minutes: string | number | null }[];
-  const r = rows[0];
+      min(ix.created_at) as first_at,
+      min(ix.created_at) filter (where ix.type in ('call_outbound', 'call_inbound')) as first_call_at,
+      i.sah_created_at,
+      i.bonus_code,
+      i.breach_level,
+      i.parent_sah_id,
+      i.cgp_name,
+      i.cgp_network
+    from investors i
+    join interactions ix
+      on ix.investor_id = i.id and ix.user_id = ${closerId} and ix.type in (${typeList})
+    where i.deleted_at is null and i.assigned_closer_id = ${closerId}
+    group by i.id, i.sah_created_at, i.bonus_code, i.breach_level, i.parent_sah_id, i.cgp_name, i.cgp_network
+  `)) as unknown as ExtrasRow[];
+
+  let taken = 0;
+  let takenAds = 0;
+  let delaySum = 0;
+  let delayCount = 0;
+  for (const r of rows) {
+    const firstAt = new Date(r.first_at).getTime();
+    if (firstAt < fromMs || firstAt >= toMs) continue;
+    taken += 1;
+    const origin = investorOrigin({
+      bonusCode: r.bonus_code,
+      breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+      parentSahId: r.parent_sah_id,
+      cgpName: r.cgp_name,
+      cgpNetwork: r.cgp_network,
+    });
+    if (originGroup(origin) === 'ads') takenAds += 1;
+    // Délai avant le premier appel : seulement les nouveaux inscrits de la période.
+    if (r.sah_created_at && r.first_call_at) {
+      const signedUp = new Date(r.sah_created_at).getTime();
+      const firstCall = new Date(r.first_call_at).getTime();
+      if (signedUp >= fromMs && signedUp < toMs && firstCall >= signedUp) {
+        delaySum += (firstCall - signedUp) / 60_000;
+        delayCount += 1;
+      }
+    }
+  }
   return {
-    clientsTaken: Number(r?.taken) || 0,
-    avgFirstCallMinutes: r?.avg_minutes != null ? Math.round(Number(r.avg_minutes)) : null,
+    clientsTaken: taken,
+    clientsTakenAds: takenAds,
+    clientsTakenOther: taken - takenAds,
+    avgFirstCallMinutes: delayCount > 0 ? Math.round(delaySum / delayCount) : null,
   };
 }

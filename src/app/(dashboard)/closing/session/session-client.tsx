@@ -6,6 +6,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { CallResultForm } from '@/components/closing/call-result-form';
 import { useToast } from '@/components/shared/toast';
 import type { CallBrief } from '@/lib/ai/call-brief';
+import { type InvestorOrigin, originMeta } from '@/lib/closing/origin';
 import { claimLeadAction, draftCallBriefAction, releaseLeadAction } from '../investor/[id]/actions';
 
 export type SessionLead = {
@@ -15,6 +16,7 @@ export type SessionLead = {
   phone: string | null;
   city: string | null;
   isBreach: boolean;
+  origin: InvestorOrigin;
   totalInvested: number;
   priority: number;
   temperature: 'hot' | 'warm' | 'cold';
@@ -184,7 +186,12 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
                 <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>
                   {lead.fullName || lead.email}
                 </span>
-                {lead.isBreach && <span className="badge badge-ai">pub</span>}
+                <span
+                  className={`badge ${originMeta(lead.origin).badge}`}
+                  title={originMeta(lead.origin).hint}
+                >
+                  {originMeta(lead.origin).label}
+                </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
                 {lead.statusLabel}
