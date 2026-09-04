@@ -10,6 +10,7 @@ import {
   getInvestorTimeline,
   type TimelineItem,
 } from '@/lib/db/queries/closing';
+import { missedAttemptsFor } from '@/lib/db/queries/closing-pipeline';
 import { getLatestAsset } from '@/lib/db/queries/investor-assets';
 import {
   getInvestorById,
@@ -182,6 +183,7 @@ export default async function InvestorPage({ params, searchParams }: Props) {
     scriptAsset,
     user,
     senders,
+    missedAttempts,
   ] = await Promise.all([
     getInvestorSubscriptions(investor.id),
     getInvestorScored(investor.id),
@@ -193,6 +195,7 @@ export default async function InvestorPage({ params, searchParams }: Props) {
     getLatestAsset(investor.id, 'call_script'),
     getAuthenticatedUser(),
     listSenders(),
+    missedAttemptsFor(investor.id),
   ]);
   // Calage auto : l'expéditeur du closer connecté est pré-sélectionné.
   const defaultSender =
@@ -502,7 +505,11 @@ export default async function InvestorPage({ params, searchParams }: Props) {
           />
 
           {/* Enregistrer un appel */}
-          <CallLogPanel investorId={investor.id} />
+          <CallLogPanel
+            investorId={investor.id}
+            name={investor.fullName ?? investor.email}
+            missedAttempts={missedAttempts}
+          />
 
           {/* Tracer un envoi (mail / SMS / WhatsApp) — pour suivre les suites */}
           <TouchLogPanel investorId={investor.id} />

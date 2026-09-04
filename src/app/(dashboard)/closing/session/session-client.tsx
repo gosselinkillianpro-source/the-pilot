@@ -1,29 +1,12 @@
 'use client';
 
-import {
-  ArrowRight,
-  Copy,
-  Flame,
-  Hourglass,
-  PhoneCall,
-  PhoneOff,
-  Sparkles,
-  Target,
-  UserX,
-  Voicemail,
-  X,
-} from 'lucide-react';
+import { Copy, Flame, PhoneCall, Sparkles, Target, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState, useTransition } from 'react';
+import { CallResultForm } from '@/components/closing/call-result-form';
 import { useToast } from '@/components/shared/toast';
 import type { CallBrief } from '@/lib/ai/call-brief';
-import {
-  claimLeadAction,
-  draftCallBriefAction,
-  markCalledAction,
-  qualifyCallAction,
-  releaseLeadAction,
-} from '../investor/[id]/actions';
+import { claimLeadAction, draftCallBriefAction, releaseLeadAction } from '../investor/[id]/actions';
 
 export type SessionLead = {
   id: string;
@@ -40,40 +23,9 @@ export type SessionLead = {
   queueLabel: string;
   callGoal: string;
   factors: string[];
+  /** Appels sans réponse depuis le dernier contact abouti — pour proposer la bonne suite. */
+  missedAttempts: number;
 };
-
-type Outcome =
-  | 'reached'
-  | 'no_answer'
-  | 'voicemail'
-  | 'wrong_number'
-  | 'in_progress'
-  | 'profile_incompatible';
-
-const OUTCOMES: { key: Outcome; label: string; icon: typeof PhoneCall; color: string }[] = [
-  { key: 'reached', label: 'Joint', icon: PhoneCall, color: 'var(--success)' },
-  { key: 'no_answer', label: 'Pas de réponse', icon: PhoneOff, color: 'var(--warning)' },
-  { key: 'voicemail', label: 'Répondeur', icon: Voicemail, color: 'var(--text-3)' },
-  { key: 'wrong_number', label: 'Faux numéro', icon: X, color: 'var(--danger)' },
-  { key: 'in_progress', label: 'En cours', icon: Hourglass, color: 'var(--brand)' },
-  {
-    key: 'profile_incompatible',
-    label: 'Profil incompatible',
-    icon: UserX,
-    color: 'var(--danger)',
-  },
-];
-
-const STAGES: { value: string; label: string }[] = [
-  { value: 'contacted', label: 'Contacté' },
-  { value: 'interested', label: 'Intéressé' },
-  { value: 'to_call_back', label: 'À rappeler' },
-  { value: 'meeting_booked', label: 'RDV pris' },
-  { value: 'meeting_done', label: 'RDV fait' },
-  { value: 'proposal_sent', label: 'Proposition envoyée' },
-  { value: 'closed_won', label: 'Gagné 🎉' },
-  { value: 'closed_lost', label: 'Perdu' },
-];
 
 const TEMP_COLOR: Record<SessionLead['temperature'], string> = {
   hot: 'var(--danger)',
@@ -85,6 +37,10 @@ function money(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} €`;
 }
 
+/**
+ * Le mode appel : une personne à la fois, et un appel n'est enregistré
+ * qu'avec sa suite (formulaire partagé avec la fiche).
+ */
 export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitHref: string }) {
   const { toast, runWithActivity } = useToast();
   // La liste est FIGÉE au lancement : le temps réel (LiveSync) re-rend la page
@@ -95,27 +51,20 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
   const [index, setIndex] = useState(0);
   const [done, setDone] = useState(0);
   const [brief, setBrief] = useState<CallBrief | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [note, setNote] = useState('');
-  const [nextStage, setNextStage] = useState('');
-  const [callbackAt, setCallbackAt] = useState('');
-  // Appel déjà enregistré (markCalled réussi) mais qualification échouée :
-  // au retry on ne recrée PAS un deuxième appel, on requalifie le même.
-  const [pendingCallId, setPendingCallId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const lead = sessionLeads[index];
 
   // « Je prends » automatique sur le lead affiché : les collègues le voient
-  // grisé dans leur file et leurs sessions ne le proposent plus. Si le claim
-  // échoue (déjà pris pendant qu'on lisait la fiche), on passe au suivant.
+  // réservé et leurs sessions ne le proposent plus. Si la réservation échoue
+  // (pris pendant qu'on lisait la fiche), on passe au suivant.
   const leadId = lead?.id ?? null;
   useEffect(() => {
     if (!leadId) return;
     let cancelled = false;
     claimLeadAction({ investorId: leadId }).then((res) => {
       if (!res.ok && !cancelled) {
-        toast('Ce lead vient d’être pris par un collègue — on passe au suivant.', {
+        toast('Cette personne vient d’être prise par un collègue — on passe à la suivante.', {
           variant: 'info',
           duration: 3500,
         });
@@ -124,24 +73,15 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
     });
     return () => {
       cancelled = true;
-      // Lead quitté (suivant, ou sortie de session) : on rend le verrou. Après
-      // un appel enregistré, il est déjà levé côté serveur — libérer à nouveau
-      // est sans effet (on ne libère jamais que son propre verrou).
+      // Personne quittée (suivante, ou sortie) : on rend la réservation. Après
+      // un appel enregistré, elle est déjà levée côté serveur — libérer à
+      // nouveau est sans effet (on ne libère jamais que la sienne).
       void releaseLeadAction({ investorId: leadId });
     };
   }, [leadId, toast]);
 
-  function reset() {
-    setBrief(null);
-    setOutcome(null);
-    setNote('');
-    setNextStage('');
-    setCallbackAt('');
-    setPendingCallId(null);
-  }
-
   function next() {
-    reset();
+    setBrief(null);
     setIndex((i) => i + 1);
   }
 
@@ -156,50 +96,6 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
         return;
       }
       setBrief(r.brief);
-    });
-  }
-
-  function save() {
-    if (!lead || !outcome) return;
-    const current = lead;
-    const chosen = outcome;
-    // Le rappel n'est envoyé que si son champ était VISIBLE pour ce résultat :
-    // une date saisie pour « Pas de réponse » puis un basculement sur « Joint »
-    // ne doit pas créer un rappel fantôme.
-    const callbackVisible =
-      chosen === 'no_answer' || chosen === 'voicemail' || chosen === 'in_progress';
-    startTransition(async () => {
-      const ok = await runWithActivity('Enregistrement de l’appel…', async () => {
-        let callId = pendingCallId;
-        if (!callId) {
-          const called = await markCalledAction({ investorId: current.id });
-          if (!called.ok) {
-            toast(called.message, { variant: 'error' });
-            return false;
-          }
-          callId = called.interactionId;
-          setPendingCallId(callId);
-        }
-        const q = await qualifyCallAction({
-          callId,
-          outcome: chosen,
-          note: note.trim() || undefined,
-          nextStage: chosen === 'reached' && nextStage ? nextStage : undefined,
-          callbackAt:
-            callbackVisible && callbackAt ? new Date(callbackAt).toISOString() : undefined,
-        });
-        if (!q.ok) {
-          toast(q.message, { variant: 'error' });
-          return false;
-        }
-        return true;
-      });
-      if (ok) {
-        setDone((d) => d + 1);
-        toast('Appel enregistré.', { variant: 'success', duration: 2500 });
-        reset();
-        setIndex((i) => i + 1);
-      }
     });
   }
 
@@ -233,10 +129,12 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
             <Target size={20} />
           </span>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)' }}>
-            Session terminée
+            {sessionLeads.length === 0 ? 'Rien à appeler pour l’instant' : 'Session terminée'}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
-            {done} appel(s) enregistré(s) sur {sessionLeads.length} lead(s).
+            {sessionLeads.length === 0
+              ? 'Aucune action due, personne dans le pool. Reviens plus tard ou ouvre Mes clients.'
+              : `${done} appel(s) enregistré(s) sur ${sessionLeads.length} personne(s).`}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Link href={exitHref} className="btn btn-primary">
@@ -286,12 +184,13 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
                 <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>
                   {lead.fullName || lead.email}
                 </span>
-                {lead.isBreach && <span className="badge badge-ai">BREACH</span>}
+                {lead.isBreach && <span className="badge badge-ai">pub</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
                 {lead.statusLabel}
                 {lead.city ? ` · ${lead.city}` : ''}
                 {lead.totalInvested > 0 ? ` · ${money(lead.totalInvested)} investis` : ''}
+                {lead.missedAttempts > 0 ? ` · ${lead.missedAttempts} sans réponse` : ''}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -311,7 +210,7 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
             </div>
           </div>
 
-          {/* Objectif d'appel + facteurs */}
+          {/* Pourquoi on appelle + ce qu'on sait */}
           <div
             style={{
               background: 'var(--surface-2)',
@@ -362,7 +261,7 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
               <span style={{ fontSize: 13, color: 'var(--text-4)' }}>Aucun numéro renseigné.</span>
             )}
             <Link
-              href={`/closing/investor/${lead.id}`}
+              href={`/closing/investor/${lead.id}?from=${encodeURIComponent(exitHref)}`}
               target="_blank"
               className="btn btn-sm btn-ghost"
             >
@@ -412,119 +311,22 @@ export function SessionClient({ leads, exitHref }: { leads: SessionLead[]; exitH
             )}
           </div>
 
-          {/* Résultat de l'appel */}
+          {/* Résultat + suite : une seule saisie */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--text-4)',
-                textTransform: 'uppercase',
-                marginBottom: 8,
+            <CallResultForm
+              key={lead.id}
+              investorId={lead.id}
+              name={lead.fullName ?? lead.email}
+              missedAttempts={lead.missedAttempts}
+              submitLabel="Enregistrer & suivant"
+              onSaved={() => {
+                setDone((d) => d + 1);
+                next();
               }}
-            >
-              Résultat de l'appel
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {OUTCOMES.map((o) => {
-                const Icon = o.icon;
-                const active = outcome === o.key;
-                return (
-                  <button
-                    key={o.key}
-                    type="button"
-                    className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setOutcome(o.key)}
-                    style={active ? undefined : { color: o.color }}
-                  >
-                    <Icon size={13} />
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {outcome && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-                {outcome === 'reached' && (
-                  <label
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                      fontSize: 11,
-                      color: 'var(--text-3)',
-                    }}
-                  >
-                    Nouvelle étape (optionnel)
-                    <select
-                      className="input"
-                      value={nextStage}
-                      onChange={(e) => setNextStage(e.target.value)}
-                    >
-                      <option value="">— inchangée —</option>
-                      {STAGES.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {(outcome === 'no_answer' ||
-                  outcome === 'voicemail' ||
-                  outcome === 'in_progress') && (
-                  <label
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                      fontSize: 11,
-                      color: 'var(--text-3)',
-                    }}
-                  >
-                    Programmer un rappel (optionnel)
-                    <input
-                      type="datetime-local"
-                      className="input"
-                      value={callbackAt}
-                      onChange={(e) => setCallbackAt(e.target.value)}
-                    />
-                  </label>
-                )}
-                <label
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                    fontSize: 11,
-                    color: 'var(--text-3)',
-                  }}
-                >
-                  Note (optionnel)
-                  <textarea
-                    className="input"
-                    rows={2}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Ce qui s'est dit, prochaine action…"
-                    style={{ resize: 'vertical', fontFamily: 'inherit' }}
-                  />
-                </label>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={save}
-                disabled={pending || !outcome}
-              >
-                Enregistrer & suivant
-                <ArrowRight size={14} />
-              </button>
-              <button type="button" className="btn btn-ghost" onClick={next} disabled={pending}>
-                Passer
+            />
+            <div style={{ marginTop: 10 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={next}>
+                Passer sans enregistrer
               </button>
             </div>
           </div>
