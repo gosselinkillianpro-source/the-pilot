@@ -206,13 +206,13 @@ export default async function LeaderboardPage({
                     <th style={{ padding: '10px 8px' }}>Appels (joints)</th>
                     <th
                       style={{ padding: '10px 8px' }}
-                      title="Profils complétés + KYC finalisés suite à un appel (fenêtre 30 j)"
+                      title="Profils complétés + KYC finalisés de tes clients, après une action de ta part (90 j)"
                     >
                       Inscriptions
                     </th>
                     <th
                       style={{ padding: '10px 8px' }}
-                      title="Souscriptions attribuées (appel prime, 30 j)"
+                      title="Souscriptions créditées : 1re souscription d’un client (action sous 90 j), suivantes avec une action sous 30 j"
                     >
                       Souscriptions
                     </th>
@@ -334,9 +334,10 @@ export default async function LeaderboardPage({
               {XP_RULES.CALL} · joint {XP_RULES.CALL + XP_RULES.REACHED_BONUS} · RDV pris{' '}
               {XP_RULES.MEETING_BOOKED} · inscription finalisée {XP_RULES.KYC_COMPLETED} ·
               souscription {XP_RULES.SUBSCRIPTION} + 1 XP / {XP_RULES.AMOUNT_EUR_PER_XP} € collectés
-              · rappel &lt; 5 min +{XP_RULES.FAST_CALLBACK}. Conversions attribuées au dernier appel
-              dans les 30 jours. L'XP ne se remet jamais à zéro : c'est elle qui fait monter de
-              niveau.
+              · rappel &lt; 5 min +{XP_RULES.FAST_CALLBACK}. Une souscription est créditée au closer
+              de la personne : la première avec une action dans les 90 jours avant, les suivantes
+              avec une action dans les 30 jours avant. L'XP ne se remet jamais à zéro : c'est elle
+              qui fait monter de niveau.
             </div>
           </div>
         </div>

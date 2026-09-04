@@ -1,14 +1,8 @@
 import 'server-only';
 import { and, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { attributeAction, type Contact, type ContactKind } from '@/lib/closing/attribution';
 import { db } from '@/lib/db';
-import {
-  closerBadges,
-  gamificationEvents,
-  interactions,
-  subscriptions,
-  users,
-} from '@/lib/db/schema';
+import { creditSubscriptionRows, loadOwnerActions } from '@/lib/db/queries/credit-data';
+import { closerBadges, gamificationEvents, subscriptions, users } from '@/lib/db/schema';
 import { sendTelegram } from '@/lib/notifications/telegram';
 import { notifyChange } from '@/lib/realtime/broadcast';
 import { SYNC_TOPICS } from '@/lib/realtime/topics';
@@ -100,21 +94,11 @@ async function awardBadge(closerId: string, badge: BadgeKey, periodKey: string):
   return 1;
 }
 
-const EMAIL_KIND: Record<string, ContactKind> = {
-  email_clicked: 'click',
-  email_opened: 'open',
-};
-
-/** Souscriptions signées récemment + attribuées à un closer → événements « sub_closed ». */
+/** Souscriptions signées récemment + créditées à un closer → événements « sub_closed ». */
 async function recordSubscriptionEvents(now: Date): Promise<number> {
   const since = new Date(now.getTime() - SUB_LOOKBACK_HOURS * 3_600_000);
-  const subs = await db
-    .select({
-      id: subscriptions.id,
-      investorId: subscriptions.investorId,
-      amount: subscriptions.amount,
-      signedAt: subscriptions.signedAt,
-    })
+  const recent = await db
+    .select({ id: subscriptions.id, investorId: subscriptions.investorId })
     .from(subscriptions)
     .where(
       and(
@@ -123,51 +107,58 @@ async function recordSubscriptionEvents(now: Date): Promise<number> {
         gte(subscriptions.signedAt, since),
       ),
     );
-  if (subs.length === 0) return 0;
+  if (recent.length === 0) return 0;
 
-  // Contacts des seuls investisseurs concernés — pas besoin de toute la table.
-  const investorIds = [...new Set(subs.map((s) => s.investorId))];
-  const contactRows = await db
-    .select({
-      investorId: interactions.investorId,
-      userId: interactions.userId,
-      type: interactions.type,
-      at: interactions.createdAt,
-    })
-    .from(interactions)
-    .where(
-      and(
-        inArray(interactions.type, [
-          'call_outbound',
-          'call_inbound',
-          'email_opened',
-          'email_clicked',
-        ]),
-        inArray(interactions.investorId, investorIds),
+  // Le moteur de crédit a besoin de TOUTES les souscriptions de ces personnes :
+  // la « première » après le contact dépend de l'historique complet.
+  const investorIds = [...new Set(recent.map((s) => s.investorId))];
+  const [allSubs, owners] = await Promise.all([
+    db
+      .select({
+        id: subscriptions.id,
+        investorId: subscriptions.investorId,
+        amount: subscriptions.amount,
+        signedAt: subscriptions.signedAt,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          sql`${subscriptions.status} <> 'cancelled'`,
+          isNotNull(subscriptions.signedAt),
+          inArray(subscriptions.investorId, investorIds),
+        ),
       ),
-    );
-  const contactsByInvestor = new Map<string, Contact[]>();
-  for (const c of contactRows) {
-    if (!c.investorId) continue;
-    const kind: ContactKind = c.type.startsWith('call') ? 'call' : (EMAIL_KIND[c.type] ?? 'open');
-    const list = contactsByInvestor.get(c.investorId) ?? [];
-    list.push({ kind, at: c.at, userId: c.userId });
-    contactsByInvestor.set(c.investorId, list);
-  }
+    loadOwnerActions(investorIds),
+  ]);
+  const rawAmount = new Map(allSubs.map((s) => [s.id, s.amount]));
+  const credits = creditSubscriptionRows(
+    allSubs.flatMap((s) =>
+      s.signedAt
+        ? [
+            {
+              id: s.id,
+              investorId: s.investorId,
+              signedAt: new Date(s.signedAt),
+              amountEur: Number(s.amount) || 0,
+            },
+          ]
+        : [],
+    ),
+    owners,
+  );
 
+  const recentIds = new Set(recent.map((s) => s.id));
   let created = 0;
-  for (const s of subs) {
-    if (!s.signedAt) continue;
-    const res = attributeAction(s.signedAt, contactsByInvestor.get(s.investorId) ?? []);
-    if (!res.attributed || res.via !== 'call' || !res.userId) continue;
+  for (const c of credits.values()) {
+    if (!recentIds.has(c.subId) || !c.credited || !c.closerId) continue;
     const inserted = await db
       .insert(gamificationEvents)
       .values({
         kind: 'sub_closed',
-        refId: `sub:${s.id}`,
-        closerId: res.userId,
-        investorId: s.investorId,
-        amount: s.amount,
+        refId: `sub:${c.subId}`,
+        closerId: c.closerId,
+        investorId: c.investorId,
+        amount: rawAmount.get(c.subId) ?? String(c.amountEur),
       })
       .onConflictDoNothing()
       .returning({ id: gamificationEvents.id });
