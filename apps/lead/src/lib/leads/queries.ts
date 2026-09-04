@@ -133,14 +133,13 @@ export async function listLeads(user: AuthenticatedUser, filter: LeadFilter = {}
     if (filter.q?.trim()) {
       const q = `%${filter.q.trim()}%`;
       const digits = filter.q.replace(/\D/g, '');
-      const phoneCond =
-        digits.length >= 4 ? ilike(leads.phoneE164, `%${digits.slice(-9)}%`) : undefined;
-      const textCond = or(
+      const textConds = [
         ilike(leads.firstName, q),
         ilike(leads.email, q),
         ilike(leads.lastName, q),
-      );
-      conds.push(phoneCond ? or(textCond, phoneCond) : textCond);
+      ];
+      if (digits.length >= 4) textConds.push(ilike(leads.phoneE164, `%${digits.slice(-9)}%`));
+      conds.push(sql`(${sql.join(textConds, sql` or `)})`);
     }
     const where = and(...conds);
     const rows = await tx

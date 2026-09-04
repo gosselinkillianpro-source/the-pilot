@@ -4,6 +4,12 @@
 > **Pour Claude Code** : lire ce fichier en début de session pour savoir où on en est.
 > Dernière mise à jour : 2026-06-19.
 
+> ## 🟠 THE PILOT LEAD — seconde app du monorepo (2026-09-04)
+>
+> **`apps/lead`** = The Pilot Lead, l'usine à rendez-vous de Breach (MonExpertPatrimoine → acheteurs ORIAS). Logiciel **indépendant** : propre service Render (`the-pilot-lead` + cron `the-pilot-lead-tick`), propre projet Supabase (schéma `lead`, rôle `app_lead` sans bypass RLS), propre connexion, aucune donnée Seven At Home. Spec : `apps/lead/THE-PILOT-LEAD-SPEC.md`. Mise en service : `apps/lead/docs/MISE-EN-SERVICE.md`.
+> Livré : socle, modules A (réception + adaptateur du diagnostic MEP), B (Telegram, SMS hors service, escalades, chrono), C (fiche d'appel, critères, dispositions, relances), D minimal (RDV posé, confirmations, rappels), routage complet, admin acheteurs/sources/utilisateurs, portail acheteur minimal. Reste : validation acheteur (F), tableau du lundi matérialisé + packs/factures (H), CAPI hors ligne + export (G), Calendly OAuth (D v1), « voir en tant que ».
+> DoD : `pnpm --filter the-pilot-lead lint|typecheck|test:run|build`. Le tsconfig racine exclut `apps/`.
+
 > ## 🟢 SESSION 2026-06-15 → 19 — tout sur `main` + déployé Render
 >
 > **ADS — coût réel d'acquisition croisé SAH** (`/ads`) : on jette les conversions gonflées des régies, on garde la dépense, on divise par les VRAIS inscrits SAH. **Attribution par code bonus** : `SEVEN-BREACH*` → Meta, `BREACH-VIP`/`*VIP*` → Google (codes partenaires `Seven-club-deal-*`/`SEVEN-CD-*` exclus). Métriques par régie + total en **tableaux** : CPA, CPI (profil+KYC), coût/investisseur, invest. moyen, rentabilité. + **tableau « Tracking par code bonus »** (funnel par code, marche sans dépense). `src/lib/ads/blended.ts` + `src/lib/db/queries/ads-acquisition.ts`. ⚠️ bloc coût visible seulement si dépense>0 (donc invisible tant que Meta non reconnecté — token à régénérer). Vieux bloc « ROI en attente SAH » retiré.

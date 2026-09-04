@@ -18,8 +18,7 @@ import { nextState } from '@/lib/domain/state-machine';
 import { formatParis } from '@/lib/domain/time';
 import { appUrl } from '@/lib/env';
 import { sendSms } from '@/lib/integrations/brevo/sms';
-import { isTelegramConfigured, sendTelegram } from '@/lib/integrations/telegram';
-import { alertRecipientsFor } from '@/lib/leads/recipients';
+import { broadcastTelegram } from '@/lib/leads/notify';
 import { logNotification } from '@/lib/notifications/log';
 import { type JobHandler, registerJob } from '../queue';
 
@@ -52,49 +51,6 @@ function summary(lead: LeadRow, source: SourceRow): LeadSummary {
     answers: lead.answers,
     url: `${appUrl()}/leads/${lead.id}`,
   };
-}
-
-async function broadcastTelegram(
-  tx: Tx,
-  sourceId: string,
-  html: string,
-  template: string,
-  leadId: string,
-  options: { includeAdmins?: boolean } = {},
-): Promise<number> {
-  const recipients = await alertRecipientsFor(tx, sourceId, {
-    includeAdmins: options.includeAdmins ?? true,
-  });
-  if (!isTelegramConfigured() || recipients.length === 0) {
-    await logNotification(tx, {
-      channel: 'telegram',
-      template,
-      recipientMasked: recipients.length
-        ? `${recipients.length} destinataire(s)`
-        : 'aucun destinataire',
-      leadId,
-      status: 'skipped',
-      error: isTelegramConfigured()
-        ? 'aucun setter de garde avec Telegram'
-        : 'TELEGRAM_BOT_TOKEN absent',
-    });
-    return 0;
-  }
-  let sent = 0;
-  for (const r of recipients) {
-    const res = await sendTelegram(r.telegramChatId, html);
-    if (res.ok) sent++;
-    await logNotification(tx, {
-      channel: 'telegram',
-      template,
-      recipientMasked: r.email.replace(/^(.).*@/, '$1•••@'),
-      leadId,
-      userId: r.id,
-      status: res.ok ? 'sent' : 'failed',
-      error: res.ok ? null : res.error,
-    });
-  }
-  return sent;
 }
 
 const leadAlert: JobHandler = async (payload) => {
