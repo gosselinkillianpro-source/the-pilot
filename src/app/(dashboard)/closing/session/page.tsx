@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { getInvestorScored, type QueueRow } from '@/lib/db/queries/call-queue';
+import { getCallQueue, type QueueRow } from '@/lib/db/queries/call-queue';
 import { getSessionLeads } from '@/lib/db/queries/closer-day';
 import { SessionClient, type SessionLead } from './session-client';
 
@@ -24,6 +24,7 @@ function toSessionLead(r: QueueRow): SessionLead {
     queueLabel: r.scored.queueLabel,
     callGoal: r.scored.callGoal,
     factors: r.scored.factors,
+    missedAttempts: r.followUp?.missedAttempts ?? 0,
   };
 }
 
@@ -46,8 +47,8 @@ export default async function CallSessionPage({
 
   let rows: QueueRow[];
   if (sp.lead && UUID_RE.test(sp.lead)) {
-    const one = await getInvestorScored(sp.lead);
-    rows = one ? [one] : [];
+    // Une seule personne : avec son suivi (tentatives), pour proposer la bonne suite.
+    rows = await getCallQueue({ investorId: sp.lead, withFollowUp: true });
   } else {
     rows = await getSessionLeads(user.id);
   }
