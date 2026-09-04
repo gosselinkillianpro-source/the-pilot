@@ -7,7 +7,11 @@ export function Horizon() {
   return (
     <>
       <div className="horizon-bg" />
+      {/* Jour : soleil levant. Nuit : lune qui se couche + étoiles (CSS décide). */}
       <div className="horizon-sun" />
+      <div className="horizon-moon-glow" />
+      <div className="horizon-moon" />
+      <div className="horizon-stars" />
       <div className="horizon-blob" />
       <div className="horizon-mountains">
         <svg

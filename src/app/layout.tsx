@@ -37,8 +37,21 @@ export default function RootLayout({
       lang="fr"
       data-theme="light"
       className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
+      // Le script ci-dessous peut poser data-theme="dark" avant l'hydratation :
+      // divergence serveur/client attendue, pas un bug.
+      suppressHydrationWarning
     >
       <body>
+        {/* Applique le thème persisté AVANT la peinture — évite le flash clair
+            au chargement pour ceux qui sont en mode sombre. Chaîne constante,
+            aucune donnée utilisateur : l'injection est sûre. */}
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: chaîne constante (aucune donnée utilisateur), nécessaire pour appliquer le thème avant la peinture
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('pilot-theme')==='dark'){document.documentElement.dataset.theme='dark'}}catch(e){}",
+          }}
+        />
         <Horizon />
         {children}
       </body>
