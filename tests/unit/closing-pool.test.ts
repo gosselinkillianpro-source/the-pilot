@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { buildPool, isThirdPartyCgp, type PoolCandidate, urgentCount } from '@/lib/closing/pool';
+import {
+  buildPool,
+  groupPool,
+  isThirdPartyCgp,
+  type PoolCandidate,
+  urgentCount,
+} from '@/lib/closing/pool';
 
 function row(overrides: Partial<PoolCandidate> & { id: string }): PoolCandidate & { id: string } {
   return {
@@ -58,5 +64,40 @@ describe('buildPool — l’ordre du 4 septembre', () => {
       row({ id: 'b', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }),
     ]);
     expect(pool.breach_new.map((r) => r.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('groupPool — chaque groupe dit pourquoi on appelle', () => {
+  test('pubs, autres nouveaux, puis une raison par groupe chaud, puis la base', () => {
+    const rows = [
+      { ...row({ id: 'kyc', scored: { isNewLead: false, queueBucket: 5 } }) },
+      { ...row({ id: 'remb', scored: { isNewLead: false, queueBucket: 4 } }) },
+      { ...row({ id: 'merci', scored: { isNewLead: false, queueBucket: 2 } }) },
+      { ...row({ id: 'wallet', scored: { isNewLead: false, queueBucket: 3 } }) },
+      { ...row({ id: 'pub', isBreach: true, scored: { isNewLead: true, queueBucket: 1 } }) },
+      { ...row({ id: 'autre', scored: { isNewLead: true, queueBucket: 1 } }) },
+      { ...row({ id: 'relation', scored: { isNewLead: false, queueBucket: 9 } }) },
+    ];
+    const groups = groupPool(buildPool(rows));
+    expect(groups.map((g) => [g.key, g.urgent, g.rows.map((r) => r.id)])).toEqual([
+      ['breach_new', true, ['pub']],
+      ['other_new', true, ['autre']],
+      ['bucket_2', true, ['merci']],
+      ['bucket_3', true, ['wallet']],
+      ['bucket_4', true, ['remb']],
+      ['bucket_5', false, ['kyc']],
+      ['bucket_9', false, ['relation']],
+    ]);
+    expect(groups.find((g) => g.key === 'bucket_2')?.label).toBe(
+      'Viennent d’investir · à remercier',
+    );
+    expect(groups.every((g) => g.hint.length > 0)).toBe(true);
+  });
+
+  test('les groupes vides sont omis', () => {
+    const groups = groupPool(
+      buildPool([row({ id: 'kyc', scored: { isNewLead: false, queueBucket: 5 } })]),
+    );
+    expect(groups.map((g) => g.key)).toEqual(['bucket_5']);
   });
 });

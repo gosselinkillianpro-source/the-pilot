@@ -19,7 +19,7 @@ import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { DAILY_CALL_GOAL, goalProgressPct } from '@/lib/closing/day';
 import { activityLabel, eur, fmtAgo, fmtDateTime, fmtTime, taskLabel } from '@/lib/closing/format';
-import { POOL_TIERS, type PoolTier, urgentCount } from '@/lib/closing/pool';
+import { groupPool, type PoolGroup } from '@/lib/closing/pool';
 import { relationshipStateMeta } from '@/lib/closing/relationship-state';
 import type { QueueRow } from '@/lib/db/queries/call-queue';
 import { type ClientRow, type CloserDay, getCloserDay } from '@/lib/db/queries/closer-day';
@@ -50,7 +50,10 @@ export default async function AujourdhuiPage({
   const viewed = await resolveViewedCloser(user, sp.closer);
   const day = await getCloserDay(viewed.viewedId);
   const canAct = user.role !== 'executive';
-  const urgent = urgentCount(day.pool);
+  const groups = groupPool(day.pool);
+  const urgentGroups = groups.filter((g) => g.urgent);
+  const baseGroups = groups.filter((g) => !g.urgent);
+  const urgent = urgentGroups.reduce((n, g) => n + g.rows.length, 0);
   const todo =
     day.reserved.length +
     day.tasks.overdue.length +
@@ -236,7 +239,7 @@ export default async function AujourdhuiPage({
                       ? `${activityLabel(c.lastActivity)} ${fmtAgo(c.lastActivity.at, day.now)}`
                       : 'jamais contacté'
                   }
-                  why={c.mission.label}
+                  why={[c.mission.label, ...c.scored.factors].join(' · ')}
                   state={c}
                   canAct={canAct}
                   myId={user.id}
@@ -250,39 +253,28 @@ export default async function AujourdhuiPage({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <Section
             icon={<PhoneOutgoing size={15} />}
-            title="Nouveaux à prendre"
+            title="À prendre dans le pool"
             count={urgent}
-            hint="Pool commun. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
+            hint="Personnes que personne ne suit encore, par raison d’appel. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
           >
-            <PoolTierBlock
-              tier="breach_new"
-              rows={day.pool.breach_new}
-              day={day}
-              canAct={canAct}
-              myId={user.id}
-            />
-            <PoolTierBlock
-              tier="other_new"
-              rows={day.pool.other_new}
-              day={day}
-              canAct={canAct}
-              myId={user.id}
-            />
-            <PoolTierBlock
-              tier="hot"
-              rows={day.pool.hot}
-              day={day}
-              canAct={canAct}
-              myId={user.id}
-            />
-            <PoolTierBlock
-              tier="base"
-              rows={day.pool.base}
-              day={day}
-              canAct={canAct}
-              myId={user.id}
-              collapsed={urgent > 0}
-            />
+            {urgentGroups.length === 0 ? (
+              <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-3)' }}>
+                Rien de nouveau ni d'urgent : on passe à la base.
+              </div>
+            ) : null}
+            {urgentGroups.map((g) => (
+              <PoolGroupBlock key={g.key} group={g} canAct={canAct} myId={user.id} limit={6} />
+            ))}
+            {baseGroups.map((g, i) => (
+              <PoolGroupBlock
+                key={g.key}
+                group={g}
+                canAct={canAct}
+                myId={user.id}
+                limit={5}
+                collapsed={urgent > 0 || i > 0}
+              />
+            ))}
           </Section>
 
           <ClientsSummary day={day} />
@@ -602,55 +594,65 @@ function PersonRow({
   );
 }
 
-function PoolTierBlock({
-  tier,
-  rows,
-  day,
+function PoolGroupBlock({
+  group,
   canAct,
   myId,
+  limit,
   collapsed = false,
 }: {
-  tier: PoolTier;
-  rows: QueueRow[];
-  day: CloserDay;
+  group: PoolGroup<QueueRow>;
   canAct: boolean;
   myId: string;
+  limit: number;
   collapsed?: boolean;
 }) {
-  const meta = POOL_TIERS.find((t) => t.key === tier);
-  const shown = collapsed ? [] : rows.slice(0, tier === 'base' ? 8 : 6);
-  const hidden = rows.length - shown.length;
+  const shown = collapsed ? [] : group.rows.slice(0, limit);
+  const hidden = group.rows.length - shown.length;
   return (
     <div style={{ borderBottom: '1px solid var(--border)' }}>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '7px 16px',
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'var(--text-3)',
+          padding: '8px 16px',
           background: 'var(--surface-2)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
         }}
-        title={meta?.hint}
       >
-        {meta?.label ?? tier}
-        <span style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--text-2)' }}>
-          {rows.length}
-        </span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: 'var(--text-1)',
+          }}
+        >
+          {group.label}
+          <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 12 }}>
+            {group.rows.length}
+          </span>
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{group.hint}</span>
       </div>
       {collapsed ? (
-        <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-4)' }}>
-          Proposée quand il n'y a plus rien de plus urgent.
+        <div style={{ padding: '6px 16px', fontSize: 11, color: 'var(--text-4)' }}>
+          Proposé quand il n'y a plus rien de plus urgent.
         </div>
-      ) : shown.length === 0 ? (
-        <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-4)' }}>Personne.</div>
       ) : (
         shown.map((r, i) => {
           const byOther = r.claimedById != null && r.claimedById !== myId;
           const byMe = r.claimedById === myId;
+          const why = [
+            ...r.scored.factors,
+            r.city,
+            r.phone ? null : 'sans téléphone',
+            byOther ? `réservé par ${r.claimerName ?? 'un collègue'}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
           return (
             <div
               key={r.id}
@@ -679,13 +681,7 @@ function PoolTierBlock({
                 >
                   {r.fullName ?? r.email}
                 </Link>
-                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                  {r.scored.statusLabel}
-                  {r.sahCreatedAt ? ` · inscrit ${fmtAgo(r.sahCreatedAt, day.now)}` : ''}
-                  {r.city ? ` · ${r.city}` : ''}
-                  {!r.phone ? ' · sans téléphone' : ''}
-                  {byOther ? ` · réservé par ${r.claimerName ?? 'un collègue'}` : ''}
-                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{why}</span>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {canAct && !byOther ? <ClaimControl investorId={r.id} claimedByMe={byMe} /> : null}
@@ -696,7 +692,7 @@ function PoolTierBlock({
       )}
       {!collapsed && hidden > 0 ? (
         <div style={{ padding: '6px 16px', fontSize: 11, color: 'var(--text-4)' }}>
-          + {hidden} autre{hidden > 1 ? 's' : ''} dans cette file
+          + {hidden} autre{hidden > 1 ? 's' : ''} pour la même raison
         </div>
       ) : null}
     </div>
