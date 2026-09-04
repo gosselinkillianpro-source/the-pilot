@@ -14,6 +14,10 @@ services:
     buildCommand: pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /login
+    # Un commit qui ne touche que THE PILOT LEAD (apps/lead) ne redéploie pas SAH.
+    buildFilter:
+      ignoredPaths:
+        - apps/**
     envVars:
       # Force la prod : l'auth est TOUJOURS active (DISABLE_AUTH sans effet ici).
       - key: NODE_ENV
@@ -144,3 +148,105 @@ services:
     envVars:
       - key: NEW_LEADS_URL
         sync: false
+
+  # ============================================================
+  # THE PILOT LEAD — logiciel INDÉPENDANT (Breach / MonExpertPatrimoine).
+  # Même dépôt (apps/lead), mais propre process, propre URL, propres
+  # secrets, propre projet Supabase. Rien de Seven At Home n'entre ici.
+  # ============================================================
+  - type: web
+    name: the-pilot-lead
+    runtime: node
+    region: frankfurt # Union Européenne (RGPD)
+    plan: starter
+    branch: main
+    autoDeploy: true
+    # Ne se redéploie que si apps/lead (ou la config racine partagée) change.
+    buildFilter:
+      paths:
+        - apps/lead/**
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+        - scripts/cron-call.mjs
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter the-pilot-lead build
+    startCommand: pnpm --filter the-pilot-lead start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # --- Projet Supabase DÉDIÉ à The Pilot Lead ---
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Rôle app_lead (RLS active) pour l'app ; le rôle postgres ne sert qu'aux migrations.
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: SECRET_ENCRYPTION_KEY
+        sync: false
+      - key: LEAD_HASH_SALT
+        sync: false
+      # --- Alertes setter (Telegram) ---
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      # --- Brevo compte Breach / MEP : emails transactionnels + SMS ---
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_SENDER_NAME
+        sync: false
+      - key: EMAIL_SENDER_ADDRESS
+        sync: false
+      - key: SMS_SENDER
+        sync: false
+      - key: EMAIL_TEST_MODE
+        sync: false
+      - key: EMAIL_TEST_ADDRESS
+        sync: false
+      - key: SMS_TEST_MODE
+        sync: false
+      - key: SMS_TEST_NUMBER
+        sync: false
+      # --- Meta Conversions API (dataset MEP) ---
+      - key: META_PIXEL_ID
+        sync: false
+      - key: META_CAPI_ACCESS_TOKEN
+        sync: false
+      - key: META_CAPI_TEST_EVENT_CODE
+        sync: false
+      # --- Calendly OAuth (app dédiée à Lead) ---
+      - key: CALENDLY_CLIENT_ID
+        sync: false
+      - key: CALENDLY_CLIENT_SECRET
+        sync: false
+      - key: CALENDLY_WEBHOOK_SIGNING_KEY
+        sync: false
+
+  # --- Tick des jobs The Pilot Lead : chaque minute ---
+  # Escalades SLA, tentatives de rappel, rappels J-1/H-2, validation tacite,
+  # envois CAPI en retard, recalcul nocturne. Les jobs sont idempotents et
+  # rejouables (table lead.jobs) ; l'immédiat (alerte, événement Lead) part
+  # dès la réception du lead, ce tick n'est que le filet de sécurité.
+  # LEAD_TICK_URL :
+  #   https://<domaine-lead>/api/cron/tick?token=<CRON_SECRET>
+  - type: cron
+    name: the-pilot-lead-tick
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: '* * * * *'
+    buildCommand: 'echo no-build'
+    startCommand: node scripts/cron-call.mjs LEAD_TICK_URL
+    envVars:
+      - key: LEAD_TICK_URL
+        sync: false
+      # Le tick doit répondre vite : au-delà de 50 s on considère l'appel perdu.
+      - key: CRON_TIMEOUT_MS
+        value: '50000'
+

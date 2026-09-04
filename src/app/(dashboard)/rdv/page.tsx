@@ -10,7 +10,7 @@ import {
 import Link from 'next/link';
 import { LiveSync } from '@/components/shared/live-sync';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { upsertRdvContacts } from '@/lib/db/queries/rdv-contacts';
+import { getContactIdsByEmails, upsertRdvContacts } from '@/lib/db/queries/rdv-contacts';
 import { listReminders, listReminderTargets } from '@/lib/db/queries/reminders';
 import { listPipelineCards, type PipelineCard } from '@/lib/db/queries/webinar-pipeline';
 import {
@@ -262,7 +262,7 @@ async function LocalBoard({ ownerUserId, viewerId }: { ownerUserId: string; view
 }
 
 async function Board({
-  rdvs,
+  rdvs: rdvsFromCalendly,
   userName,
   assign,
   ownerUserId,
@@ -276,6 +276,37 @@ async function Board({
   /** Utilisateur connecté, pour distinguer « ma fiche » de celle d'un collègue. */
   viewerId: string;
 }) {
+  // Chaque personne rencontrée reçoit une fiche AVANT tout affichage : c'est
+  // elle qui porte le suivi (appels, notes, rappels), y compris pour un
+  // prospect pas encore inscrit SAH. Best-effort : une fiche qui ne se crée
+  // pas ne doit jamais faire tomber l'agenda.
+  try {
+    await upsertRdvContacts(
+      rdvsFromCalendly.map((r) => ({
+        email: r.email ?? '',
+        fullName: r.lead,
+        phone: r.phone,
+        statut: r.statut,
+        investorId: r.investorId,
+      })),
+      ownerUserId,
+    );
+  } catch (e) {
+    console.error('upsertRdvContacts failed:', e instanceof Error ? e.message : e);
+  }
+
+  // Relie chaque RDV à sa fiche prospect : c'est ce qui rend le lead CLIQUABLE
+  // même hors base SAH (enregistrer les appels, notes, téléphone).
+  let contactIds = new Map<string, string>();
+  try {
+    contactIds = await getContactIdsByEmails(rdvsFromCalendly.map((r) => r.email ?? ''));
+  } catch (e) {
+    console.error('getContactIdsByEmails failed:', e instanceof Error ? e.message : e);
+  }
+  const rdvs = rdvsFromCalendly.map((r) =>
+    r.email ? { ...r, contactId: contactIds.get(r.email.toLowerCase()) ?? null } : r,
+  );
+
   // Total investi par les leads Calendly de Guillaume (1 fois par investisseur, vraies souscriptions).
   const investiParInvestisseur = new Map<string, number>();
   for (const r of rdvs) {
@@ -300,26 +331,6 @@ async function Board({
   // Suivi : on trie du plus récent au plus ancien.
   const suivi = [...rdvs].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  // Chaque personne rencontrée reçoit une fiche : c'est elle qui porte le
-  // suivi (notes, étape, rappels) une fois le rendez-vous passé. Sans ça, le
-  // tableau ci-dessous resterait désespérément vide.
-  // Best-effort : une fiche qui ne se crée pas (contrainte, concurrence) ne
-  // doit jamais faire tomber l'agenda — on log et la page continue avec
-  // l'existant.
-  try {
-    await upsertRdvContacts(
-      rdvs.map((r) => ({
-        email: r.email ?? '',
-        fullName: r.lead,
-        statut: r.statut,
-        investorId: r.investorId,
-      })),
-      ownerUserId,
-    );
-  } catch (e) {
-    console.error('upsertRdvContacts failed:', e instanceof Error ? e.message : e);
-  }
-
   const [leadCards, reminders, reminderTargets] = await Promise.all([
     listPipelineCards(undefined, 'calendly'),
     listReminders(ownerUserId),
@@ -335,7 +346,11 @@ async function Board({
       at: r.date,
       title: r.lead,
       detail: STATUT_AGENDA[r.statut] ?? null,
-      href: r.investorId ? `/closing/investor/${r.investorId}` : null,
+      href: r.investorId
+        ? `/closing/investor/${r.investorId}`
+        : r.contactId
+          ? `/rdv/contact/${r.contactId}`
+          : null,
       tone:
         r.statut === 'no_show' || r.statut === 'annule'
           ? ('danger' as const)
@@ -551,10 +566,17 @@ function AssignNote({ assign }: { assign: RdvAssignResult | null }) {
 }
 
 function LeadName({ r }: { r: RdvReel }) {
-  if (r.investorId) {
+  // Inscrit SAH → fiche investisseur ; sinon fiche PROSPECT (appels, notes,
+  // téléphone) — un lead de RDV est toujours cliquable.
+  const href = r.investorId
+    ? `/closing/investor/${r.investorId}`
+    : r.contactId
+      ? `/rdv/contact/${r.contactId}`
+      : null;
+  if (href) {
     return (
       <Link
-        href={`/closing/investor/${r.investorId}`}
+        href={href}
         style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand)', textDecoration: 'none' }}
       >
         {r.lead}

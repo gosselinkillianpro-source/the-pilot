@@ -18,6 +18,8 @@ import { db } from '@/lib/db';
 export type RdvLeadInput = {
   email: string;
   fullName: string | null;
+  /** Téléphone connu de Calendly — ne remplace jamais un numéro déjà saisi. */
+  phone?: string | null;
   /** Statut Calendly du rendez-vous le plus récent de cette personne. */
   statut: 'a_venir' | 'honore' | 'no_show' | 'reporte' | 'annule';
   investorId: string | null;
@@ -34,6 +36,26 @@ export type RdvLeadInput = {
  *
  * @returns nombre de fiches créées.
  */
+/**
+ * Fiche contact Calendly correspondant à chaque e-mail (insensible à la casse).
+ * Sert à rendre CLIQUABLE un lead de l'agenda même hors base SAH : la page RDV
+ * relie chaque rendez-vous à sa fiche prospect via cette map.
+ */
+export async function getContactIdsByEmails(emails: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(emails.filter(Boolean).map((e) => e.trim().toLowerCase()))];
+  const map = new Map<string, string>();
+  if (wanted.length === 0) return map;
+  const rows = await db.execute(sql`
+    select id::text as id, lower(calendly_email) as email
+    from rdv_contacts
+    where source = 'calendly' and lower(calendly_email) = any(${wanted})
+  `);
+  for (const r of rows as unknown as { id: string; email: string }[]) {
+    map.set(r.email, r.id);
+  }
+  return map;
+}
+
 export async function upsertRdvContacts(
   leads: RdvLeadInput[],
   ownerUserId: string,
@@ -57,10 +79,10 @@ export async function upsertRdvContacts(
     // on ne crée rien plutôt que de faire tomber toute la page.
     const rows = await db.execute(sql`
       insert into rdv_contacts (
-        calendly_email, full_name, source, owner_user_id, investor_id,
+        calendly_email, full_name, phone, source, owner_user_id, investor_id,
         pipeline_stage, pipeline_entered_at, pipeline_stage_updated_at
       )
-      select ${email}, ${lead.fullName}, 'calendly', ${ownerUserId}, ${lead.investorId},
+      select ${email}, ${lead.fullName}, ${lead.phone ?? null}, 'calendly', ${ownerUserId}, ${lead.investorId},
              ${stage}::contact_stage, now(), now()
       where not exists (
         select 1 from rdv_contacts c
@@ -79,6 +101,7 @@ export async function upsertRdvContacts(
     await db.execute(sql`
       update rdv_contacts c
       set full_name = coalesce(nullif(trim(c.full_name), ''), ${lead.fullName}),
+          phone = coalesce(nullif(trim(c.phone), ''), ${lead.phone ?? null}),
           investor_id = coalesce(c.investor_id, ${lead.investorId}),
           owner_user_id = coalesce(c.owner_user_id, ${ownerUserId}),
           pipeline_stage = case
