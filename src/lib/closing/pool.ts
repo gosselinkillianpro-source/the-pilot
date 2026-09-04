@@ -36,8 +36,8 @@ export const POOL_TIERS: PoolTierMeta[] = [
   },
   {
     key: 'hot',
-    label: 'Moments chauds',
-    hint: 'Premier investissement à remercier, argent qui dort, remboursement proche',
+    label: 'À remercier, argent à placer, remboursements proches',
+    hint: 'Premier investissement récent, wallet alimenté non investi, projet qui rembourse sous 30 jours',
   },
   {
     key: 'base',
@@ -93,4 +93,95 @@ export function buildPool<T extends PoolCandidate>(rows: T[]): Pool<T> {
 /** Nombre de personnes servies avant la base, pour dire « rien de plus urgent ». */
 export function urgentCount<T extends PoolCandidate>(pool: Pool<T>): number {
   return pool.breach_new.length + pool.other_new.length + pool.hot.length;
+}
+
+/* ============================================================
+   AFFICHAGE — des groupes qui disent POURQUOI on appelle
+   ============================================================ */
+
+export type PoolGroup<T> = {
+  key: string;
+  /** Dans les mots du closer : la raison d'appeler ces personnes. */
+  label: string;
+  hint: string;
+  /** Servi avant la base historique. */
+  urgent: boolean;
+  rows: T[];
+};
+
+/**
+ * Libellés du pool. Retour de Killian (4 sept. 2026) : « Moments chauds » ne
+ * veut rien dire, le closer doit savoir pourquoi il appelle chaque groupe.
+ * Un groupe = une raison, une phrase de consigne.
+ */
+const GROUP_LABELS: Record<string, { label: string; hint: string }> = {
+  breach_new: {
+    label: 'Inscrits via les pubs',
+    hint: 'À rappeler sous 5 minutes : finaliser l’inscription ou le KYC, cerner le projet, proposer un RDV.',
+  },
+  other_new: {
+    label: 'Nouveaux inscrits · parrainage, organique',
+    hint: 'À rappeler sous 48 h : même objectif que les pubs.',
+  },
+  bucket_2: {
+    label: 'Viennent d’investir · à remercier',
+    hint: 'Premier investissement il y a moins de 15 jours : créer le lien, vérifier que tout s’est bien passé, proposer le parrainage.',
+  },
+  bucket_3: {
+    label: 'Argent qui dort sur le wallet',
+    hint: 'Solde disponible non investi depuis plusieurs jours : aider à le placer maintenant.',
+  },
+  bucket_4: {
+    label: 'Remboursement proche · proposer un réinvestissement',
+    hint: 'Un projet rembourse dans les 30 jours : le meilleur moment pour réinvestir.',
+  },
+  bucket_5: {
+    label: 'KYC à finir',
+    hint: 'Compte créé, pièce d’identité pas validée : débloquer la capacité à investir.',
+  },
+  bucket_6: {
+    label: 'Inscription à finir',
+    hint: 'Compte commencé sans être terminé : comprendre le blocage, accompagner. Pas de vente.',
+  },
+  bucket_7: {
+    label: 'KYC validé, jamais investi · inscrits récents',
+    hint: 'Peuvent investir, n’ont rien souscrit : présenter un projet.',
+  },
+  bucket_8: {
+    label: 'KYC validé, jamais investi · anciens',
+    hint: 'Inscrits depuis plus de 90 jours : réengager s’il y a un signal, sinon laisser l’e-mail faire.',
+  },
+  bucket_9: {
+    label: 'Relation client',
+    hint: 'Ont investi, pas d’échéance proche : entretenir la relation, jamais au détriment des autres.',
+  },
+};
+
+function byBucket<T extends PoolCandidate>(rows: T[]): [number, T[]][] {
+  const map = new Map<number, T[]>();
+  for (const r of rows) {
+    const list = map.get(r.scored.queueBucket) ?? [];
+    list.push(r);
+    map.set(r.scored.queueBucket, list);
+  }
+  return [...map.entries()].sort((a, b) => a[0] - b[0]);
+}
+
+/**
+ * Le pool en groupes affichables, dans l'ordre de service : pubs, autres
+ * nouveaux, puis chaque raison « chaude » (remercier, argent à placer,
+ * remboursement), puis la base par raison. Les groupes vides sont omis.
+ */
+export function groupPool<T extends PoolCandidate>(pool: Pool<T>): PoolGroup<T>[] {
+  const groups: PoolGroup<T>[] = [];
+  const add = (key: string, rows: T[], urgent: boolean) => {
+    if (rows.length === 0) return;
+    const meta = GROUP_LABELS[key] ?? { label: key, hint: '' };
+    groups.push({ key, label: meta.label, hint: meta.hint, urgent, rows });
+  };
+  add('breach_new', pool.breach_new, true);
+  add('other_new', pool.other_new, true);
+  for (const [bucket, rows] of byBucket(pool.hot)) add(`bucket_${bucket}`, rows, true);
+  for (const [bucket, rows] of byBucket(pool.base)) add(`bucket_${bucket}`, rows, false);
+  return groups;
 }
