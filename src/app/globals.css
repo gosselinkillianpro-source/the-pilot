@@ -314,46 +314,50 @@
 [data-theme="dark"] .horizon-moon {
   display: block;
   position: fixed;
-  width: 130px;
-  height: 130px;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
-  left: 50%;
-  bottom: 16%;
+  /* Décalée du centre (les cartes vivent au milieu de l'écran) et enfoncée
+     derrière les crêtes : discrète, elle n'éblouit plus le contenu au-dessus. */
+  left: 72%;
+  bottom: 13%;
   transform: translateX(-50%);
-  /* Disque lunaire : blanc bleuté, cratères suggérés, ombre de phase en bas à droite. */
+  /* Disque lunaire : blanc bleuté atténué, cratères suggérés, ombre de phase. */
   background:
-    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 42%),
     radial-gradient(circle at 68% 62%, rgba(148, 170, 210, 0.5) 0%, rgba(148, 170, 210, 0) 26%),
     radial-gradient(circle at 42% 74%, rgba(148, 170, 210, 0.4) 0%, rgba(148, 170, 210, 0) 18%),
-    radial-gradient(circle at 38% 35%, #F2F7FF 0%, #D6E4F8 55%, #A9BEDD 100%);
+    radial-gradient(circle at 38% 35%, #D9E5F6 0%, #B9CCE8 55%, #8FA6C8 100%);
   box-shadow:
-    inset -18px -14px 30px rgba(20, 28, 58, 0.4),
-    0 0 30px 6px rgba(61, 158, 255, 0.3),
-    0 0 90px 30px rgba(61, 158, 255, 0.12);
+    inset -16px -12px 26px rgba(20, 28, 58, 0.45),
+    0 0 18px 3px rgba(61, 158, 255, 0.16),
+    0 0 50px 14px rgba(61, 158, 255, 0.06);
+  opacity: 0.8;
   z-index: -4;
   pointer-events: none;
   animation: moon-set 12s ease-in-out infinite;
 }
 
-/* Halo diffus autour de la lune, teinté du bleu néon signature. */
+/* Halo diffus autour de la lune — volontairement très léger : il passe sous
+   les surfaces en verre, un halo trop fort rendait les menus illisibles. */
 [data-theme="dark"] .horizon-moon-glow {
   display: block;
   position: fixed;
-  width: 520px;
-  height: 520px;
+  width: 340px;
+  height: 340px;
   border-radius: 50%;
-  left: 50%;
-  bottom: 4%;
+  left: 72%;
+  bottom: 6%;
   transform: translateX(-50%);
-  background: radial-gradient(circle, rgba(61, 158, 255, 0.18) 0%, rgba(61, 158, 255, 0) 62%);
+  background: radial-gradient(circle, rgba(61, 158, 255, 0.08) 0%, rgba(61, 158, 255, 0) 62%);
   filter: blur(24px);
   z-index: -5;
   pointer-events: none;
 }
 
 @keyframes moon-set {
-  0%, 100% { opacity: 0.95; transform: translateX(-50%) translateY(0); }
-  50% { opacity: 1; transform: translateX(-50%) translateY(4px); }
+  0%, 100% { opacity: 0.75; transform: translateX(-50%) translateY(0); }
+  50% { opacity: 0.85; transform: translateX(-50%) translateY(4px); }
 }
 
 /* Ciel étoilé : deux nappes de points en dégradés radiaux, scintillement lent. */
