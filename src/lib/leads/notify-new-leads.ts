@@ -82,6 +82,12 @@ export async function notifyNewLeads(now = new Date()): Promise<NotifyResult> {
       and i.sah_created_at is not null
       and i.sah_created_at > now() - (${MAX_LEAD_AGE_MINUTES} * interval '1 minute')
       and ${BREACH_PREDICATE}
+      -- Un RDV Calendly pris : Guillaume s'en occupe, pas d'alerte aux closers.
+      and not exists (
+        select 1 from rdv_contacts rc
+        where rc.source = 'calendly'
+          and (rc.investor_id = i.id or lower(rc.calendly_email) = lower(i.email))
+      )
     order by i.sah_created_at asc
   `);
 

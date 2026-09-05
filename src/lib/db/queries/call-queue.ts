@@ -139,6 +139,11 @@ export async function getCallQueue(opts?: {
   includeRecentlyCalled?: boolean;
   /** Ajouter le suivi par personne (joints, tentatives, prochaine action). */
   withFollowUp?: boolean;
+  /**
+   * Écarter les personnes qui ont pris un rendez-vous Calendly : Guillaume les
+   * suit déjà, elles ne vont ni dans le pool des closers ni dans le mode appel.
+   */
+  excludeCalendly?: boolean;
 }): Promise<QueueRow[]> {
   const now = new Date();
   const closerFilter = opts?.assignedCloserId
@@ -176,6 +181,15 @@ export async function getCallQueue(opts?: {
   // On exclut les leads déjà clos (gagné/perdu) de la file d'appels.
   const stageFilter = opts?.excludeWon
     ? sql`and i.pipeline_stage not in ('closed_won', 'closed_lost')`
+    : sql``;
+  // Rattachement par fiche OU par e-mail : la fiche existe dès que l'agenda a
+  // été lu, le lien au compte SAH peut arriver plus tard.
+  const calendlyFilter = opts?.excludeCalendly
+    ? sql`and not exists (
+        select 1 from rdv_contacts rc
+        where rc.source = 'calendly'
+          and (rc.investor_id = i.id or lower(rc.calendly_email) = lower(i.email))
+      )`
     : sql``;
 
   // Suivi par personne : optionnel, parce que trois sous-requêtes de plus sur
@@ -269,6 +283,7 @@ export async function getCallQueue(opts?: {
     ${networkFilter}
     ${oneFilter}
     ${stageFilter}
+    ${calendlyFilter}
     ${sourceFilter}
     ${recentCallFilter}
     group by i.id, cu.full_name, au.full_name, li.type, li.outcome, li.note, li.created_at

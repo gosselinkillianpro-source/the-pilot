@@ -256,7 +256,7 @@ export default async function AujourdhuiPage({
             icon={<PhoneOutgoing size={15} />}
             title="À prendre dans le pool"
             count={urgent}
-            hint="Personnes que personne ne suit encore, par raison d’appel. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
+            hint="Personnes que personne ne suit encore, par raison d’appel. Les rendez-vous Calendly n’y sont pas : Guillaume les suit. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
           >
             {urgentGroups.length === 0 ? (
               <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-3)' }}>

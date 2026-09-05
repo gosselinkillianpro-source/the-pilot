@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { refreshCalendlyContacts } from '@/lib/integrations/calendly/refresh';
 import { runSahSync, type SyncScope } from '@/lib/integrations/sah/sync';
 import { notifyChange } from '@/lib/realtime/broadcast';
 import { SYNC_TOPICS } from '@/lib/realtime/topics';
@@ -48,9 +49,19 @@ async function handle(req: NextRequest): Promise<Response> {
   const startedAt = Date.now();
   try {
     const result = await runSahSync(scope);
+    // Rendez-vous Calendly : fiches à jour au même rythme (15 min), pour que le
+    // pool des closers ne propose jamais quelqu'un que Guillaume suit déjà.
+    // Best-effort : un agenda en erreur ne fait pas échouer la synchro.
+    const calendly = scope === 'light' ? await refreshCalendlyContacts() : null;
     // Les écrans ouverts se mettent à jour sans que personne n'ait à recharger.
     await notifyChange(SYNC_TOPICS.sah);
-    return Response.json({ ok: true, scope, durationMs: Date.now() - startedAt, ...result });
+    return Response.json({
+      ok: true,
+      scope,
+      durationMs: Date.now() - startedAt,
+      ...result,
+      calendly,
+    });
   } catch (e) {
     return Response.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
