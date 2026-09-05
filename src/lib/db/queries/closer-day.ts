@@ -108,7 +108,7 @@ export async function getCloserDay(closerId: string, now: Date = new Date()): Pr
   const [followUp, ownedRows, poolRows, statsRows, leaderboard, credited] = await Promise.all([
     getFollowUp({ closerId }),
     getCallQueue({ assignedCloserId: closerId, includeRecentlyCalled: true, withFollowUp: true }),
-    getCallQueue({ excludeWon: true }),
+    getCallQueue({ excludeWon: true, excludeCalendly: true }),
     db.execute(sql`
       select
         count(*) filter (where type in ('call_outbound', 'call_inbound'))::int as calls,
