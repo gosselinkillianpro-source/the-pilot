@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { CallButtons } from '@/components/closing/call-dialog';
 import { ClaimControl } from '@/components/closing/claim-control';
 import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
@@ -53,6 +54,10 @@ export default async function AujourdhuiPage({
   const viewed = await resolveViewedCloser(user, sp.closer);
   const day = await getCloserDay(viewed.viewedId);
   const canAct = user.role !== 'executive';
+  // Tentatives sans réponse par personne, pour pré-remplir la suite dans la fenêtre d'appel.
+  const attemptsByInvestor = new Map(
+    day.clients.map((c) => [c.id, c.followUp?.missedAttempts ?? 0] as const),
+  );
   const groups = groupPool(day.pool);
   const urgentGroups = groups.filter((g) => g.urgent);
   const baseGroups = groups.filter((g) => !g.urgent);
@@ -177,6 +182,7 @@ export default async function AujourdhuiPage({
                 last={i === day.tasks.overdue.length - 1}
                 now={day.now}
                 canAct={canAct}
+                missedAttempts={attemptsByInvestor.get(t.investorId) ?? 0}
               />
             ))}
           </Section>
@@ -194,6 +200,7 @@ export default async function AujourdhuiPage({
                 last={i === day.tasks.dueToday.length - 1}
                 now={day.now}
                 canAct={canAct}
+                missedAttempts={attemptsByInvestor.get(t.investorId) ?? 0}
               />
             ))}
           </Section>
@@ -256,6 +263,7 @@ export default async function AujourdhuiPage({
                 last={i === day.tasks.laterToday.length - 1}
                 now={day.now}
                 canAct={canAct}
+                missedAttempts={attemptsByInvestor.get(t.investorId) ?? 0}
               />
             ))}
           </Section>
@@ -484,30 +492,21 @@ function Section({
   );
 }
 
-function ResultLink({ investorId }: { investorId: string }) {
-  return (
-    <Link
-      href={`/closing/session?lead=${investorId}&from=${encodeURIComponent(BACK)}`}
-      className="btn btn-secondary btn-sm"
-      title="Enregistrer le résultat et la suite"
-    >
-      Résultat
-    </Link>
-  );
-}
-
 function TaskRow({
   task,
   late = false,
   last,
   now,
   canAct,
+  missedAttempts = 0,
 }: {
   task: CallbackRow;
   late?: boolean;
   last: boolean;
   now: Date;
   canAct: boolean;
+  /** Tentatives sans réponse de la personne — pour pré-remplir la suite. */
+  missedAttempts?: number;
 }) {
   return (
     <div
@@ -546,16 +545,21 @@ function TaskRow({
         </span>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        {task.phone ? (
+        {canAct ? (
+          <>
+            <CallButtons
+              investorId={task.investorId}
+              name={task.fullName ?? 'cette personne'}
+              phone={task.phone}
+              missedAttempts={missedAttempts}
+              compact
+            />
+            <TaskDoneButton taskId={task.taskId} label={task.fullName ?? undefined} />
+          </>
+        ) : task.phone ? (
           <a href={`tel:${task.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
             <Phone size={13} />
           </a>
-        ) : null}
-        {canAct ? (
-          <>
-            <ResultLink investorId={task.investorId} />
-            <TaskDoneButton taskId={task.taskId} label={task.fullName ?? undefined} />
-          </>
         ) : null}
       </div>
     </div>
@@ -621,12 +625,19 @@ function PersonRow({
         </span>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        {row.phone ? (
+        {canAct ? (
+          <CallButtons
+            investorId={row.id}
+            name={row.fullName ?? row.email}
+            phone={row.phone}
+            missedAttempts={row.followUp?.missedAttempts ?? 0}
+            compact
+          />
+        ) : row.phone ? (
           <a href={`tel:${row.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
             <Phone size={13} />
           </a>
         ) : null}
-        {canAct ? <ResultLink investorId={row.id} /> : null}
         {canAct && row.claimedById === myId ? (
           <ClaimControl investorId={row.id} claimedByMe />
         ) : null}

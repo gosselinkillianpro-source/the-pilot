@@ -1,5 +1,6 @@
 import { Phone, Search, UserSquare2 } from 'lucide-react';
 import Link from 'next/link';
+import { CallButtons } from '@/components/closing/call-dialog';
 import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { deadlineLabel } from '@/lib/closing/distribution';
@@ -340,18 +341,18 @@ function ClientLine({
       </Td>
       <Td align="right">
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          {c.phone ? (
+          {canAct ? (
+            <CallButtons
+              investorId={c.id}
+              name={c.fullName ?? c.email}
+              phone={c.phone}
+              missedAttempts={c.followUp?.missedAttempts ?? 0}
+              compact
+            />
+          ) : c.phone ? (
             <a href={`tel:${c.phone}`} className="btn btn-primary btn-sm" aria-label="Appeler">
               <Phone size={13} />
             </a>
-          ) : null}
-          {canAct ? (
-            <Link
-              href={`/closing/session?lead=${c.id}&from=${encodeURIComponent(backHref)}`}
-              className="btn btn-secondary btn-sm"
-            >
-              Résultat
-            </Link>
           ) : null}
         </div>
       </Td>
