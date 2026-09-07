@@ -1,6 +1,7 @@
 import 'server-only';
 import { and, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { assignCgpClients } from '@/lib/db/queries/cgp-clients';
 import { applyAutomaticMoves } from '@/lib/db/queries/pipeline-auto';
 import { investors, projects, subscriptions } from '@/lib/db/schema';
 import { getSahClient } from './client';
@@ -393,6 +394,13 @@ async function syncInvestors(sinceMinutes?: number): Promise<number> {
 
   await recomputeBreachLevels();
   await recomputeAffiliateNetwork();
+  // Les inscrits venus avec le code d'un closer CGP lui reviennent d'office
+  // (personnes libres seulement). Best-effort : ne fait pas échouer la synchro.
+  try {
+    await assignCgpClients();
+  } catch (e) {
+    console.error('[sync] attribution CGP :', e instanceof Error ? e.message : e);
+  }
   return rows.length;
 }
 

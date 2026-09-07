@@ -144,8 +144,14 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   fullName: text('full_name'),
   role: userRoleEnum('role').notNull().default('executive'),
-  // Comptes "admin affilié" uniquement : sah_id de la personne SAH représentée par ce
-  // compte. Sert à scoper l'accès à son seul sous-réseau. NULL pour le staff interne.
+  /**
+   * sah_id de la personne SAH que ce compte représente. NULL pour le staff sans
+   * compte SAH. Deux usages :
+   *   - « admin affilié » : borne l'accès à son seul sous-réseau (affiliate_network) ;
+   *   - closer CGP (depuis le 7 sept. 2026) : les inscrits venus avec SON code
+   *     bonus (investors.parent_sah_id = ce sah_id) lui sont attribués d'office —
+   *     ce sont ses clients, ils ne passent jamais par le pool.
+   */
   sahUserId: text('sah_user_id'),
   avatarUrl: text('avatar_url'),
   phone: text('phone'),
@@ -222,6 +228,15 @@ export const investors = pgTable(
     scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
     scoreReasoning: text('score_reasoning'),
     assignedCloserId: uuid('assigned_closer_id').references(() => users.id),
+    /** Quand la personne a été attribuée à son closer actuel (null = jamais attribuée). */
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
+    /**
+     * Comment elle l'a été : `call` (premier résultat enregistré — propriété
+     * collante), `cgp` (inscrite avec le code bonus du closer), `distribution`
+     * (nouvel inscrit pub réparti à tour de rôle), `redistribution` (repris à un
+     * closer resté 72 h sans action), `manual` (admin), `calendly` (agenda relié).
+     */
+    assignmentSource: text('assignment_source'),
     // Verrou de travail : un closer "prend" un lead pour éviter le double-appel.
     // Auto-libéré après un délai (cf. CLAIM_TTL_MIN) ou après l'enregistrement de l'appel.
     claimedById: uuid('claimed_by_id').references(() => users.id),
@@ -259,6 +274,34 @@ export const investors = pgTable(
     index('investors_assigned_closer_idx').on(t.assignedCloserId),
     index('investors_pipeline_stage_idx').on(t.pipelineStage),
   ],
+);
+
+/* ============================================================
+   USER_INVITATIONS — invitations à rejoindre THE PILOT (7 sept. 2026).
+   L'admin invite une adresse avec un rôle ; la personne reçoit un lien, choisit
+   son mot de passe, le compte Auth est créé à ce moment-là (même e-mail). On ne
+   stocke que le HASH du jeton : la base ne permet pas de rejouer le lien.
+   ============================================================ */
+export const userInvitations = pgTable(
+  'user_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull(),
+    fullName: text('full_name'),
+    role: userRoleEnum('role').notNull(),
+    /** Rattachement au compte SAH (CGP) : ses inscrits lui seront attribués à l'acceptation. */
+    sahUserId: text('sah_user_id'),
+    tokenHash: text('token_hash').notNull().unique(),
+    invitedBy: uuid('invited_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastSentAt: timestamp('last_sent_at', { withTimezone: true }),
+    sendCount: integer('send_count').notNull().default(0),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedUserId: uuid('accepted_user_id').references(() => users.id),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (t) => [index('user_invitations_email_lower_idx').on(sql`lower(${t.email})`)],
 );
 
 /* ============================================================

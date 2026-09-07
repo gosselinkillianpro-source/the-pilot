@@ -15,10 +15,14 @@
  *   - vrai CGP tiers → partenaire ;
  *   - sinon → venu seul (invitation admin, organique).
  *
+ * Ajout du 7 sept. 2026 : quand le propriétaire du code est un closer de
+ * l'équipe (Dimitri, Alexandre, Yannick sont CGP chez SAH), la personne n'est
+ * pas « partenaire » mais « réseau CGP » : c'est SON client, attribué d'office.
+ *
  * Module pur, testé.
  */
 
-export type InvestorOrigin = 'ads' | 'referral' | 'partner' | 'other';
+export type InvestorOrigin = 'ads' | 'referral' | 'cgp' | 'partner' | 'other';
 
 export type OriginInput = {
   bonusCode: string | null;
@@ -26,6 +30,8 @@ export type OriginInput = {
   parentSahId: string | null;
   cgpName: string | null;
   cgpNetwork: string | null;
+  /** Le parrain (propriétaire du code) est un closer de l'équipe (users.sah_user_id). */
+  parentIsCloser?: boolean;
 };
 
 export type OriginMeta = {
@@ -53,6 +59,12 @@ export const ORIGINS: OriginMeta[] = [
     label: 'Venu seul',
     hint: 'Invitation ou organique : sans code ni parrain',
     badge: 'badge-neutral',
+  },
+  {
+    key: 'cgp',
+    label: 'Réseau CGP',
+    hint: 'Inscrit avec le code CGP d’un closer de l’équipe : son client, attribué d’office',
+    badge: 'badge-success',
   },
   {
     key: 'partner',
@@ -88,7 +100,9 @@ export function isThirdPartyCgp(cgpName: string | null, cgpNetwork: string | nul
 
 export function investorOrigin(i: OriginInput): InvestorOrigin {
   const code = i.bonusCode?.trim() ?? '';
-  if (code) return isAdCode(code) ? 'ads' : 'partner';
+  if (code && isAdCode(code)) return 'ads';
+  if (i.parentIsCloser) return 'cgp';
+  if (code) return 'partner';
   if (i.breachLevel != null && i.breachLevel >= 1) return 'referral';
   if (i.breachLevel === 0) return 'ads';
   if (isThirdPartyCgp(i.cgpName, i.cgpNetwork)) return 'partner';

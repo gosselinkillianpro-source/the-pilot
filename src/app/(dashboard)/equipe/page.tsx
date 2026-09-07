@@ -2,8 +2,11 @@ import { Activity } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { listInvitations } from '@/lib/db/queries/invitations';
 import { type ActivityEvent, type CloserStatus, getTeamOverview } from '@/lib/db/queries/team';
 import { AutoRefresh } from './auto-refresh';
+import { InvitePanel } from './invite-panel';
+import { SahLinkForm } from './sah-link-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +40,10 @@ export default async function EquipePage() {
   const user = await getAuthenticatedUser();
   if (user.role !== 'admin') notFound(); // page réservée à l'admin
 
-  const { closers, feed } = await getTeamOverview();
+  const [{ closers, feed }, invitations] = await Promise.all([
+    getTeamOverview(),
+    listInvitations(),
+  ]);
   const onlineCount = closers.filter((c) => c.online).length;
 
   return (
@@ -79,6 +85,9 @@ export default async function EquipePage() {
           closers.map((c) => <CloserCard key={c.id} c={c} />)
         )}
       </div>
+
+      {/* Accès : inviter un membre, suivre les invitations */}
+      <InvitePanel invitations={invitations} />
 
       {/* Journal d'activité de l'équipe */}
       <div className="view-card">
@@ -157,6 +166,11 @@ function CloserCard({ c }: { c: CloserStatus }) {
         >
           <Stat label="Appels aujourd'hui" value={c.callsToday} />
           <Stat label="Actions aujourd'hui" value={c.actionsToday} />
+        </div>
+
+        {/* Compte SAH (CGP) : ses inscrits lui reviennent d'office */}
+        <div style={{ paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+          <SahLinkForm userId={c.id} initial={c.sahUserId} cgpClients={c.cgpClients} />
         </div>
       </div>
     </div>
