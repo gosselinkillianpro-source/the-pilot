@@ -60,14 +60,25 @@ describe('proposeNextAction — la suite est pré-remplie', () => {
     });
     expect(kyc).toMatchObject({ kind: 'kyc_check', stage: 'contacted' });
 
-    const notNow = proposeNextAction({
+    // Va investir : on vérifie à J+3 que la souscription est passée.
+    const willInvest = proposeNextAction({
       outcome: 'reached',
-      reachedResult: 'not_now',
+      reachedResult: 'will_invest',
       missedAttempts: 0,
       now: NOW,
     });
-    expect(notNow).toMatchObject({ kind: 'callback', stage: 'to_call_back' });
-    expect(notNow.dueAt?.toISOString()).toBe('2026-09-18T08:00:00.000Z');
+    expect(willInvest).toMatchObject({ kind: 'invest_check', stage: 'interested' });
+    expect(willInvest.dueAt?.toISOString()).toBe('2026-09-07T08:00:00.000Z');
+
+    // Pas intéressé ≠ refus : sommeil, reprise dans 90 jours.
+    const notInterested = proposeNextAction({
+      outcome: 'reached',
+      reachedResult: 'not_interested',
+      missedAttempts: 0,
+      now: NOW,
+    });
+    expect(notInterested).toMatchObject({ kind: 'resume', stage: 'dormant' });
+    expect(notInterested.dueAt?.toISOString()).toBe('2026-12-03T09:00:00.000Z');
 
     const refused = proposeNextAction({
       outcome: 'reached',
