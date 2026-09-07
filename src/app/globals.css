@@ -2004,3 +2004,44 @@ body.drawer-open {
   }
 }
 
+
+/* ============================================================
+   Fenêtre d'appel (CallButtons) — <dialog> natif
+   ============================================================ */
+.call-dialog {
+  /* Le reset Tailwind met margin: 0 partout : on rétablit le centrage natif de <dialog>. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0;
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text-1);
+  box-shadow: var(--shadow-glass-lg);
+}
+.call-dialog:not([open]) {
+  display: none;
+}
+.call-dialog::backdrop {
+  background: rgba(10, 14, 24, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.call-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 20px;
+}
+.call-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
