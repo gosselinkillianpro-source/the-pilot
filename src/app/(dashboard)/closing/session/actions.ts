@@ -22,7 +22,9 @@ const schema = z.object({
     'profile_incompatible',
     'in_progress',
   ]),
-  reachedResult: z.enum(['interested', 'will_finish_kyc', 'not_now', 'refused']).optional(),
+  reachedResult: z
+    .enum(['interested', 'will_finish_kyc', 'will_invest', 'not_interested', 'refused'])
+    .optional(),
   next: z.object({
     kind: z.enum(NEXT_KINDS),
     dueAt: z.string().datetime({ offset: true }).optional(),

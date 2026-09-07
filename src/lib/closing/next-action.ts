@@ -16,9 +16,15 @@ import type { ClosingStage } from './pipeline';
  *   en cours                    → rappeler demain
  *   joint · intéressé           → proposer un RDV / envoyer une proposition (J+3)
  *   joint · va finir son KYC    → vérifier le KYC (J+2)
- *   joint · pas maintenant      → rappeler à la date donnée (J+14 par défaut)
+ *   joint · va investir         → vérifier que la souscription est passée (J+3)
+ *   joint · pas intéressé       → en sommeil, reprendre contact dans 90 jours
  *   joint · refus               → clore
  *   faux numéro / incompatible  → clore
+ *
+ * Les cinq issues « joint » sont celles de Killian (7 sept. 2026) : intéressé,
+ * va finir son KYC, va investir, pas intéressé, refus. « Pas intéressé » n'est
+ * pas un refus : la personne n'est pas mûre, on la laisse respirer et on
+ * revient ; « refus » clôt la fiche.
  *
  * Module pur, testé. Les heures sont posées à 10 h heure de Paris.
  */
@@ -31,19 +37,38 @@ export type CallOutcome =
   | 'profile_incompatible'
   | 'in_progress';
 
-export type ReachedResult = 'interested' | 'will_finish_kyc' | 'not_now' | 'refused';
+export type ReachedResult =
+  | 'interested'
+  | 'will_finish_kyc'
+  | 'will_invest'
+  | 'not_interested'
+  | 'refused';
 
-export const REACHED_RESULTS: { key: ReachedResult; label: string }[] = [
-  { key: 'interested', label: 'Intéressé·e' },
-  { key: 'will_finish_kyc', label: 'Va finir son KYC' },
-  { key: 'not_now', label: 'Pas maintenant' },
-  { key: 'refused', label: 'Refus' },
+export const REACHED_RESULTS: { key: ReachedResult; label: string; hint: string }[] = [
+  { key: 'interested', label: 'Intéressé·e', hint: 'Veut en savoir plus : RDV ou proposition' },
+  {
+    key: 'will_finish_kyc',
+    label: 'Va finir son KYC',
+    hint: 'Doit valider son compte avant de pouvoir investir',
+  },
+  {
+    key: 'will_invest',
+    label: 'Va investir',
+    hint: 'S’est engagé·e à souscrire : on vérifie que c’est fait',
+  },
+  {
+    key: 'not_interested',
+    label: 'Pas intéressé·e',
+    hint: 'Pas mûr·e aujourd’hui : en sommeil, on revient plus tard',
+  },
+  { key: 'refused', label: 'Refus', hint: 'Ne veut plus être contacté·e : la fiche est close' },
 ];
 
 export type NextActionKind =
   | 'retry'
   | 'callback'
   | 'kyc_check'
+  | 'invest_check'
   | 'proposal'
   | 'rdv'
   | 'thanks'
@@ -55,6 +80,7 @@ export const NEXT_ACTION_LABELS: Record<NextActionKind, string> = {
   retry: 'Réessayer',
   callback: 'Rappeler',
   kyc_check: 'Vérifier le KYC',
+  invest_check: 'Vérifier l’investissement',
   proposal: 'Envoyer une proposition',
   rdv: 'Proposer un RDV',
   thanks: 'Appel de remerciement',
@@ -69,6 +95,7 @@ export const CHOOSABLE_NEXT_ACTIONS: NextActionKind[] = [
   'proposal',
   'callback',
   'kyc_check',
+  'invest_check',
   'retry',
   'resume',
   'none',
@@ -82,7 +109,10 @@ export function taskTypeFor(kind: NextActionKind): string {
 /** Tentatives sans réponse au bout desquelles on met en pause. */
 export const MAX_RETRIES = 3;
 export const PAUSE_DAYS = 30;
-export const NOT_NOW_DEFAULT_DAYS = 14;
+/** « Va investir » : délai avant de vérifier que la souscription est passée. */
+export const INVEST_CHECK_DAYS = 3;
+/** « Pas intéressé » : sommeil avant de reprendre contact. */
+export const NOT_INTERESTED_PAUSE_DAYS = 90;
 const DEFAULT_HOUR_PARIS = 10;
 
 /** Instant UTC de `jour + plusDays` à `hour` h heure de Paris. */
@@ -169,12 +199,19 @@ export function proposeNextAction(input: ProposeInput): NextActionProposal {
         stage: 'contacted',
         reason: 'Vérifier dans 2 jours que le KYC est validé, sinon aider.',
       };
-    case 'not_now':
+    case 'will_invest':
       return {
-        kind: 'callback',
-        dueAt: dueAtParis(now, NOT_NOW_DEFAULT_DAYS),
-        stage: 'to_call_back',
-        reason: `Pas maintenant : rappel dans ${NOT_NOW_DEFAULT_DAYS} jours, date modifiable.`,
+        kind: 'invest_check',
+        dueAt: dueAtParis(now, INVEST_CHECK_DAYS),
+        stage: 'interested',
+        reason: `Va investir : vérifier dans ${INVEST_CHECK_DAYS} jours que la souscription est passée, sinon rappeler pour aider.`,
+      };
+    case 'not_interested':
+      return {
+        kind: 'resume',
+        dueAt: dueAtParis(now, NOT_INTERESTED_PAUSE_DAYS),
+        stage: 'dormant',
+        reason: `Pas intéressé·e aujourd'hui : en sommeil, reprise de contact dans ${NOT_INTERESTED_PAUSE_DAYS} jours (date modifiable).`,
       };
     case 'refused':
       return {

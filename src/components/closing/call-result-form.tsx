@@ -159,7 +159,18 @@ export function CallResultForm({
                   type="button"
                   className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => pickReached(r.key)}
-                  style={!active && r.key === 'refused' ? { color: 'var(--danger)' } : undefined}
+                  style={
+                    active
+                      ? undefined
+                      : r.key === 'refused'
+                        ? { color: 'var(--danger)' }
+                        : r.key === 'not_interested'
+                          ? { color: 'var(--warning)' }
+                          : r.key === 'will_invest'
+                            ? { color: 'var(--success)' }
+                            : undefined
+                  }
+                  title={r.hint}
                   aria-pressed={active}
                 >
                   {r.label}
