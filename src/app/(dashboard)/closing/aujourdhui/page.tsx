@@ -37,8 +37,8 @@ import { TaskDoneButton } from '../today/task-done-button';
  *
  * En haut : où j'en suis, en trois secondes. À gauche : ce que le système a
  * préparé, dans l'ordre (réservés, en retard, maintenant, à qualifier, plus
- * tard, à planifier). À droite : le pool commun (pubs d'abord) et où je me
- * situe. Le closer ne filtre rien ; il prend, il appelle, il enregistre.
+ * tard, à planifier). À droite : mes clients et où je me situe ; le pool
+ * commun seulement pour l'admin sur son poste. Le closer ne filtre rien ; il prend, il appelle, il enregistre.
  */
 
 export const dynamic = 'force-dynamic';
@@ -52,7 +52,11 @@ export default async function AujourdhuiPage({
 }) {
   const [sp, user] = await Promise.all([searchParams, getAuthenticatedUser()]);
   const viewed = await resolveViewedCloser(user, sp.closer);
-  const day = await getCloserDay(viewed.viewedId);
+  // Le pool commun ne se voit que sur le poste de l'admin lui-même : un closer
+  // n'a plus rien à y prendre (ses nouveaux leads lui arrivent par la rotation),
+  // et la « vue closer » de l'admin montre exactement ce que voit le closer.
+  const showPool = user.role === 'admin' && viewed.isMine;
+  const day = await getCloserDay(viewed.viewedId, new Date(), { withPool: showPool });
   const canAct = user.role !== 'executive';
   // Tentatives sans réponse par personne, pour pré-remplir la suite dans la fenêtre d'appel.
   const attemptsByInvestor = new Map(
@@ -136,7 +140,7 @@ export default async function AujourdhuiPage({
           {day.freshLeads.length > 0 && (
             <Section
               icon={<Timer size={15} />}
-              title="Nouveaux inscrits pubs — à toi, à appeler maintenant"
+              title="Nouveaux inscrits — à toi, à appeler maintenant"
               count={day.freshLeads.length}
               hint="Répartis à tour de rôle entre les closers. Un appel enregistré (même sans réponse) et la personne est à toi ; sans action sous 72 h, elle passe à un collègue."
               tone={
@@ -295,33 +299,35 @@ export default async function AujourdhuiPage({
           )}
         </div>
 
-        {/* ---------- Colonne droite : le pool, mes clients, la semaine ---------- */}
+        {/* ---------- Colonne droite : mes clients, la semaine (+ le pool pour l'admin) ---------- */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <Section
-            icon={<PhoneOutgoing size={15} />}
-            title="À prendre dans le pool"
-            count={urgent}
-            hint="Personnes que personne ne suit encore, par raison d’appel. Les nouveaux inscrits pubs n’y passent plus : ils sont répartis à tour de rôle dès l’arrivée. Les rendez-vous Calendly n’y sont pas : Guillaume les suit. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
-          >
-            {urgentGroups.length === 0 ? (
-              <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-3)' }}>
-                Rien de nouveau ni d'urgent : on passe à la base.
-              </div>
-            ) : null}
-            {urgentGroups.map((g) => (
-              <PoolGroupBlock key={g.key} group={g} canAct={canAct} myId={user.id} limit={6} />
-            ))}
-            {baseGroups.map((g, i) => (
-              <PoolGroupBlock
-                key={g.key}
-                group={g}
-                canAct={canAct}
-                myId={user.id}
-                limit={5}
-                collapsed={urgent > 0 || i > 0}
-              />
-            ))}
-          </Section>
+          {showPool ? (
+            <Section
+              icon={<PhoneOutgoing size={15} />}
+              title="Sans closer — vue admin"
+              count={urgent}
+              hint="Personnes que personne ne suit, par raison d’appel. Les nouveaux inscrits n’y passent plus : ils sont répartis à tour de rôle dès l’arrivée. Les closers ne voient pas ce bloc. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
+            >
+              {urgentGroups.length === 0 ? (
+                <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-3)' }}>
+                  Rien de nouveau ni d'urgent : on passe à la base.
+                </div>
+              ) : null}
+              {urgentGroups.map((g) => (
+                <PoolGroupBlock key={g.key} group={g} canAct={canAct} myId={user.id} limit={6} />
+              ))}
+              {baseGroups.map((g, i) => (
+                <PoolGroupBlock
+                  key={g.key}
+                  group={g}
+                  canAct={canAct}
+                  myId={user.id}
+                  limit={5}
+                  collapsed={urgent > 0 || i > 0}
+                />
+              ))}
+            </Section>
+          ) : null}
 
           <ClientsSummary day={day} />
 

@@ -2,7 +2,7 @@ import 'server-only';
 import { and, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { assignCgpClients } from '@/lib/db/queries/cgp-clients';
-import { distributeNewAdLeads } from '@/lib/db/queries/lead-distribution';
+import { distributeNewLeads } from '@/lib/db/queries/lead-distribution';
 import { applyAutomaticMoves } from '@/lib/db/queries/pipeline-auto';
 import { investors, projects, subscriptions } from '@/lib/db/schema';
 import { getSahClient } from './client';
@@ -626,12 +626,12 @@ export async function runSahSync(scope: SyncScope = 'full'): Promise<SyncResult>
     errors.push(`rangement des suivis: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // Filet de sécurité : les inscrits pubs libres sont répartis à tour de rôle
+  // Filet de sécurité : les nouveaux inscrits libres sont répartis à tour de rôle
   // (le détecteur des 2 minutes le fait normalement ; si lui est en panne,
   // la synchro du quart d'heure prend le relais). L'alerte reste au détecteur.
   if (scope === 'light' || scope === 'full') {
     try {
-      await distributeNewAdLeads();
+      await distributeNewLeads();
     } catch (e) {
       errors.push(`répartition des leads: ${e instanceof Error ? e.message : String(e)}`);
     }

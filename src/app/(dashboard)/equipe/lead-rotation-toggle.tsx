@@ -7,7 +7,7 @@ import { useToast } from '@/components/shared/toast';
 import { setAcceptsNewLeadsAction } from './actions';
 
 /**
- * « Reçoit les nouveaux leads pubs » : entrer ou sortir un closer de la
+ * « Reçoit les nouveaux leads » : entrer ou sortir un closer de la
  * rotation (vacances, Calendly seulement…). Admin seulement.
  */
 export function LeadRotationToggle({
@@ -34,8 +34,8 @@ export function LeadRotationToggle({
       }
       toast(
         res.enabled
-          ? `${name} reçoit maintenant les nouveaux leads pubs (à tour de rôle).`
-          : `${name} ne reçoit plus de nouveaux leads pubs. Ses clients lui restent.`,
+          ? `${name} reçoit maintenant les nouveaux leads (à tour de rôle).`
+          : `${name} ne reçoit plus de nouveaux leads. Ses clients lui restent.`,
         { variant: 'success', duration: 5000 },
       );
       router.refresh();
@@ -54,7 +54,7 @@ export function LeadRotationToggle({
         }}
       >
         <Shuffle size={11} />
-        Nouveaux leads pubs
+        Nouveaux leads
         {enabled && freshLeads > 0 ? (
           <span
             className="badge badge-warning"
@@ -74,8 +74,8 @@ export function LeadRotationToggle({
         disabled={pending}
         title={
           enabled
-            ? 'Dans la rotation : reçoit les nouveaux inscrits pubs à tour de rôle'
-            : 'Hors rotation : ne reçoit aucun nouveau lead pub'
+            ? 'Dans la rotation : reçoit les nouveaux inscrits à tour de rôle'
+            : 'Hors rotation : ne reçoit aucun nouveau lead'
         }
       >
         {pending ? '…' : enabled ? 'Dans la rotation' : 'Hors rotation'}

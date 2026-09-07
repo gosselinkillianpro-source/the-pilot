@@ -91,9 +91,6 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
   const shownCredited = originFilter
     ? credited.filter((s) => originGroup(s.origin) === originFilter)
     : credited;
-  const shownNotCredited = periodSubs.filter(
-    (s) => !s.credited && (!originFilter || originGroup(s.origin) === originFilter),
-  );
 
   const entries = board.entries;
   const myIndex = entries.findIndex((e) => e.closerId === viewed.viewedId);
@@ -324,16 +321,6 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
             backHref={backHref}
             empty="Aucune souscription créditée sur la période."
           />
-          {shownNotCredited.length > 0 ? (
-            <SubsCard
-              title="Souscriptions de tes clients non créditées"
-              subs={shownNotCredited}
-              total={sum(shownNotCredited)}
-              backHref={backHref}
-              empty=""
-              muted
-            />
-          ) : null}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>

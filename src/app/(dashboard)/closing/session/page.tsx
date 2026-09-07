@@ -33,7 +33,7 @@ function toSessionLead(r: QueueRow): SessionLead {
  * Le mode appel : une personne à la fois.
  *
  * Sans paramètre, l'ordre est celui du poste du jour (réservés, actions dues,
- * pool avec les pubs d'abord, base sans action). Avec `?lead=<id>`, une seule
+ * nouveaux leads répartis, base sans action ; pool en plus pour l'admin). Avec `?lead=<id>`, une seule
  * personne : c'est le bouton « Résultat » d'Aujourd'hui ou de Mes clients.
  */
 export default async function CallSessionPage({
@@ -51,7 +51,8 @@ export default async function CallSessionPage({
     // Une seule personne : avec son suivi (tentatives), pour proposer la bonne suite.
     rows = await getCallQueue({ investorId: sp.lead, withFollowUp: true });
   } else {
-    rows = await getSessionLeads(user.id);
+    // Le pool commun n'est proposé qu'à l'admin : les closers reçoivent leurs leads.
+    rows = await getSessionLeads(user.id, new Date(), { withPool: user.role === 'admin' });
   }
   // Une session ne doit JAMAIS proposer une personne réservée par un collègue :
   // c'est le double-appel assuré. Le verrou expiré est déjà remis à null.

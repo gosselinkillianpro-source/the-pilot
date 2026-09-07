@@ -305,7 +305,7 @@ function ClientLine({
           <span
             className="badge badge-warning"
             style={{ fontSize: 10 }}
-            title="Nouvel inscrit pub réparti à toi : un appel enregistré et la personne est à toi ; sans action sous 72 h, elle passe à un collègue."
+            title="Nouvel inscrit réparti à toi : un appel enregistré et la personne est à toi ; sans action sous 72 h, elle passe à un collègue."
           >
             nouveau lead · {deadlineLabel(c.assignedAt, now)}
           </span>
