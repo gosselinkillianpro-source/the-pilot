@@ -49,6 +49,8 @@ export type NewLead = {
   bonusCode: string | null;
   city: string | null;
   createdAt: Date;
+  /** « Pub », « Parrainage », « Venu seul » — d'où vient la personne. */
+  originLabel?: string | null;
 };
 
 export type AlertDecision =
@@ -135,10 +137,11 @@ export function buildAlertMessage(
   const age = minutesSince(lead.createdAt, now);
   const quand = age <= 1 ? "à l'instant" : `il y a ${age} min`;
   const nom = esc(lead.fullName?.trim() || lead.email);
+  const origine = lead.originLabel ? ` (${esc(lead.originLabel)})` : '';
   const titre = audience.forOwner
-    ? `🔥 <b>Nouveau lead pub — à toi</b> — inscrit ${quand}`
+    ? `🔥 <b>Nouvel inscrit — à toi</b>${origine} — inscrit ${quand}`
     : audience.assignedToName
-      ? `🔥 <b>Nouveau lead pub</b> → attribué à <b>${esc(audience.assignedToName)}</b> — inscrit ${quand}`
+      ? `🔥 <b>Nouvel inscrit</b>${origine} → attribué à <b>${esc(audience.assignedToName)}</b> — inscrit ${quand}`
       : `🔥 <b>Nouveau lead BREACH</b> — inscrit ${quand}`;
   const lignes = [titre, '', `<b>${nom}</b>`];
   if (lead.phone) {

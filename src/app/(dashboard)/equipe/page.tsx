@@ -63,7 +63,7 @@ export default async function EquipePage() {
           <h1 className="page-title">Équipe</h1>
           <div className="page-desc">
             Qui est en ligne, leur dernière action et l'activité en temps réel. Les nouveaux
-            inscrits pubs sont répartis à tour de rôle entre les closers « dans la rotation » ; sans
+            inscrits sont répartis à tour de rôle entre les closers « dans la rotation » ; sans
             action sous 72 h, la personne passe au suivant. Page réservée à l'admin · mise à jour
             automatique toutes les 30 s.
           </div>
@@ -171,7 +171,7 @@ function CloserCard({ c }: { c: CloserStatus }) {
           <Stat label="Actions aujourd'hui" value={c.actionsToday} />
         </div>
 
-        {/* Rotation des nouveaux leads pubs (72 h pour agir) */}
+        {/* Rotation des nouveaux leads (72 h pour agir) */}
         <div style={{ paddingTop: 6, borderTop: '1px solid var(--border)' }}>
           <LeadRotationToggle
             userId={c.id}

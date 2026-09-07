@@ -35,8 +35,8 @@ export default async function AlertesPage() {
       <div>
         <h1 className="page-title">Mes alertes</h1>
         <div className="page-desc">
-          Recevoir sur ton téléphone les nouveaux inscrits pubs qui te sont attribués, avec le
-          numéro à rappeler. Tu as 72 h pour agir, sinon la personne passe à un collègue.
+          Recevoir sur ton téléphone les nouveaux inscrits qui te sont attribués, avec le numéro à
+          rappeler. Tu as 72 h pour agir, sinon la personne passe à un collègue.
         </div>
       </div>
 

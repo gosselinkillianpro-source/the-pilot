@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import {
   DISTRIBUTION_WINDOW_DAYS,
+  isDistributableOrigin,
   isStaleAssignment,
   pickNextCloser,
   REDISTRIBUTION_AFTER_HOURS,
@@ -13,10 +14,11 @@ import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN } from './call-queue';
 
 /**
- * Répartition des nouveaux inscrits pubs — accès base.
+ * Répartition des nouveaux inscrits — accès base.
  *
- * `distributeNewAdLeads` : chaque inscrit pub libre de moins de 7 jours va au
- * prochain closer de la rotation (voir `lib/closing/distribution.ts`).
+ * `distributeNewLeads` : chaque inscrit libre de moins de 7 jours (pub,
+ * parrainage, venu seul) va au prochain closer de la rotation (voir
+ * `lib/closing/distribution.ts`).
  * `redistributeStaleLeads` : ceux restés 72 h sans action changent de main.
  * Les deux sont idempotentes et rejouables toutes les 2 minutes.
  */
@@ -81,11 +83,12 @@ async function markServed(closer: RotationCloser, at: Date): Promise<void> {
 }
 
 /**
- * Attribue les inscrits pubs libres et récents, à tour de rôle. Ne touche ni
- * aux personnes déjà suivies, ni à celles qu'un closer a réservées (« Je
- * prends » actif), ni aux clos, ni aux rendez-vous Calendly.
+ * Attribue les inscrits libres et récents, à tour de rôle. Ne touche ni aux
+ * personnes déjà suivies, ni aux clients de partenaires ou de closers CGP, ni
+ * à celles qu'un closer a réservées (« Je prends » actif), ni aux clos, ni aux
+ * rendez-vous Calendly.
  */
-export async function distributeNewAdLeads(now: Date = new Date()): Promise<DistributedLead[]> {
+export async function distributeNewLeads(now: Date = new Date()): Promise<DistributedLead[]> {
   const rotation = await listRotationClosers();
   if (rotation.length === 0) return [];
   // Paramètres datés castés explicitement : `$1 - interval` sans type est ambigu pour Postgres.
@@ -110,8 +113,8 @@ export async function distributeNewAdLeads(now: Date = new Date()): Promise<Dist
     order by i.sah_created_at asc
   `)) as unknown as CandidateRaw[];
 
-  const adLeads = rows.filter(
-    (r) =>
+  const leads = rows.filter((r) =>
+    isDistributableOrigin(
       investorOrigin({
         bonusCode: r.bonus_code,
         breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
@@ -119,11 +122,12 @@ export async function distributeNewAdLeads(now: Date = new Date()): Promise<Dist
         cgpName: r.cgp_name,
         cgpNetwork: r.cgp_network,
         parentIsCloser: r.parent_is_closer === true,
-      }) === 'ads',
+      }),
+    ),
   );
 
   const out: DistributedLead[] = [];
-  for (const [i, lead] of adLeads.entries()) {
+  for (const [i, lead] of leads.entries()) {
     const closer = pickNextCloser(rotation);
     if (!closer) break;
     // Garde-fou concurrent : si quelqu'un vient d'enregistrer un appel, la

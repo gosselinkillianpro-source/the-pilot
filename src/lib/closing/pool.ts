@@ -12,6 +12,10 @@
  *                  investi, relation) — proposé seulement quand il n'y a rien
  *                  de plus urgent.
  *
+ * Depuis le 7 sept. 2026 le pool n'est visible que de l'admin : les nouveaux
+ * inscrits sont répartis à tour de rôle (voir distribution.ts), les closers
+ * n'ont plus rien à y prendre.
+ *
  * Exclus du pool : les personnes déjà suivies par un closer, et les clients
  * de partenaires (code ou CGP tiers : ce n'est pas à Seven de les appeler
  * par-dessus leur conseiller). L'origine (pub, parrainage, venu seul,
@@ -112,8 +116,8 @@ const GROUP_LABELS: Record<string, { label: string; hint: string }> = {
     hint: 'Normalement répartis automatiquement à l’arrivée (rotation) ; ceux-ci n’ont trouvé personne. À rappeler vite : finaliser l’inscription ou le KYC, cerner le projet, proposer un RDV.',
   },
   other_new: {
-    label: 'Nouveaux inscrits · parrainage, invitation',
-    hint: 'À rappeler sous 48 h : même objectif que les pubs, mais ils arrivent souvent avec une idée.',
+    label: 'Nouveaux inscrits · parrainage, invitation · restés sans closer',
+    hint: 'Normalement répartis à l’arrivée ; ceux-ci n’ont trouvé personne. Même objectif que les pubs, mais ils arrivent souvent avec une idée.',
   },
   bucket_2: {
     label: 'Viennent d’investir · à remercier',

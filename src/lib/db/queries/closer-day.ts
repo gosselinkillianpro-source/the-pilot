@@ -118,14 +118,27 @@ export type CloserDay = {
 
 type StatsRow = { calls: number; reached: number; meetings: number };
 
-export async function getCloserDay(closerId: string, now: Date = new Date()): Promise<CloserDay> {
+export type CloserDayOptions = {
+  /**
+   * Charger le pool commun (personnes sans closer). Réservé à l'admin sur son
+   * propre poste : depuis le 7 sept. 2026 les closers n'ont plus rien à y
+   * prendre, leurs nouveaux leads leur arrivent par la rotation.
+   */
+  withPool?: boolean;
+};
+
+export async function getCloserDay(
+  closerId: string,
+  now: Date = new Date(),
+  opts: CloserDayOptions = {},
+): Promise<CloserDay> {
   const today = parisDateOf(now);
   const startOfDay = parisMidnightUTC(today.year, today.month, today.day);
 
   const [followUp, ownedRows, poolRows, statsRows, leaderboard, credited] = await Promise.all([
     getFollowUp({ closerId }),
     getCallQueue({ assignedCloserId: closerId, includeRecentlyCalled: true, withFollowUp: true }),
-    getCallQueue({ excludeWon: true, excludeCalendly: true }),
+    opts.withPool ? getCallQueue({ excludeWon: true, excludeCalendly: true }) : Promise.resolve([]),
     db.execute(sql`
       select
         count(*) filter (where type in ('call_outbound', 'call_inbound'))::int as calls,
@@ -185,14 +198,16 @@ export async function getCloserDay(closerId: string, now: Date = new Date()): Pr
 
 /**
  * L'ordre du mode appel pour ce closer : réservés, actions dues, ses nouveaux
- * leads répartis, pool (pubs d'abord), sa base sans action. Les personnes prises par un collègue sont
- * écartées — un double appel est la pire expérience pour le client.
+ * leads répartis, sa base sans action — et le pool seulement pour l'admin.
+ * Les personnes prises par un collègue sont écartées — un double appel est la
+ * pire expérience pour le client.
  */
 export async function getSessionLeads(
   closerId: string,
   now: Date = new Date(),
+  opts: CloserDayOptions = {},
 ): Promise<QueueRow[]> {
-  const day = await getCloserDay(closerId, now);
+  const day = await getCloserDay(closerId, now, opts);
   const byInvestor = new Map(day.clients.map((c) => [c.id, c]));
   const due = [...day.tasks.overdue, ...day.tasks.dueToday]
     .map((t) => byInvestor.get(t.investorId))

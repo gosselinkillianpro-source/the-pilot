@@ -1,11 +1,13 @@
 /**
- * Répartition des nouveaux inscrits pubs entre closers — la règle, sans base.
+ * Répartition des nouveaux inscrits entre closers — la règle, sans base.
  *
- * Décision Killian (7 sept. 2026) : fini le pool « au plus rapide » pour les
- * inscrits venus des pubs. Chaque nouvel inscrit pub est attribué à un closer
- * de la rotation, à tour de rôle, dès son arrivée. Si le closer n'engage
- * AUCUNE action (appel, SMS, mail, note, action planifiée) dans les 72 heures,
- * la personne est reprise et donnée au suivant.
+ * Décision Killian (7 sept. 2026) : fini le pool « au plus rapide ». Chaque
+ * nouvel inscrit est attribué à un closer de la rotation, à tour de rôle, dès
+ * son arrivée — pubs, parrainages, venus seuls ; pas les clients d'un
+ * partenaire (leur conseiller les suit) ni ceux d'un closer CGP (déjà à lui).
+ * Si le closer n'engage AUCUNE action (appel, SMS, mail, note, action
+ * planifiée) dans les 72 heures, la personne est reprise et donnée au suivant.
+ * Les closers n'ont donc plus de pool : leurs leads leur arrivent.
  *
  *   - Rotation : les closers actifs qui « reçoivent les nouveaux leads »
  *     (réglage admin, page Équipe). Le prochain servi est le moins récemment
@@ -16,6 +18,13 @@
  *
  * Module pur, testé. Les requêtes (`queries/lead-distribution.ts`) l'alimentent.
  */
+
+import type { InvestorOrigin } from './origin';
+
+/** Origines réparties : tout nouvel inscrit sauf ceux qu'un conseiller suit déjà. */
+export function isDistributableOrigin(origin: InvestorOrigin): boolean {
+  return origin === 'ads' || origin === 'referral' || origin === 'other';
+}
 
 /** Délai sans action au bout duquel un lead réparti change de closer. */
 export const REDISTRIBUTION_AFTER_HOURS = 72;

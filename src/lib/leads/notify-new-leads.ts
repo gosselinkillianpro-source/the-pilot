@@ -1,7 +1,8 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
+import { investorOrigin, originMeta } from '@/lib/closing/origin';
 import { db } from '@/lib/db';
-import { distributeNewAdLeads, redistributeStaleLeads } from '@/lib/db/queries/lead-distribution';
+import { distributeNewLeads, redistributeStaleLeads } from '@/lib/db/queries/lead-distribution';
 import { syncRecentInvestors } from '@/lib/integrations/sah/sync';
 import {
   buildAlertMessage,
@@ -20,10 +21,11 @@ import { SYNC_TOPICS } from '@/lib/realtime/topics';
  * Enchaînement, toutes les 2 minutes :
  *   1. synchro CIBLÉE des inscriptions récentes (la fiche doit exister avant
  *      que le closer ne clique sur le lien de la notification) ;
- *   2. RÉPARTITION : chaque inscrit pub libre va au prochain closer de la
- *      rotation (7 sept. 2026 — fini le pool « au plus rapide » pour les pubs) ;
- *      et les leads restés 72 h sans action changent de main ;
- *   3. sélection des leads BREACH jamais alertés ;
+ *   2. RÉPARTITION : chaque nouvel inscrit libre (pub, parrainage, venu seul)
+ *      va au prochain closer de la rotation (7 sept. 2026 — fini le pool « au
+ *      plus rapide ») ; les leads restés 72 h sans action changent de main ;
+ *   3. sélection des leads jamais alertés : ceux qui viennent d'être répartis,
+ *      et les BREACH (comme avant) ;
  *   4. envoi Telegram : au closer attribué (« à toi, 72 h ») et aux admins ;
  *      sans attribution, à toute l'équipe comme avant ;
  *   5. marquage — une inscription ne déclenche qu'UNE alerte, jamais deux.
@@ -48,7 +50,7 @@ const BREACH_PREDICATE = sql`(i.breach_level is not null or i.bonus_code ilike '
 export type NotifyResult = {
   /** Comptes remontés de SAH par la synchro ciblée. */
   synced: number;
-  /** Inscrits pubs attribués à un closer de la rotation à ce passage. */
+  /** Nouveaux inscrits attribués à un closer de la rotation à ce passage. */
   distributed: number;
   /** Leads repris à un closer resté 72 h sans action et donnés au suivant. */
   redistributed: number;
@@ -90,7 +92,7 @@ export async function notifyNewLeads(now = new Date()): Promise<NotifyResult> {
   // 2. Répartition à tour de rôle, puis reprise des leads restés sans action.
   //    Chaque étape est indépendante : une panne ici ne bloque pas l'alerte.
   try {
-    result.distributed = (await distributeNewAdLeads(now)).length;
+    result.distributed = (await distributeNewLeads(now)).length;
   } catch (e) {
     result.errors.push(`répartition : ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -113,17 +115,22 @@ export async function notifyNewLeads(now = new Date()): Promise<NotifyResult> {
   // 3. Les leads BREACH jamais alertés, assez récents pour que l'urgence tienne.
   const rows = await db.execute(sql`
     select i.id::text as investor_id, i.sah_id, i.full_name, i.email, i.phone,
-           i.bonus_code, i.address_city, i.sah_created_at,
+           i.bonus_code, i.breach_level, i.parent_sah_id, i.cgp_name, i.cgp_network,
+           i.address_city, i.sah_created_at,
            i.assigned_closer_id::text as assigned_closer_id,
            case when i.assignment_source in ('distribution', 'redistribution')
-                then au.full_name end as assigned_closer_name
+                then au.full_name end as assigned_closer_name,
+           exists (
+             select 1 from users pu
+             where pu.sah_user_id = i.parent_sah_id and pu.role in ('closer', 'closer_junior')
+           ) as parent_is_closer
     from investors i
     left join users au on au.id = i.assigned_closer_id
     where i.deleted_at is null
       and i.new_lead_alerted_at is null
       and i.sah_created_at is not null
       and i.sah_created_at > now() - (${MAX_LEAD_AGE_MINUTES} * interval '1 minute')
-      and ${BREACH_PREDICATE}
+      and (${BREACH_PREDICATE} or i.assignment_source in ('distribution', 'redistribution'))
       -- Un RDV Calendly pris : Guillaume s'en occupe, pas d'alerte aux closers.
       and not exists (
         select 1 from rdv_contacts rc
@@ -146,6 +153,16 @@ export async function notifyNewLeads(now = new Date()): Promise<NotifyResult> {
     bonusCode: r.bonus_code ? String(r.bonus_code) : null,
     city: r.address_city ? String(r.address_city) : null,
     createdAt: new Date(String(r.sah_created_at)),
+    originLabel: originMeta(
+      investorOrigin({
+        bonusCode: r.bonus_code ? String(r.bonus_code) : null,
+        breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
+        parentSahId: r.parent_sah_id ? String(r.parent_sah_id) : null,
+        cgpName: r.cgp_name ? String(r.cgp_name) : null,
+        cgpNetwork: r.cgp_network ? String(r.cgp_network) : null,
+        parentIsCloser: r.parent_is_closer === true,
+      }),
+    ).label,
     // Renseigné seulement quand l'attribution vient de la répartition : un
     // lead attribué par un appel (propriété collante) n'est plus « nouveau ».
     assignedCloserId: r.assigned_closer_name ? String(r.assigned_closer_id) : null,
