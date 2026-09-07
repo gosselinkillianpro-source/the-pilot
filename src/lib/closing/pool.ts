@@ -16,10 +16,10 @@
  * inscrits sont répartis à tour de rôle (voir distribution.ts), les closers
  * n'ont plus rien à y prendre.
  *
- * Exclus du pool : les personnes déjà suivies par un closer, et les clients
- * de partenaires (code ou CGP tiers : ce n'est pas à Seven de les appeler
- * par-dessus leur conseiller). L'origine (pub, parrainage, venu seul,
- * partenaire) vient de `origin.ts`, la même lecture que la page Ads.
+ * Exclues du pool : les personnes déjà suivies par un closer. Les clients d'un
+ * autre CGP y sont (Killian, 7 sept. 2026 : « ça fait partie des gens de
+ * Seven », ils doivent être appelés aussi). L'origine (pub, parrainage, venu
+ * seul, partenaire) vient de `origin.ts`, la même lecture que la page Ads.
  *
  * Module pur : il ne fait que ranger des lignes déjà scorées.
  */
@@ -80,7 +80,6 @@ export function buildPool<T extends PoolCandidate>(rows: T[]): Pool<T> {
   const pool: Pool<T> = { breach_new: [], other_new: [], hot: [], base: [] };
   for (const row of rows) {
     if (row.assignedCloserId) continue;
-    if (row.origin === 'partner') continue;
     pool[poolTierOf(row)].push(row);
   }
   return pool;

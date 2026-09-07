@@ -2,9 +2,12 @@
  * Répartition des nouveaux inscrits entre closers — la règle, sans base.
  *
  * Décision Killian (7 sept. 2026) : fini le pool « au plus rapide ». Chaque
- * nouvel inscrit est attribué à un closer de la rotation, à tour de rôle, dès
- * son arrivée — pubs, parrainages, venus seuls ; pas les clients d'un
- * partenaire (leur conseiller les suit) ni ceux d'un closer CGP (déjà à lui).
+ * nouvel inscrit encore libre est attribué à un closer de la rotation, à tour
+ * de rôle, dès son arrivée — quelle que soit son origine : pubs, parrainages,
+ * venus seuls, et aussi ceux venus par un autre CGP ou une invitation admin
+ * (« ça fait partie des gens de Seven », ils doivent être appelés). Les
+ * inscrits avec le code d'un closer CGP de l'équipe lui ont déjà été attribués
+ * avant (règle CGP), ils ne passent donc pas ici.
  * Si le closer n'engage AUCUNE action (appel, SMS, mail, note, action
  * planifiée) dans les 72 heures, la personne est reprise et donnée au suivant.
  * Les closers n'ont donc plus de pool : leurs leads leur arrivent.
@@ -18,13 +21,6 @@
  *
  * Module pur, testé. Les requêtes (`queries/lead-distribution.ts`) l'alimentent.
  */
-
-import type { InvestorOrigin } from './origin';
-
-/** Origines réparties : tout nouvel inscrit sauf ceux qu'un conseiller suit déjà. */
-export function isDistributableOrigin(origin: InvestorOrigin): boolean {
-  return origin === 'ads' || origin === 'referral' || origin === 'other';
-}
 
 /** Délai sans action au bout duquel un lead réparti change de closer. */
 export const REDISTRIBUTION_AFTER_HOURS = 72;

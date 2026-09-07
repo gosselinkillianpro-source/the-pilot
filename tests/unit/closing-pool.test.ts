@@ -42,18 +42,18 @@ describe('buildPool — l’ordre du 4 septembre', () => {
     expect(urgentCount(pool)).toBe(3);
   });
 
-  test('les personnes suivies et les clients de partenaires ne sont pas dans le pool', () => {
+  test('les personnes suivies ne sont pas dans le pool ; les clients d’un autre CGP y sont', () => {
     const pool = buildPool([
       row({
         id: 'owned',
         assignedCloserId: 'yannick',
         scored: { isNewLead: true, queueBucket: 1 },
       }),
-      row({ id: 'cgp', origin: 'partner', scored: { isNewLead: true, queueBucket: 1 } }),
+      row({ id: 'partner', origin: 'partner', scored: { isNewLead: true, queueBucket: 1 } }),
       row({ id: 'free', origin: 'ads', scored: { isNewLead: true, queueBucket: 1 } }),
     ]);
     expect(pool.breach_new.map((r) => r.id)).toEqual(['free']);
-    expect(pool.other_new).toEqual([]);
+    expect(pool.other_new.map((r) => r.id)).toEqual(['partner']);
   });
 
   test('conserve l’ordre d’entrée à l’intérieur d’un niveau', () => {

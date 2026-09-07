@@ -39,13 +39,26 @@ import { SYNC_TOPICS } from '@/lib/realtime/topics';
  * lead d'un autre closer ; un admin peut réassigner via assignCloserAction.
  * Renvoie true si l'assignation a bien eu lieu maintenant (utile pour l'annulation).
  */
-async function assignOwnershipIfFree(investorId: string, closerId: string): Promise<boolean> {
+async function assignOwnershipIfFree(
+  investorId: string,
+  closerId: string,
+  source: 'call' | 'action' = 'call',
+): Promise<boolean> {
   const res = await db
     .update(investors)
-    .set({ assignedCloserId: closerId, assignedAt: new Date(), assignmentSource: 'call' })
+    .set({ assignedCloserId: closerId, assignedAt: new Date(), assignmentSource: source })
     .where(and(eq(investors.id, investorId), isNull(investors.assignedCloserId)))
     .returning({ id: investors.id });
   return res.length > 0;
+}
+
+/**
+ * Règle Killian (7 sept. 2026) : « quand un closer prend un appel ou fait une
+ * action, le contact lui est assigné automatiquement ». Vaut pour les closers
+ * (pas pour un admin qui range ou annote : il ne devient pas propriétaire).
+ */
+function isCloserRole(role: string): boolean {
+  return role === 'closer' || role === 'closer_junior';
 }
 
 /** Lit l'étape pipeline courante (mémorisée au moment de l'appel pour mesurer la progression). */
@@ -503,6 +516,8 @@ export async function updateStageAction(input: {
   try {
     await ensureUserRecord(user);
     await setClosingStage(parsed.investorId, parsed.stage, user.id);
+    // Ranger quelqu'un, c'est s'en occuper : la personne libre devient la sienne.
+    if (isCloserRole(user.role)) await assignOwnershipIfFree(parsed.investorId, user.id, 'action');
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -1133,6 +1148,11 @@ export async function saveInternalNoteAction(input: {
         message:
           "La note a été modifiée par quelqu'un d'autre entre-temps. Recharge la fiche, puis reporte ton ajout.",
       };
+    }
+    // Une note, c'est une action : la personne libre devient celle du closer.
+    if (isCloserRole(user.role)) {
+      await ensureUserRecord(user);
+      await assignOwnershipIfFree(parsed.investorId, user.id, 'action');
     }
     await logAudit({
       userId: user.id,

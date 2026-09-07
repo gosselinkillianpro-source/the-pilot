@@ -3,21 +3,19 @@ import { sql } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 import {
   DISTRIBUTION_WINDOW_DAYS,
-  isDistributableOrigin,
   isStaleAssignment,
   pickNextCloser,
   REDISTRIBUTION_AFTER_HOURS,
   type RotationCloser,
 } from '@/lib/closing/distribution';
-import { investorOrigin } from '@/lib/closing/origin';
 import { db } from '@/lib/db';
 import { CLAIM_TTL_MIN } from './call-queue';
 
 /**
  * Répartition des nouveaux inscrits — accès base.
  *
- * `distributeNewLeads` : chaque inscrit libre de moins de 7 jours (pub,
- * parrainage, venu seul) va au prochain closer de la rotation (voir
+ * `distributeNewLeads` : chaque inscrit libre de moins de 7 jours, quelle que
+ * soit son origine, va au prochain closer de la rotation (voir
  * `lib/closing/distribution.ts`).
  * `redistributeStaleLeads` : ceux restés 72 h sans action changent de main.
  * Les deux sont idempotentes et rejouables toutes les 2 minutes.
@@ -57,16 +55,7 @@ export type DistributedLead = {
   closerName: string | null;
 };
 
-type CandidateRaw = {
-  id: string;
-  full_name: string | null;
-  bonus_code: string | null;
-  breach_level: number | string | null;
-  parent_sah_id: string | null;
-  cgp_name: string | null;
-  cgp_network: string | null;
-  parent_is_closer: boolean | null;
-};
+type CandidateRaw = { id: string; full_name: string | null };
 
 /** Même exclusion que le pool : un RDV Calendly pris, c'est Guillaume qui suit. */
 const NOT_CALENDLY = sql`not exists (
@@ -83,10 +72,10 @@ async function markServed(closer: RotationCloser, at: Date): Promise<void> {
 }
 
 /**
- * Attribue les inscrits libres et récents, à tour de rôle. Ne touche ni aux
- * personnes déjà suivies, ni aux clients de partenaires ou de closers CGP, ni
- * à celles qu'un closer a réservées (« Je prends » actif), ni aux clos, ni aux
- * rendez-vous Calendly.
+ * Attribue les inscrits libres et récents, à tour de rôle, quelle que soit leur
+ * origine. Ne touche ni aux personnes déjà suivies (dont les clients des
+ * closers CGP, attribués avant par la règle CGP), ni à celles qu'un closer a
+ * réservées (« Je prends » actif), ni aux clos, ni aux rendez-vous Calendly.
  */
 export async function distributeNewLeads(now: Date = new Date()): Promise<DistributedLead[]> {
   const rotation = await listRotationClosers();
@@ -95,12 +84,7 @@ export async function distributeNewLeads(now: Date = new Date()): Promise<Distri
   const nowIso = now.toISOString();
 
   const rows = (await db.execute(sql`
-    select i.id::text as id, i.full_name, i.bonus_code, i.breach_level, i.parent_sah_id,
-           i.cgp_name, i.cgp_network,
-           exists (
-             select 1 from users pu
-             where pu.sah_user_id = i.parent_sah_id and pu.role in ('closer', 'closer_junior')
-           ) as parent_is_closer
+    select i.id::text as id, i.full_name
     from investors i
     where i.deleted_at is null
       and i.assigned_closer_id is null
@@ -113,21 +97,8 @@ export async function distributeNewLeads(now: Date = new Date()): Promise<Distri
     order by i.sah_created_at asc
   `)) as unknown as CandidateRaw[];
 
-  const leads = rows.filter((r) =>
-    isDistributableOrigin(
-      investorOrigin({
-        bonusCode: r.bonus_code,
-        breachLevel: r.breach_level != null ? Number(r.breach_level) : null,
-        parentSahId: r.parent_sah_id,
-        cgpName: r.cgp_name,
-        cgpNetwork: r.cgp_network,
-        parentIsCloser: r.parent_is_closer === true,
-      }),
-    ),
-  );
-
   const out: DistributedLead[] = [];
-  for (const [i, lead] of leads.entries()) {
+  for (const [i, lead] of rows.entries()) {
     const closer = pickNextCloser(rotation);
     if (!closer) break;
     // Garde-fou concurrent : si quelqu'un vient d'enregistrer un appel, la
