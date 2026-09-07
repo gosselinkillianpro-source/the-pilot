@@ -29,6 +29,23 @@ describe('isAdCode — même lecture que la page Ads', () => {
 });
 
 describe('investorOrigin', () => {
+  test('le code d’un closer CGP de l’équipe → réseau CGP, pas partenaire', () => {
+    expect(
+      investorOrigin(
+        person({ bonusCode: 'Seven-club-deal-AR', parentSahId: '1315', parentIsCloser: true }),
+      ),
+    ).toBe('cgp');
+    // Sans compte relié, le même code reste un partenaire.
+    expect(investorOrigin(person({ bonusCode: 'Seven-club-deal-AR', parentSahId: '1315' }))).toBe(
+      'partner',
+    );
+    // Invité sans code par un closer CGP : à lui aussi.
+    expect(investorOrigin(person({ parentSahId: '898', parentIsCloser: true }))).toBe('cgp');
+    // Un code pub reste une pub, même si le parrain est closer.
+    expect(investorOrigin(person({ bonusCode: 'SEVEN-BREACH', parentIsCloser: true }))).toBe('ads');
+    expect(originGroup('cgp')).toBe('other');
+  });
+
   test('un code pub → pub, même avec un parrain', () => {
     expect(investorOrigin(person({ bonusCode: 'SEVEN-BREACH', parentSahId: 'x' }))).toBe('ads');
   });

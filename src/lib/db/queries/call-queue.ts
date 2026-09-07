@@ -33,6 +33,9 @@ export type QueueRow = {
   registrationComplete: boolean;
   onboardingComplete: boolean;
   assignedCloserId: string | null;
+  /** Quand et comment la personne a été attribuée (voir schéma `assignment_source`). */
+  assignedAt: Date | null;
+  assignmentSource: string | null;
   pipelineStage: string;
   totalInvested: number;
   /** Solde du wallet en cents (argent disponible, non investi). */
@@ -78,6 +81,9 @@ type RawRow = {
   registration_complete: boolean;
   onboarding_complete: boolean;
   assigned_closer_id: string | null;
+  assigned_at: string | Date | null;
+  assignment_source: string | null;
+  parent_is_closer: boolean | null;
   pipeline_stage: string;
   sah_created_at: string | Date | null;
   breach_level: number | null;
@@ -231,6 +237,12 @@ export async function getCallQueue(opts?: {
       i.registration_complete,
       i.onboarding_complete,
       i.assigned_closer_id::text as assigned_closer_id,
+      i.assigned_at,
+      i.assignment_source,
+      exists (
+        select 1 from users pu
+        where pu.sah_user_id = i.parent_sah_id and pu.role in ('closer', 'closer_junior')
+      ) as parent_is_closer,
       i.pipeline_stage,
       i.sah_created_at,
       i.breach_level,
@@ -351,6 +363,8 @@ export async function getCallQueue(opts?: {
       registrationComplete: r.registration_complete,
       onboardingComplete: r.onboarding_complete,
       assignedCloserId: r.assigned_closer_id,
+      assignedAt: r.assigned_at ? new Date(r.assigned_at) : null,
+      assignmentSource: r.assignment_source,
       pipelineStage: r.pipeline_stage,
       totalInvested,
       walletBalanceCents,
@@ -366,6 +380,7 @@ export async function getCallQueue(opts?: {
         parentSahId: r.parent_sah_id,
         cgpName: r.cgp_name,
         cgpNetwork: r.cgp_network,
+        parentIsCloser: r.parent_is_closer === true,
       }),
       internalNote: r.internal_note?.trim() ? r.internal_note.trim() : null,
       claimedById: claimActive ? r.claimed_by_id : null,

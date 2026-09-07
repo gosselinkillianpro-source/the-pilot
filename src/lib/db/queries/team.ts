@@ -15,7 +15,12 @@ const ONLINE_WINDOW_MIN = 5;
 export type CloserStatus = {
   id: string;
   name: string | null;
+  email: string;
   role: string;
+  /** Compte SAH (CGP) relié : ses inscrits lui sont attribués d'office. */
+  sahUserId: string | null;
+  /** Personnes qui lui sont attribuées parce qu'inscrites avec son code CGP. */
+  cgpClients: number;
   lastSeenAt: Date | null;
   online: boolean;
   lastActionLabel: string | null;
@@ -99,8 +104,14 @@ export async function getTeamOverview(): Promise<TeamOverview> {
     .select({
       id: users.id,
       name: users.fullName,
+      email: users.email,
       role: users.role,
+      sahUserId: users.sahUserId,
       lastSeenAt: users.lastSeenAt,
+      cgpClients: sql<number>`(
+        select count(*)::int from investors i
+        where i.assigned_closer_id = ${users.id} and i.assignment_source = 'cgp' and i.deleted_at is null
+      )`,
     })
     .from(users)
     .where(inArray(users.role, ['closer', 'closer_junior']));
@@ -150,7 +161,10 @@ export async function getTeamOverview(): Promise<TeamOverview> {
       return {
         id: c.id,
         name: c.name,
+        email: c.email,
         role: c.role,
+        sahUserId: c.sahUserId,
+        cgpClients: Number(c.cgpClients) || 0,
         lastSeenAt: c.lastSeenAt,
         online,
         lastActionLabel: last?.label ?? null,

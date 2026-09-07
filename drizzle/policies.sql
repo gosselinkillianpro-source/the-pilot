@@ -135,25 +135,7 @@ create policy investor_assets_closer_rw on public.investor_assets for all
 -- ============================================================
 -- EMAIL_FLOWS (admin RW, executive lecture)
 -- ============================================================
-alter table public.email_flows enable row level security;
-drop policy if exists email_flows_admin_all on public.email_flows;
-create policy email_flows_admin_all on public.email_flows for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists email_flows_exec_read on public.email_flows;
-create policy email_flows_exec_read on public.email_flows for select
-  using (public.auth_role() = 'executive');
-
--- ============================================================
 -- EMAIL_FLOW_RUNS (admin RW, executive lecture)
--- ============================================================
-alter table public.email_flow_runs enable row level security;
-drop policy if exists email_flow_runs_admin_all on public.email_flow_runs;
-create policy email_flow_runs_admin_all on public.email_flow_runs for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists email_flow_runs_exec_read on public.email_flow_runs;
-create policy email_flow_runs_exec_read on public.email_flow_runs for select
-  using (public.auth_role() = 'executive');
-
 -- ============================================================
 -- AUDIT_LOG (admin lecture seule ; insertion via service_role)
 -- ============================================================
@@ -173,55 +155,6 @@ create policy llm_calls_admin_read on public.llm_calls for select
 -- ============================================================
 -- SOCIAL HUB — contenu marketing (pas de PII).
 -- admin RW complet, executive lecture. Insertion système via service_role.
--- ============================================================
-alter table public.social_context_notes enable row level security;
-drop policy if exists social_notes_admin_all on public.social_context_notes;
-create policy social_notes_admin_all on public.social_context_notes for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_notes_exec_read on public.social_context_notes;
-create policy social_notes_exec_read on public.social_context_notes for select
-  using (public.auth_role() = 'executive');
-
-alter table public.social_ideas enable row level security;
-drop policy if exists social_ideas_admin_all on public.social_ideas;
-create policy social_ideas_admin_all on public.social_ideas for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_ideas_exec_read on public.social_ideas;
-create policy social_ideas_exec_read on public.social_ideas for select
-  using (public.auth_role() = 'executive');
-
-alter table public.social_posts enable row level security;
-drop policy if exists social_posts_admin_all on public.social_posts;
-create policy social_posts_admin_all on public.social_posts for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_posts_exec_read on public.social_posts;
-create policy social_posts_exec_read on public.social_posts for select
-  using (public.auth_role() = 'executive');
-
-alter table public.social_carousel_slides enable row level security;
-drop policy if exists social_slides_admin_all on public.social_carousel_slides;
-create policy social_slides_admin_all on public.social_carousel_slides for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_slides_exec_read on public.social_carousel_slides;
-create policy social_slides_exec_read on public.social_carousel_slides for select
-  using (public.auth_role() = 'executive');
-
-alter table public.social_competitor_reports enable row level security;
-drop policy if exists social_reports_admin_all on public.social_competitor_reports;
-create policy social_reports_admin_all on public.social_competitor_reports for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_reports_exec_read on public.social_competitor_reports;
-create policy social_reports_exec_read on public.social_competitor_reports for select
-  using (public.auth_role() = 'executive');
-
-alter table public.social_settings enable row level security;
-drop policy if exists social_settings_admin_all on public.social_settings;
-create policy social_settings_admin_all on public.social_settings for all
-  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
-drop policy if exists social_settings_exec_read on public.social_settings;
-create policy social_settings_exec_read on public.social_settings for select
-  using (public.auth_role() = 'executive');
-
 -- ============================================================
 -- EMAIL EVENTS (analytics email reçus par webhook)
 -- Écriture : webhook serveur via service connection (contourne la RLS).
@@ -324,3 +257,13 @@ create policy ad_fixed_costs_admin_all on public.ad_fixed_costs for all
 drop policy if exists ad_fixed_costs_team_read on public.ad_fixed_costs;
 create policy ad_fixed_costs_team_read on public.ad_fixed_costs for select
   using (public.auth_role() in ('closer', 'closer_junior', 'executive'));
+
+-- ============================================================
+-- USER_INVITATIONS (invitations à rejoindre l'app)
+-- Écriture et lecture : admin seulement. L'acceptation par la personne invitée
+-- passe par le serveur (connexion service), jamais par le client.
+-- ============================================================
+alter table public.user_invitations enable row level security;
+drop policy if exists user_invitations_admin_all on public.user_invitations;
+create policy user_invitations_admin_all on public.user_invitations for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');

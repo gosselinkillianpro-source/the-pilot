@@ -11,7 +11,8 @@ const PUBLIC_PATHS = ['/', '/login', '/mfa', '/mfa/setup'];
 
 // Endpoints publics par nature (appelés par des services externes), protégés par
 // leur propre secret/signature dans le handler — jamais par le mur de connexion.
-const PUBLIC_PREFIXES = ['/api/webhooks/', '/api/cron/'];
+// + la page d'acceptation d'invitation : la personne n'a pas encore de compte.
+const PUBLIC_PREFIXES = ['/api/webhooks/', '/api/cron/', '/invitation/'];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));

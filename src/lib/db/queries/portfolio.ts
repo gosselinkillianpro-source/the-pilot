@@ -50,6 +50,10 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
       i.parent_sah_id,
       i.cgp_name,
       i.cgp_network,
+      exists (
+        select 1 from users pu
+        where pu.sah_user_id = i.parent_sah_id and pu.role in ('closer', 'closer_junior')
+      ) as parent_is_closer,
       p.name as project_name,
       s.amount::float as amount,
       s.signed_at,
@@ -76,6 +80,7 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
     parent_sah_id: string | null;
     cgp_name: string | null;
     cgp_network: string | null;
+    parent_is_closer: boolean | null;
     project_name: string | null;
     amount: number | string;
     signed_at: string | Date;
@@ -120,6 +125,7 @@ export async function listOwnerSubscriptions(ownerId: string): Promise<OwnerSubs
         parentSahId: r.parent_sah_id,
         cgpName: r.cgp_name,
         cgpNetwork: r.cgp_network,
+        parentIsCloser: r.parent_is_closer === true,
       }),
     };
   });
