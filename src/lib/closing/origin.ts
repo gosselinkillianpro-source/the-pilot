@@ -69,7 +69,7 @@ export const ORIGINS: OriginMeta[] = [
   {
     key: 'partner',
     label: 'Partenaire',
-    hint: 'Code ou CGP partenaire : suivi par son conseiller',
+    hint: 'Venu par un autre CGP ou un partenaire : à appeler comme les autres',
     badge: 'badge-warning',
   },
 ];

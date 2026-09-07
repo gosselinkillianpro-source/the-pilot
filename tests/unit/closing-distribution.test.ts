@@ -3,7 +3,6 @@ import {
   DISTRIBUTION_WINDOW_DAYS,
   deadlineLabel,
   hoursUntilRedistribution,
-  isDistributableOrigin,
   isFreshDistributedLead,
   isStaleAssignment,
   pickNextCloser,
@@ -147,15 +146,5 @@ describe('« nouveau lead à toi »', () => {
     expect(deadlineLabel(new Date(NOW.getTime() - 72 * H + 20 * 60_000), NOW)).toBe(
       "moins d'une heure",
     );
-  });
-});
-
-describe('quelles origines sont réparties', () => {
-  test('pub, parrainage, venu seul : oui ; partenaire et réseau CGP : non', () => {
-    expect(isDistributableOrigin('ads')).toBe(true);
-    expect(isDistributableOrigin('referral')).toBe(true);
-    expect(isDistributableOrigin('other')).toBe(true);
-    expect(isDistributableOrigin('partner')).toBe(false);
-    expect(isDistributableOrigin('cgp')).toBe(false);
   });
 });

@@ -191,6 +191,21 @@ export async function sendEmailAction(input: SendEmailInput): Promise<SendEmailR
             sql`, `,
           )})
       `);
+      // Règle Killian (7 sept. 2026) : une action d'un closer sur une personne
+      // libre la lui attribue — un e-mail envoyé compte. Jamais reprise à un
+      // collègue ; un admin qui écrit ne devient pas propriétaire.
+      if (actorUser && (actorUser.role === 'closer' || actorUser.role === 'closer_junior')) {
+        await db.execute(sql`
+          update investors i
+            set assigned_closer_id = ${actorId}::uuid, assigned_at = now(),
+                assignment_source = 'action', updated_at = now()
+          where i.deleted_at is null and i.assigned_closer_id is null
+            and lower(i.email) in (${sql.join(
+              recipientEmails.map((e) => sql`${e}`),
+              sql`, `,
+            )})
+        `);
+      }
     }
 
     // 8. Audit

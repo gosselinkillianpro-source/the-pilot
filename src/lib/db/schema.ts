@@ -239,8 +239,9 @@ export const investors = pgTable(
     /** Quand la personne a été attribuée à son closer actuel (null = jamais attribuée). */
     assignedAt: timestamp('assigned_at', { withTimezone: true }),
     /**
-     * Comment elle l'a été : `call` (premier résultat enregistré — propriété
-     * collante), `cgp` (inscrite avec le code bonus du closer), `distribution`
+     * Comment elle l'a été : `call` (appel enregistré — propriété collante),
+     * `action` (note, e-mail, étape posée par un closer — même règle),
+     * `cgp` (inscrite avec le code bonus du closer), `distribution`
      * (nouvel inscrit pub réparti à tour de rôle), `redistribution` (repris à un
      * closer resté 72 h sans action), `manual` (admin), `calendly` (agenda relié).
      */
