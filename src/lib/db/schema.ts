@@ -160,6 +160,14 @@ export const users = pgTable('users', {
    * Renseigné par chaque closer depuis /equipe. NULL = pas d'alerte poussée.
    */
   telegramChatId: text('telegram_chat_id'),
+  /**
+   * Reçoit les nouveaux inscrits pubs répartis à tour de rôle (7 sept. 2026).
+   * Faux par défaut : personne n'entre dans la rotation sans décision — l'admin
+   * l'active sur la page Équipe ; une invitation « closer » acceptée l'active.
+   */
+  acceptsNewLeads: boolean('accepts_new_leads').notNull().default(false),
+  /** Dernier lead pub reçu par répartition — sert à servir le moins récemment servi. */
+  lastLeadDistributedAt: timestamp('last_lead_distributed_at', { withTimezone: true }),
   active: boolean('active').notNull().default(true),
   settings: jsonb('settings'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -237,6 +245,8 @@ export const investors = pgTable(
      * closer resté 72 h sans action), `manual` (admin), `calendly` (agenda relié).
      */
     assignmentSource: text('assignment_source'),
+    /** Fois où la personne a été reprise à un closer resté 72 h sans action. */
+    redistributionCount: integer('redistribution_count').notNull().default(0),
     // Verrou de travail : un closer "prend" un lead pour éviter le double-appel.
     // Auto-libéré après un délai (cf. CLAIM_TTL_MIN) ou après l'enregistrement de l'appel.
     claimedById: uuid('claimed_by_id').references(() => users.id),

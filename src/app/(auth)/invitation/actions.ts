@@ -87,12 +87,28 @@ export async function acceptInvitationAction(
   const userId = created.data.user.id;
 
   // 2. La ligne applicative (cible des clés étrangères), avec le compte SAH s'il y en a un.
+  // Un closer invité entre dans la rotation des nouveaux leads pubs (l'admin
+  // peut l'en sortir sur la page Équipe).
+  const acceptsNewLeads = inv.role === 'closer' || inv.role === 'closer_junior';
   await db
     .insert(users)
-    .values({ id: userId, email: inv.email, fullName, role: inv.role, sahUserId: inv.sahUserId })
+    .values({
+      id: userId,
+      email: inv.email,
+      fullName,
+      role: inv.role,
+      sahUserId: inv.sahUserId,
+      acceptsNewLeads,
+    })
     .onConflictDoUpdate({
       target: users.id,
-      set: { email: inv.email, fullName, role: inv.role, sahUserId: inv.sahUserId },
+      set: {
+        email: inv.email,
+        fullName,
+        role: inv.role,
+        sahUserId: inv.sahUserId,
+        acceptsNewLeads,
+      },
     });
   await acceptInvitationRecord(inv.id, userId, now);
 

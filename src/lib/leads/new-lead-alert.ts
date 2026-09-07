@@ -1,3 +1,5 @@
+import { REDISTRIBUTION_AFTER_HOURS } from '@/lib/closing/distribution';
+
 /**
  * Alerte « nouveau lead BREACH » — appeler dans les 5 minutes.
  *
@@ -117,11 +119,28 @@ function minutesSince(from: Date, now: Date): number {
  * texte au format international : les clients Telegram le rendent cliquable
  * d'eux-mêmes.
  */
-export function buildAlertMessage(lead: NewLead, now: Date, appUrl: string): string {
+export type AlertAudience = {
+  /** Le lead a été attribué à ce closer par la répartition (null = pool commun). */
+  assignedToName?: string | null;
+  /** Le destinataire EST le closer attribué : le message le tutoie et donne le délai. */
+  forOwner?: boolean;
+};
+
+export function buildAlertMessage(
+  lead: NewLead,
+  now: Date,
+  appUrl: string,
+  audience: AlertAudience = {},
+): string {
   const age = minutesSince(lead.createdAt, now);
   const quand = age <= 1 ? "à l'instant" : `il y a ${age} min`;
   const nom = esc(lead.fullName?.trim() || lead.email);
-  const lignes = [`🔥 <b>Nouveau lead BREACH</b> — inscrit ${quand}`, '', `<b>${nom}</b>`];
+  const titre = audience.forOwner
+    ? `🔥 <b>Nouveau lead pub — à toi</b> — inscrit ${quand}`
+    : audience.assignedToName
+      ? `🔥 <b>Nouveau lead pub</b> → attribué à <b>${esc(audience.assignedToName)}</b> — inscrit ${quand}`
+      : `🔥 <b>Nouveau lead BREACH</b> — inscrit ${quand}`;
+  const lignes = [titre, '', `<b>${nom}</b>`];
   if (lead.phone) {
     lignes.push(`📞 ${esc(telLink(lead.phone))}`);
   }
@@ -131,7 +150,34 @@ export function buildAlertMessage(lead: NewLead, now: Date, appUrl: string): str
   lignes.push('');
   lignes.push(`<a href="${esc(appUrl)}/closing/investor/${lead.investorId}">Ouvrir la fiche</a>`);
   lignes.push('<i>Rappel dans les 5 minutes : c’est là que ça se joue.</i>');
+  if (audience.forOwner) {
+    lignes.push(
+      `<i>Sans action de ta part sous ${REDISTRIBUTION_AFTER_HOURS} h, la personne passe à un collègue.</i>`,
+    );
+  }
   return lignes.join('\n');
+}
+
+export type RedistributionNotice = {
+  investorId: string;
+  fullName: string | null;
+  fromCloserName: string | null;
+  hoursIdle: number;
+};
+
+/** Le message au closer qui reçoit une personne reprise à un collègue. */
+export function buildRedistributionMessage(notice: RedistributionNotice, appUrl: string): string {
+  const nom = esc(notice.fullName?.trim() || 'Une personne');
+  const de = notice.fromCloserName
+    ? ` (${esc(notice.fromCloserName)} n’a rien fait en ${notice.hoursIdle} h)`
+    : '';
+  return [
+    '♻️ <b>Lead repris pour toi</b>',
+    '',
+    `<b>${nom}</b> t’est réattribué·e${de}.`,
+    `<a href="${esc(appUrl)}/closing/investor/${notice.investorId}">Ouvrir la fiche</a>`,
+    `<i>Même règle : une action sous ${REDISTRIBUTION_AFTER_HOURS} h, sinon la personne repart.</i>`,
+  ].join('\n');
 }
 
 /** Échappe le texte injecté dans un message Telegram en mode HTML. */

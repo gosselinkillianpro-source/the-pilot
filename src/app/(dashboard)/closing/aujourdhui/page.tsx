@@ -8,6 +8,7 @@ import {
   PhoneOutgoing,
   PlayCircle,
   Sparkles,
+  Timer,
   Trophy,
   UserSquare2,
   Wallet,
@@ -18,6 +19,7 @@ import { ClaimControl } from '@/components/closing/claim-control';
 import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { DAILY_CALL_GOAL, goalProgressPct } from '@/lib/closing/day';
+import { deadlineLabel, hoursUntilRedistribution } from '@/lib/closing/distribution';
 import { activityLabel, eur, fmtAgo, fmtDateTime, fmtTime, taskLabel } from '@/lib/closing/format';
 import { originMeta } from '@/lib/closing/origin';
 import { groupPool, type PoolGroup } from '@/lib/closing/pool';
@@ -57,6 +59,7 @@ export default async function AujourdhuiPage({
   const urgent = urgentGroups.reduce((n, g) => n + g.rows.length, 0);
   const todo =
     day.reserved.length +
+    day.freshLeads.length +
     day.tasks.overdue.length +
     day.tasks.dueToday.length +
     day.toQualify.length +
@@ -118,6 +121,40 @@ export default async function AujourdhuiPage({
                   last={i === day.reserved.length - 1}
                   when={r.claimedAt ? `réservé ${fmtAgo(r.claimedAt, day.now)}` : 'réservé'}
                   why={r.scored.callGoal}
+                  canAct={canAct}
+                  myId={user.id}
+                />
+              ))}
+            </Section>
+          )}
+
+          {day.freshLeads.length > 0 && (
+            <Section
+              icon={<Timer size={15} />}
+              title="Nouveaux inscrits pubs — à toi, à appeler maintenant"
+              count={day.freshLeads.length}
+              hint="Répartis à tour de rôle entre les closers. Un appel enregistré (même sans réponse) et la personne est à toi ; sans action sous 72 h, elle passe à un collègue."
+              tone={
+                day.freshLeads.some(
+                  (c) => c.assignedAt && hoursUntilRedistribution(c.assignedAt, day.now) <= 12,
+                )
+                  ? 'danger'
+                  : undefined
+              }
+            >
+              {day.freshLeads.map((c, i) => (
+                <PersonRow
+                  key={c.id}
+                  row={c}
+                  last={i === day.freshLeads.length - 1}
+                  when={
+                    c.sahCreatedAt
+                      ? `inscrit·e ${fmtAgo(c.sahCreatedAt, day.now)}${c.redistributionCount > 0 ? ' · repris à un collègue' : ''}`
+                      : 'inscription récente'
+                  }
+                  why={
+                    c.assignedAt ? `⏱ ${deadlineLabel(c.assignedAt, day.now)}` : c.scored.callGoal
+                  }
                   canAct={canAct}
                   myId={user.id}
                 />
@@ -256,7 +293,7 @@ export default async function AujourdhuiPage({
             icon={<PhoneOutgoing size={15} />}
             title="À prendre dans le pool"
             count={urgent}
-            hint="Personnes que personne ne suit encore, par raison d’appel. Les rendez-vous Calendly n’y sont pas : Guillaume les suit. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
+            hint="Personnes que personne ne suit encore, par raison d’appel. Les nouveaux inscrits pubs n’y passent plus : ils sont répartis à tour de rôle dès l’arrivée. Les rendez-vous Calendly n’y sont pas : Guillaume les suit. « Je prends » réserve 30 minutes ; le premier résultat enregistré rend la personne à toi."
           >
             {urgentGroups.length === 0 ? (
               <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--text-3)' }}>

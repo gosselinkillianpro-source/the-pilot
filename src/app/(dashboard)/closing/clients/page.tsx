@@ -2,6 +2,7 @@ import { Phone, Search, UserSquare2 } from 'lucide-react';
 import Link from 'next/link';
 import { CloserPicker } from '@/components/closing/closer-picker';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { deadlineLabel } from '@/lib/closing/distribution';
 import { activityLabel, eur, fmtAgo, fmtDateTime, taskLabel } from '@/lib/closing/format';
 import { parisDateOf, parisMidnightUTC } from '@/lib/closing/gamification/periods';
 import { type InvestorOrigin, ORIGINS, originMeta } from '@/lib/closing/origin';
@@ -63,7 +64,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const filtered = clients.filter(
     (c) =>
       (!etat || c.state === etat) &&
-      (!noAction || !c.followUp?.nextTask) &&
+      (!noAction || (!c.followUp?.nextTask && !c.isFreshLead)) &&
       (!mission || c.mission.key === mission) &&
       (!origine || c.origin === origine) &&
       (!q || matches(c, q)),
@@ -73,8 +74,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const countMission = (k: MissionKey) => clients.filter((c) => c.mission.key === k).length;
   const countOrigin = (k: InvestorOrigin) => clients.filter((c) => c.origin === k).length;
   const withoutAction = clients.filter(
-    (c) => !c.followUp?.nextTask && c.state !== 'client' && c.state !== 'lost',
+    (c) => !c.isFreshLead && !c.followUp?.nextTask && c.state !== 'client' && c.state !== 'lost',
   ).length;
+  const freshCount = clients.filter((c) => c.isFreshLead).length;
 
   const href = (over: Partial<Params>) => {
     const next: Params = {
@@ -113,6 +115,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
             {clients.length > 1 ? 's' : ''} · {countOrigin('ads')} venue
             {countOrigin('ads') > 1 ? 's' : ''} des pubs · {eur(collectedMonthEur)} collectés ce
             mois · {countState('ready')} prêt{countState('ready') > 1 ? 's' : ''} à investir
+            {freshCount > 0
+              ? ` · ${freshCount} nouveau${freshCount > 1 ? 'x' : ''} lead${freshCount > 1 ? 's' : ''} à appeler`
+              : ''}
             {withoutAction > 0 ? ` · ${withoutAction} sans prochaine action` : ''}
           </div>
         </div>
@@ -295,6 +300,14 @@ function ClientLine({
               {late ? ' · en retard' : ''}
             </span>
           </>
+        ) : c.isFreshLead && c.assignedAt ? (
+          <span
+            className="badge badge-warning"
+            style={{ fontSize: 10 }}
+            title="Nouvel inscrit pub réparti à toi : un appel enregistré et la personne est à toi ; sans action sous 72 h, elle passe à un collègue."
+          >
+            nouveau lead · {deadlineLabel(c.assignedAt, now)}
+          </span>
         ) : c.state === 'client' || c.state === 'lost' ? (
           <span style={{ color: 'var(--text-4)' }}>—</span>
         ) : (

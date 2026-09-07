@@ -59,6 +59,23 @@ describe('sessionOrder', () => {
     expect(order.map((r) => r.id)).toEqual(['r1', 'd1', 'dup', 'b1', 'o1', 'h1', 'k1', 'z1']);
   });
 
+  test('mes nouveaux leads répartis passent juste après ce qui est dû, avant le pool', () => {
+    const pool: Pool<ReturnType<typeof row>> = {
+      breach_new: [row('b1', 'breach')],
+      other_new: [],
+      hot: [],
+      base: [],
+    };
+    const order = sessionOrder({
+      reserved: [],
+      due: [row('d1')],
+      fresh: [row('f1'), row('f2')],
+      pool,
+      backlog: [row('f2')],
+    });
+    expect(order.map((r) => r.id)).toEqual(['d1', 'f1', 'f2', 'b1']);
+  });
+
   test('respecte la limite', () => {
     const pool: Pool<ReturnType<typeof row>> = {
       breach_new: [row('b1', 'breach'), row('b2', 'breach'), row('b3', 'breach')],

@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { cached } from '@/lib/cache/ttl';
 import { CREDIT_ACTION_TYPES } from '@/lib/closing/credit';
 import { type SplitTasks, sessionOrder, splitTasks } from '@/lib/closing/day';
+import { isFreshDistributedLead } from '@/lib/closing/distribution';
 import { getLeaderboard, type LeaderboardEntry } from '@/lib/closing/gamification/leaderboard';
 import { parisDateOf, parisMidnightUTC } from '@/lib/closing/gamification/periods';
 import { investorOrigin, originGroup } from '@/lib/closing/origin';
@@ -30,6 +31,8 @@ export type ClientRow = QueueRow & {
   state: RelationshipState;
   mission: Mission;
   hasSubscription: boolean;
+  /** Nouvel inscrit pub réparti à ce closer, pas encore touché : 72 h pour agir. */
+  isFreshLead: boolean;
 };
 
 export function toClientRow(row: QueueRow, now: Date): ClientRow {
@@ -46,7 +49,19 @@ export function toClientRow(row: QueueRow, now: Date): ClientRow {
     lastOutcome: last?.type.startsWith('call') ? last.outcome : null,
     now,
   });
-  return { ...row, state, mission: missionForBucket(row.scored.queueBucket), hasSubscription };
+  const isFreshLead = isFreshDistributedLead({
+    assignmentSource: row.assignmentSource,
+    assignedAt: row.assignedAt,
+    lastActivityAt: last?.at ?? null,
+    hasNextTask: fu?.nextTask != null,
+  });
+  return {
+    ...row,
+    state,
+    mission: missionForBucket(row.scored.queueBucket),
+    hasSubscription,
+    isFreshLead,
+  };
 }
 
 /** Prochaine action la plus proche d'abord, sans action ensuite, puis dernier contact récent. */
@@ -91,6 +106,8 @@ export type CloserDay = {
   toQualify: ToQualifyRow[];
   /** Personnes du pool réservées par ce closer (« Je prends » actif). */
   reserved: QueueRow[];
+  /** Nouveaux inscrits pubs répartis à ce closer, pas encore touchés — délai le plus court d'abord. */
+  freshLeads: ClientRow[];
   pool: Pool<QueueRow>;
   clients: ClientRow[];
   /** Ses clients sans prochaine action, hors clients et perdus — à planifier. */
@@ -125,8 +142,13 @@ export async function getCloserDay(closerId: string, now: Date = new Date()): Pr
   ]);
 
   const clients = sortClients(ownedRows.map((r) => toClientRow(r, now)));
+  const freshLeads = clients
+    .filter((c) => c.isFreshLead)
+    .sort((a, b) => (a.assignedAt?.getTime() ?? 0) - (b.assignedAt?.getTime() ?? 0));
   const toPlan = clients
-    .filter((c) => !c.followUp?.nextTask && c.state !== 'client' && c.state !== 'lost')
+    .filter(
+      (c) => !c.isFreshLead && !c.followUp?.nextTask && c.state !== 'client' && c.state !== 'lost',
+    )
     .sort((a, b) => (b.lastActivity?.at?.getTime() ?? 0) - (a.lastActivity?.at?.getTime() ?? 0));
 
   const reserved = poolRows.filter((r) => r.claimedById === closerId && !r.assignedCloserId);
@@ -142,6 +164,7 @@ export async function getCloserDay(closerId: string, now: Date = new Date()): Pr
     tasks: splitTasks(followUp.callbacks, now),
     toQualify: followUp.toQualify,
     reserved,
+    freshLeads,
     pool,
     clients,
     toPlan,
@@ -161,8 +184,8 @@ export async function getCloserDay(closerId: string, now: Date = new Date()): Pr
 }
 
 /**
- * L'ordre du mode appel pour ce closer : réservés, actions dues, pool (pubs
- * d'abord), sa base sans action. Les personnes prises par un collègue sont
+ * L'ordre du mode appel pour ce closer : réservés, actions dues, ses nouveaux
+ * leads répartis, pool (pubs d'abord), sa base sans action. Les personnes prises par un collègue sont
  * écartées — un double appel est la pire expérience pour le client.
  */
 export async function getSessionLeads(
@@ -177,6 +200,7 @@ export async function getSessionLeads(
   const ordered = sessionOrder({
     reserved: day.reserved,
     due,
+    fresh: day.freshLeads,
     pool: day.pool,
     backlog: day.toPlan,
   });

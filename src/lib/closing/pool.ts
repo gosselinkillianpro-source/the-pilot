@@ -30,7 +30,7 @@ export const POOL_TIERS: PoolTierMeta[] = [
   {
     key: 'breach_new',
     label: 'Nouveaux · pubs',
-    hint: 'Inscrits via un code BREACH — à rappeler sous 5 minutes si possible',
+    hint: 'Inscrits via un code BREACH restés sans closer (la rotation les répartit normalement à l’arrivée)',
   },
   {
     key: 'other_new',
@@ -108,8 +108,8 @@ export type PoolGroup<T> = {
  */
 const GROUP_LABELS: Record<string, { label: string; hint: string }> = {
   breach_new: {
-    label: 'Inscrits via les pubs',
-    hint: 'À rappeler sous 5 minutes : finaliser l’inscription ou le KYC, cerner le projet, proposer un RDV.',
+    label: 'Inscrits via les pubs · restés sans closer',
+    hint: 'Normalement répartis automatiquement à l’arrivée (rotation) ; ceux-ci n’ont trouvé personne. À rappeler vite : finaliser l’inscription ou le KYC, cerner le projet, proposer un RDV.',
   },
   other_new: {
     label: 'Nouveaux inscrits · parrainage, invitation',

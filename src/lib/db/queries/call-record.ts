@@ -161,7 +161,12 @@ export async function recordCall(input: RecordCallInput): Promise<RecordCallResu
     );
   await db
     .update(investors)
-    .set({ assignedCloserId: userId, updatedAt: sql`now()` })
+    .set({
+      assignedCloserId: userId,
+      assignedAt: now,
+      assignmentSource: 'call',
+      updatedAt: sql`now()`,
+    })
     .where(and(eq(investors.id, investorId), isNull(investors.assignedCloserId)));
 
   return { ok: true, interactionId, moved, proposal, nextTaskId };

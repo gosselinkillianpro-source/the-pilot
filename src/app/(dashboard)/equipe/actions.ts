@@ -306,3 +306,50 @@ export async function linkUserToSahAction(input: {
   revalidatePath('/closing/aujourdhui');
   return { ok: true, sahUserId, assigned, total };
 }
+
+const rotationSchema = z.object({ userId: z.string().uuid(), enabled: z.boolean() });
+
+export type RotationResult = { ok: true; enabled: boolean } | { ok: false; message: string };
+
+/**
+ * Entrer / sortir un closer de la rotation des nouveaux inscrits pubs. Sortir
+ * ne lui retire rien : ses clients restent à lui, il ne reçoit juste plus de
+ * nouveaux leads répartis.
+ */
+export async function setAcceptsNewLeadsAction(input: {
+  userId: string;
+  enabled: boolean;
+}): Promise<RotationResult> {
+  let user: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    user = await requireAdmin();
+  } catch {
+    return { ok: false, message: 'Réservé aux admins.' };
+  }
+  const parsed = rotationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Données invalides.' };
+  const target = await db
+    .select({ id: users.id, role: users.role, email: users.email })
+    .from(users)
+    .where(eq(users.id, parsed.data.userId))
+    .limit(1);
+  if (!target[0]) return { ok: false, message: 'Utilisateur introuvable.' };
+  if (target[0].role !== 'closer' && target[0].role !== 'closer_junior') {
+    return { ok: false, message: 'Seul un closer peut entrer dans la rotation.' };
+  }
+  await db
+    .update(users)
+    .set({ acceptsNewLeads: parsed.data.enabled })
+    .where(eq(users.id, parsed.data.userId));
+  await logAudit({
+    userId: user.id,
+    userEmail: user.email,
+    userRole: user.role,
+    action: parsed.data.enabled ? 'users.rotation_enabled' : 'users.rotation_disabled',
+    resourceType: 'user',
+    resourceId: parsed.data.userId,
+    metadata: { email: target[0].email },
+  });
+  revalidatePath('/equipe');
+  return { ok: true, enabled: parsed.data.enabled };
+}

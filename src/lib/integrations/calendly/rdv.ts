@@ -527,7 +527,7 @@ export async function autoAssignRdvLeads(
 
   const changed = await db
     .update(investors)
-    .set({ assignedCloserId: owner.id })
+    .set({ assignedCloserId: owner.id, assignedAt: new Date(), assignmentSource: 'calendly' })
     .where(and(inArray(investors.id, ids), isNull(investors.assignedCloserId)))
     .returning({ id: investors.id });
 

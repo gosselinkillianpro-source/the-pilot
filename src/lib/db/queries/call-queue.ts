@@ -36,6 +36,8 @@ export type QueueRow = {
   /** Quand et comment la personne a été attribuée (voir schéma `assignment_source`). */
   assignedAt: Date | null;
   assignmentSource: string | null;
+  /** Fois où la personne a été reprise à un closer resté 72 h sans action. */
+  redistributionCount: number;
   pipelineStage: string;
   totalInvested: number;
   /** Solde du wallet en cents (argent disponible, non investi). */
@@ -83,6 +85,7 @@ type RawRow = {
   assigned_closer_id: string | null;
   assigned_at: string | Date | null;
   assignment_source: string | null;
+  redistribution_count: number | string | null;
   parent_is_closer: boolean | null;
   pipeline_stage: string;
   sah_created_at: string | Date | null;
@@ -239,6 +242,7 @@ export async function getCallQueue(opts?: {
       i.assigned_closer_id::text as assigned_closer_id,
       i.assigned_at,
       i.assignment_source,
+      i.redistribution_count,
       exists (
         select 1 from users pu
         where pu.sah_user_id = i.parent_sah_id and pu.role in ('closer', 'closer_junior')
@@ -365,6 +369,7 @@ export async function getCallQueue(opts?: {
       assignedCloserId: r.assigned_closer_id,
       assignedAt: r.assigned_at ? new Date(r.assigned_at) : null,
       assignmentSource: r.assignment_source,
+      redistributionCount: Number(r.redistribution_count) || 0,
       pipelineStage: r.pipeline_stage,
       totalInvested,
       walletBalanceCents,

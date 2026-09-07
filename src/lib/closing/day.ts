@@ -56,6 +56,8 @@ export type SessionInput<T extends PoolCandidate & { id: string }> = {
   reserved: T[];
   /** Ses clients dont une action est due (en retard puis maintenant). */
   due: T[];
+  /** Nouveaux inscrits pubs qui lui ont été répartis et qu'il n'a pas encore touchés. */
+  fresh?: T[];
   /** Le pool commun, déjà rangé par niveau. */
   pool: Pool<T>;
   /** Sa base à travailler quand tout le reste est vide (clients sans action). */
@@ -63,9 +65,9 @@ export type SessionInput<T extends PoolCandidate & { id: string }> = {
 };
 
 /**
- * L'ordre du mode appel : ce que j'ai réservé, ce qui est dû, puis le pool
- * (pubs d'abord), puis ma base sans action. Une personne n'apparaît qu'une
- * fois, à sa première place.
+ * L'ordre du mode appel : ce que j'ai réservé, ce qui est dû, mes nouveaux
+ * leads répartis (72 h pour agir), puis le pool (pubs d'abord), puis ma base
+ * sans action. Une personne n'apparaît qu'une fois, à sa première place.
  */
 export function sessionOrder<T extends PoolCandidate & { id: string }>(
   input: SessionInput<T>,
@@ -83,6 +85,7 @@ export function sessionOrder<T extends PoolCandidate & { id: string }>(
   };
   push(input.reserved);
   push(input.due);
+  push(input.fresh ?? []);
   push(input.pool.breach_new);
   push(input.pool.other_new);
   push(input.pool.hot);

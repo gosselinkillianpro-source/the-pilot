@@ -109,6 +109,24 @@ describe('numéro cliquable', () => {
   });
 });
 
+describe('le message ciblé par la répartition', () => {
+  test('au closer attribué : « à toi » et le délai de 72 h', () => {
+    const msg = buildAlertMessage(lead(), MIDI, 'https://pilot.test', { forOwner: true });
+    expect(msg).toContain('à toi');
+    expect(msg).toContain('72 h');
+  });
+  test('aux admins : dit à qui la personne a été attribuée', () => {
+    const msg = buildAlertMessage(lead(), MIDI, 'https://pilot.test', {
+      assignedToName: 'Dimitri & Co',
+    });
+    expect(msg).toContain('attribué à <b>Dimitri &amp; Co</b>');
+    expect(msg).not.toContain('à toi');
+  });
+  test('sans répartition : le message historique, inchangé', () => {
+    expect(buildAlertMessage(lead(), MIDI, 'https://pilot.test')).toContain('Nouveau lead BREACH');
+  });
+});
+
 describe('le message poussé', () => {
   const APP = 'https://pilot.example.com';
 
