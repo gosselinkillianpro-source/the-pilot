@@ -42,7 +42,7 @@ import { SYNC_TOPICS } from '@/lib/realtime/topics';
 async function assignOwnershipIfFree(investorId: string, closerId: string): Promise<boolean> {
   const res = await db
     .update(investors)
-    .set({ assignedCloserId: closerId })
+    .set({ assignedCloserId: closerId, assignedAt: new Date(), assignmentSource: 'call' })
     .where(and(eq(investors.id, investorId), isNull(investors.assignedCloserId)))
     .returning({ id: investors.id });
   return res.length > 0;
@@ -548,7 +548,11 @@ export async function assignCloserAction(input: {
     await ensureUserRecord(user);
     await db
       .update(investors)
-      .set({ assignedCloserId: parsed.closerId })
+      .set({
+        assignedCloserId: parsed.closerId,
+        assignedAt: parsed.closerId ? new Date() : null,
+        assignmentSource: parsed.closerId ? 'manual' : null,
+      })
       .where(eq(investors.id, parsed.investorId));
     await logAudit({
       userId: user.id,

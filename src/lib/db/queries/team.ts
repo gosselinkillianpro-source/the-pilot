@@ -21,6 +21,10 @@ export type CloserStatus = {
   sahUserId: string | null;
   /** Personnes qui lui sont attribuées parce qu'inscrites avec son code CGP. */
   cgpClients: number;
+  /** Dans la rotation des nouveaux inscrits pubs. */
+  acceptsNewLeads: boolean;
+  /** Leads pubs répartis à lui qu'il n'a pas encore touchés. */
+  freshLeads: number;
   lastSeenAt: Date | null;
   online: boolean;
   lastActionLabel: string | null;
@@ -107,7 +111,21 @@ export async function getTeamOverview(): Promise<TeamOverview> {
       email: users.email,
       role: users.role,
       sahUserId: users.sahUserId,
+      acceptsNewLeads: users.acceptsNewLeads,
       lastSeenAt: users.lastSeenAt,
+      freshLeads: sql<number>`(
+        select count(*)::int from investors i
+        where i.assigned_closer_id = ${users.id} and i.deleted_at is null
+          and i.assignment_source in ('distribution', 'redistribution')
+          and not exists (
+            select 1 from interactions ix
+            where ix.investor_id = i.id and ix.user_id = i.assigned_closer_id and ix.created_at >= i.assigned_at
+          )
+          and not exists (
+            select 1 from closer_tasks ct
+            where ct.investor_id = i.id and ct.created_by = i.assigned_closer_id and ct.created_at >= i.assigned_at
+          )
+      )`,
       cgpClients: sql<number>`(
         select count(*)::int from investors i
         where i.assigned_closer_id = ${users.id} and i.assignment_source = 'cgp' and i.deleted_at is null
@@ -165,6 +183,8 @@ export async function getTeamOverview(): Promise<TeamOverview> {
         role: c.role,
         sahUserId: c.sahUserId,
         cgpClients: Number(c.cgpClients) || 0,
+        acceptsNewLeads: c.acceptsNewLeads,
+        freshLeads: Number(c.freshLeads) || 0,
         lastSeenAt: c.lastSeenAt,
         online,
         lastActionLabel: last?.label ?? null,

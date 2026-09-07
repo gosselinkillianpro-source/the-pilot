@@ -6,6 +6,7 @@ import { listInvitations } from '@/lib/db/queries/invitations';
 import { type ActivityEvent, type CloserStatus, getTeamOverview } from '@/lib/db/queries/team';
 import { AutoRefresh } from './auto-refresh';
 import { InvitePanel } from './invite-panel';
+import { LeadRotationToggle } from './lead-rotation-toggle';
 import { SahLinkForm } from './sah-link-form';
 
 export const dynamic = 'force-dynamic';
@@ -61,8 +62,10 @@ export default async function EquipePage() {
         <div>
           <h1 className="page-title">Équipe</h1>
           <div className="page-desc">
-            Qui est en ligne, leur dernière action et l'activité en temps réel. Page réservée à
-            l'admin · mise à jour automatique toutes les 30 s.
+            Qui est en ligne, leur dernière action et l'activité en temps réel. Les nouveaux
+            inscrits pubs sont répartis à tour de rôle entre les closers « dans la rotation » ; sans
+            action sous 72 h, la personne passe au suivant. Page réservée à l'admin · mise à jour
+            automatique toutes les 30 s.
           </div>
         </div>
         <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
@@ -166,6 +169,16 @@ function CloserCard({ c }: { c: CloserStatus }) {
         >
           <Stat label="Appels aujourd'hui" value={c.callsToday} />
           <Stat label="Actions aujourd'hui" value={c.actionsToday} />
+        </div>
+
+        {/* Rotation des nouveaux leads pubs (72 h pour agir) */}
+        <div style={{ paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+          <LeadRotationToggle
+            userId={c.id}
+            name={c.name ?? 'Ce closer'}
+            enabled={c.acceptsNewLeads}
+            freshLeads={c.freshLeads}
+          />
         </div>
 
         {/* Compte SAH (CGP) : ses inscrits lui reviennent d'office */}
