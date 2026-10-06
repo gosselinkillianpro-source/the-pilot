@@ -5,7 +5,8 @@ import { assignCgpClients } from '@/lib/db/queries/cgp-clients';
 import { distributeNewLeads } from '@/lib/db/queries/lead-distribution';
 import { applyAutomaticMoves } from '@/lib/db/queries/pipeline-auto';
 import { investors, projects, subscriptions } from '@/lib/db/schema';
-import { getSahClient } from './client';
+import { colsOf, getSahClient } from './client';
+import { type OptionalProfileAlias, planProfileColumns } from './profile-columns';
 
 /**
  * Synchronisation SAH (réplique lecture seule) → notre Supabase.
@@ -164,6 +165,19 @@ async function syncInvestors(sinceMinutes?: number): Promise<number> {
   // (une personne peut avoir plusieurs profils) → on agrège au "plus avancé".
   // On ne lit JAMAIS encrypted_password, virtual_iban/bic (KYC bancaire interdit).
   // CGP : best effort (bonus_codes.ambassador_name + distributor_legal_entities.name).
+  // Colonnes facultatives lues seulement si SAH les a encore (cf. profile-columns.ts).
+  const plan = planProfileColumns(await colsOf(sahDb, 'users_profiles'));
+  if (plan.missingRequired.length > 0) {
+    throw new Error(
+      `schéma SAH modifié — colonnes users_profiles absentes : ${plan.missingRequired.join(', ')}`,
+    );
+  }
+  const optionalCol = (alias: OptionalProfileAlias) => {
+    const column = plan.optional[alias];
+    if (column) return sahDb`max(p.${sahDb(column)})`;
+    return alias === 'kyc_validated_at' ? sahDb`null::timestamptz` : sahDb`null::text`;
+  };
+
   const rows = await sahDb<SahInvestor[]>`
     select
       u.id::text,
@@ -197,11 +211,11 @@ async function syncInvestors(sinceMinutes?: number): Promise<number> {
       ) as parrain_name,
       u.created_at as sah_created_at,
       u.updated_at as sah_updated_at,
-      max(p.kyc_validated_at) as kyc_validated_at,
+      ${optionalCol('kyc_validated_at')} as kyc_validated_at,
       max(p.wallet_status) as wallet_status,
       max(p.lw_onboarding_status) as lw_onboarding_status,
-      max(p.lw_onboarding_id) as lw_onboarding_id,
-      max(p.account_id) as lemonway_account_id,
+      ${optionalCol('lw_onboarding_id')} as lw_onboarding_id,
+      ${optionalCol('lemonway_account_id')} as lemonway_account_id,
       -- Profil complété = la personne a rempli ses infos perso (formulaire SAH).
       -- Règle calée sur le fichier exporté (cible 2111, atteinte à ±5 par ce set).
       (
@@ -330,9 +344,11 @@ async function syncInvestors(sinceMinutes?: number): Promise<number> {
           walletBalanceCents: sql`excluded.wallet_balance_cents`,
           walletStatus: sql`excluded.wallet_status`,
           lwOnboardingStatus: sql`excluded.lw_onboarding_status`,
-          lwOnboardingId: sql`excluded.lw_onboarding_id`,
-          lemonwayAccountId: sql`excluded.lemonway_account_id`,
-          kycValidatedAt: sql`excluded.kyc_validated_at`,
+          // Facultatives : une colonne disparue chez SAH (lue à null) n'efface pas
+          // la valeur déjà connue.
+          lwOnboardingId: sql`coalesce(excluded.lw_onboarding_id, ${investors.lwOnboardingId})`,
+          lemonwayAccountId: sql`coalesce(excluded.lemonway_account_id, ${investors.lemonwayAccountId})`,
+          kycValidatedAt: sql`coalesce(excluded.kyc_validated_at, ${investors.kycValidatedAt})`,
           sahCreatedAt: sql`excluded.sah_created_at`,
           sahUpdatedAt: sql`excluded.sah_updated_at`,
           registrationComplete: sql`excluded.registration_complete`,

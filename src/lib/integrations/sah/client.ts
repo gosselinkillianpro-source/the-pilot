@@ -579,7 +579,10 @@ export type SahReferralDeepDiag = {
   }[];
 };
 
-async function colsOf(sql: ReturnType<typeof getSahClient>, table: string): Promise<string[]> {
+export async function colsOf(
+  sql: ReturnType<typeof getSahClient>,
+  table: string,
+): Promise<string[]> {
   return sql<{ column_name: string }[]>`
     select column_name from information_schema.columns
     where table_name = ${table} order by ordinal_position
