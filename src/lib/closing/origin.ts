@@ -6,7 +6,7 @@
  * fait tout ; un parrainé ou un invité arrivait déjà avec une idée du montant.
  *
  * Même lecture que la page Ads (`ads-acquisition.ts`) :
- *   - code pub (SEVEN-BREACH*, *VIP*) → pub ;
+ *   - code pub (contient BREACH, ou *VIP*) → pub ;
  *   - un autre code saisi → partenaire (CGP / réseau) ;
  *   - parrainé par un investisseur (breach_level ≥ 1, ou un parrain hors
  *     réseau) → parrainage ;
@@ -85,10 +85,13 @@ export function originMeta(origin: InvestorOrigin): OriginMeta {
   return ORIGINS.find((o) => o.key === origin) ?? DEFAULT_META;
 }
 
-/** Même règle que `classifyCode` (page Ads) : SEVEN-BREACH* et *VIP* sont des codes pub. */
+/**
+ * Même règle que `classifyCode` (page Ads) : tout code contenant BREACH
+ * (SEVEN-BREACH, BREACH-VIP, BREACH-PROJET-JONAGE…) et *VIP* sont des codes pub.
+ */
 export function isAdCode(code: string): boolean {
   const c = code.trim().toUpperCase();
-  return c.startsWith('SEVEN-BREACH') || c.includes('VIP');
+  return c.includes('BREACH') || c.includes('VIP');
 }
 
 /** Un CGP « maison » (BREACH, Guillaume Gosselin) marque un lead pub ; un autre nom est un tiers. */

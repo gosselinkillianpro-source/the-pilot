@@ -192,7 +192,7 @@ const DEFS: MetricDef[] = [
       'Coût réel par inscrit : dépense d’une régie ÷ vrais inscrits SAH portant son code bonus.',
     source: 'derived',
     sourceDetail:
-      'dépense régie ÷ getAttributedCounts (ads-acquisition.ts) — SEVEN-BREACH→Meta, BREACH-VIP→Google',
+      'dépense régie ÷ getAttributedCounts (ads-acquisition.ts) — codes *BREACH* / *VIP* → Meta (Google en pause)',
     calcul: 'spend_regie / nb_inscrits_du_code (sah_created_at sur la période). null si 0 inscrit.',
     unit: 'eur',
     decision: 'Vrai coût d’acquisition (corrige le pixel gonflé) → arbitrage budget par régie.',

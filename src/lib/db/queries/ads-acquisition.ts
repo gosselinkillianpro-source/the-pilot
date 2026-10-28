@@ -7,7 +7,8 @@ import { db } from '@/lib/db';
  * Comptages SAH RÉELS attribués à la pub via le code bonus saisi à l'inscription.
  *
  * ⚠️ Google Ads est EN PAUSE (décision Killian 02/09/2026) : tous les codes pub
- * — SEVEN-BREACH(*) comme BREACH-VIP/*VIP* — sont attribués à Meta. Le jour où
+ * — tout code contenant BREACH (SEVEN-BREACH, BREACH-VIP, BREACH-PROJET-JONAGE…)
+ * et *VIP* — sont attribués à Meta. Le jour où
  * Google revient, re-séparer les motifs ici + classifyCode() + overview.ts.
  * Les codes partenaires/CGP (Seven-club-deal-*, SEVEN-CD-*) ne sont PAS des ads.
  *
@@ -23,12 +24,12 @@ import { db } from '@/lib/db';
  * pause ; `Google: 'false'` garde la forme (aucune ligne ne matche jamais).
  */
 export const AD_CODE_PATTERNS = {
-  Meta: "(bonus_code ilike 'SEVEN-BREACH%' or bonus_code ilike '%VIP%')",
+  Meta: "(bonus_code ilike '%BREACH%' or bonus_code ilike '%VIP%')",
   Google: 'false',
 } as const;
 
 /** Libellé lisible des codes, pour l'affichage. */
-export const AD_CODE_LABELS = { Meta: 'SEVEN-BREACH + VIP', Google: '—' } as const;
+export const AD_CODE_LABELS = { Meta: 'BREACH + VIP', Google: '—' } as const;
 
 export type AdPlatform = 'Meta' | 'Google';
 export type CodeSource = AdPlatform | 'Partenaire';
@@ -36,7 +37,7 @@ export type CodeSource = AdPlatform | 'Partenaire';
 /** Classe un code bonus par source. DOIT rester cohérent avec AD_CODE_PATTERNS. */
 export function classifyCode(code: string): CodeSource {
   const c = code.toUpperCase();
-  if (c.startsWith('SEVEN-BREACH')) return 'Meta';
+  if (c.includes('BREACH')) return 'Meta';
   if (c.includes('VIP')) return 'Meta'; // ex-Google, rattaché à Meta (pause Google)
   return 'Partenaire';
 }
@@ -338,7 +339,7 @@ export type CodeRow = {
 
 /**
  * Suivi par CODE BONUS PUB sur la période : funnel inscrits → complets → investisseurs → collecte.
- * Restreint aux codes pub (SEVEN-BREACH*, *VIP*) — les codes partenaires/CGP sont EXCLUS.
+ * Restreint aux codes pub (*BREACH*, *VIP*) — les codes partenaires/CGP sont EXCLUS.
  * Trié par collecte puis inscrits. Indépendant de la dépense pub : marche dès maintenant.
  */
 export async function getCodeTracking(range: DateRange, limit = 12): Promise<CodeRow[]> {
