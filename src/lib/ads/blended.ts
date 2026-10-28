@@ -13,7 +13,7 @@ import { type AdsPeriod, periodToRange } from './period';
  * Coût d'acquisition « réel », croisé Meta/Google + SAH.
  *
  * Trois voies d'attribution, sans double compte :
- *   1. CODE BONUS saisi à l'inscription (SEVEN-BREACH → Meta, BREACH-VIP → Google) ;
+ *   1. CODE BONUS saisi à l'inscription (tout code BREACH ou VIP → Meta, Google en pause) ;
  *   2. RDV CALENDLY : les pubs n'orientent que vers la prise de RDV — toute
  *      personne vue en RDV sans autre origine connue (code, parrainage, CGP)
  *      est attribuée aux ads ;

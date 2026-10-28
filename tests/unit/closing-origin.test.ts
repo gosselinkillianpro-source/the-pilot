@@ -23,6 +23,8 @@ describe('isAdCode — même lecture que la page Ads', () => {
     expect(isAdCode('SEVEN-BREACH')).toBe(true);
     expect(isAdCode('seven-breach-2')).toBe(true);
     expect(isAdCode('BREACH-VIP')).toBe(true);
+    expect(isAdCode('BREACH-PROJET-JONAGE')).toBe(true);
+    expect(isAdCode(' breach-projet-jonage ')).toBe(true);
     expect(isAdCode('Seven-club-deal-12')).toBe(false);
     expect(isAdCode('SEVEN-CD-3')).toBe(false);
   });
