@@ -4,6 +4,7 @@ import {
   BellRing,
   Building2,
   CalendarClock,
+  HandCoins,
   KanbanSquare,
   LayoutGrid,
   Mail,
@@ -102,6 +103,12 @@ export function NavContent({ role, hasCalendly = false }: { role: string; hasCal
         <Building2 />
         Projets
       </SidebarLink>
+      {(role === 'admin' || role === 'executive') && (
+        <SidebarLink href="/club-deal">
+          <HandCoins />
+          Club deal
+        </SidebarLink>
+      )}
       <SidebarLink href="/breach" style={{ color: 'var(--ai)' }}>
         <Target />
         BREACH

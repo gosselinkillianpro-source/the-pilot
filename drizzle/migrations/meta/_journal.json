@@ -204,6 +204,13 @@
       "when": 1788775706565,
       "tag": "0028_clear_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793694603702,
+      "tag": "0029_club_deal_interests",
+      "breakpoints": true
     }
   ]
 }

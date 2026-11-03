@@ -8,6 +8,7 @@
 
 import { sql } from 'drizzle-orm';
 import {
+  bigserial,
   boolean,
   index,
   inet,
@@ -809,4 +810,53 @@ export const adFixedCosts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('ad_fixed_costs_month_idx').on(t.month)],
+);
+
+/* ============================================================
+   CLUB_DEAL_INTERESTS — manifestations d'intérêt du formulaire « club deal »
+   de sevenathome.com (route publique POST /api/club-deal). Donnée créée
+   CHEZ NOUS : jamais dans la base SAH, qui reste en lecture seule.
+   Colonnes identiques au migration.sql de référence fourni avec le widget.
+   ============================================================ */
+export const clubDealInterests = pgTable(
+  'club_deal_interests',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** CD-AAMM-XXXX */
+    ref: text('ref').notNull().unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    prenom: text('prenom').notNull(),
+    nom: text('nom').notNull(),
+    /** En minuscules. */
+    email: text('email').notNull(),
+    /** E.164 */
+    telephone: text('telephone'),
+    /** Accord pour un appel (loi du 11/08/2026). */
+    consentTel: boolean('consent_tel').notNull().default(false),
+    /** investisseur | membre | nouveau */
+    statut: text('statut').notNull(),
+    /** jonage, srl, npl (un choix par opération) */
+    dossiers: text('dossiers').array().notNull(),
+    /** Code de tranche (voir src/lib/club-deal/constants.ts). */
+    montant: text('montant').notNull(),
+    disponibilite: text('disponibilite').notNull(),
+    message: text('message').notNull().default(''),
+    /** ref d'une demande du même e-mail de moins de 30 jours */
+    duplicateOf: text('duplicate_of'),
+    /** nouveau | contacte | dossier_envoye | souscrit | sans_suite */
+    processingStatus: text('processing_status').notNull().default('nouveau'),
+    notes: text('notes').notNull().default(''),
+    utmSource: text('utm_source'),
+    utmMedium: text('utm_medium'),
+    utmCampaign: text('utm_campaign'),
+    pageUrl: text('page_url'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('club_deal_interests_email_idx').on(t.email),
+    index('club_deal_interests_created_idx').on(t.createdAt.desc()),
+    index('club_deal_interests_status_idx').on(t.processingStatus),
+  ],
 );

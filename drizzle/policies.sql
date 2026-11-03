@@ -267,3 +267,16 @@ alter table public.user_invitations enable row level security;
 drop policy if exists user_invitations_admin_all on public.user_invitations;
 create policy user_invitations_admin_all on public.user_invitations for all
   using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+
+-- ============================================================
+-- CLUB_DEAL_INTERESTS (formulaire « club deal » de sevenathome.com)
+-- Insertion : route publique /api/club-deal via la connexion serveur.
+-- Suivi (statut, notes) : admin. Lecture : executive. Les closers n'y ont pas accès.
+-- ============================================================
+alter table public.club_deal_interests enable row level security;
+drop policy if exists club_deal_interests_admin_all on public.club_deal_interests;
+create policy club_deal_interests_admin_all on public.club_deal_interests for all
+  using (public.auth_role() = 'admin') with check (public.auth_role() = 'admin');
+drop policy if exists club_deal_interests_exec_read on public.club_deal_interests;
+create policy club_deal_interests_exec_read on public.club_deal_interests for select
+  using (public.auth_role() = 'executive');
