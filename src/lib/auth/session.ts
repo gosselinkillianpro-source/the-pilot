@@ -7,9 +7,11 @@ import { isAuthDisabled } from './dev-bypass';
 const MFA_REQUIRED_ROLES = ['admin', 'closer', 'closer_junior', 'admin_affiliate'];
 
 // Routes accessibles sans être connecté.
+// `/mfa` et `/mfa/setup` n'y figurent PAS : sans session, l'enrôlement et la
+// vérification échouent forcément → retour au login plutôt qu'une erreur.
 // `/api/club-deal` : formulaire public de sevenathome.com (chemin EXACT : l'export
 // /api/club-deal/export reste derrière la connexion).
-const PUBLIC_PATHS = ['/', '/login', '/mfa', '/mfa/setup', '/api/club-deal'];
+const PUBLIC_PATHS = ['/', '/login', '/api/club-deal'];
 
 // Endpoints publics par nature (appelés par des services externes), protégés par
 // leur propre secret/signature dans le handler — jamais par le mur de connexion.

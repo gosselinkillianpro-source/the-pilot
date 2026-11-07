@@ -177,8 +177,15 @@ export async function switchAccount(): Promise<void> {
 export async function startMfaEnrollment(): Promise<EnrollResult> {
   const supabase = await getSupabaseServerClient();
 
-  // Nettoyage : supprime d'éventuels facteurs TOTP non vérifiés laissés en plan.
+  // Session expirée → pas d'enrôlement possible, on repasse par le login.
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect('/login');
+
   const { data: factors } = await supabase.auth.mfa.listFactors();
+  // Déjà un 2FA actif → simple vérification, pas de nouvel enrôlement.
+  if (factors?.totp?.length) redirect('/mfa');
+
+  // Nettoyage : supprime d'éventuels facteurs TOTP non vérifiés laissés en plan.
   for (const factor of factors?.all ?? []) {
     if (factor.factor_type === 'totp' && factor.status === 'unverified') {
       await supabase.auth.mfa.unenroll({ factorId: factor.id });
@@ -191,6 +198,7 @@ export async function startMfaEnrollment(): Promise<EnrollResult> {
   });
 
   if (error || !data) {
+    console.error('[mfa] enroll :', error?.message ?? 'réponse vide');
     return { error: 'Impossible de démarrer la configuration du 2FA. Réessaie.' };
   }
 
@@ -258,6 +266,10 @@ export async function verifyMfaChallenge(
   }
 
   const supabase = await getSupabaseServerClient();
+  // Session expirée pendant la saisie → login (et non l'écran d'enrôlement).
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect('/login');
+
   const { data: factors } = await supabase.auth.mfa.listFactors();
   const totp = factors?.totp?.[0];
   if (!totp) {
